@@ -1,0 +1,52 @@
+# Local development: `docker compose up -d` starts Postgres + Redis.
+# `docker compose --profile full up` also builds and runs the API container.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: elk
+      POSTGRES_PASSWORD: elk
+      POSTGRES_DB: elk
+    ports:
+      # host 5433 → avoids colliding with a locally installed Postgres
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U elk -d elk']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      # host 6380 → avoids colliding with a locally installed Redis
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    profiles: ['full']
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://elk:elk@postgres:5432/elk?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: local-compose-secret-do-not-use-in-production-1234
+      CORS_ORIGINS: http://localhost:3000
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

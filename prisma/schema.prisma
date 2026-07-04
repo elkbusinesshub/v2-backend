@@ -1,0 +1,65 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Conventions (see docs/conventions.md):
+//  * UUID v7 primary keys (time-ordered → good B-tree locality)
+//  * createdAt / updatedAt on every model; deletedAt on soft-deletable models
+//  * snake_case table names via @@map, camelCase in code
+//  * Index every foreign key and every column used in WHERE clauses
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  PROVIDER
+  ADMIN
+}
+
+/// Application user. Soft-deletable (see src/database/prisma.extension.ts).
+model User {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  phone        String?   @unique
+  email        String?   @unique
+  name         String
+  /// argon2id hash — null until password/registration flows exist
+  passwordHash String?
+  roles        Role[]    @default([USER])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  sessions RefreshSession[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// One row per device/login session. The raw refresh token is NEVER stored —
+/// only its SHA-256 hash. `familyId` groups a rotation chain so that a
+/// detected token reuse can revoke the whole chain at once.
+model RefreshSession {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  userId              String    @db.Uuid
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash           String    @unique
+  familyId            String    @db.Uuid
+  userAgent           String?
+  ip                  String?
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_sessions")
+}

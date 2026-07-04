@@ -1,0 +1,18 @@
+# dependencies & build
+node_modules/
+dist/
+coverage/
+
+# environment — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# logs & misc
+*.log
+.DS_Store
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json

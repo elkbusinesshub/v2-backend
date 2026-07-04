@@ -1,0 +1,115 @@
+{
+  "name": "elk-backend",
+  "version": "0.1.0",
+  "description": "ELK Business Hub — production backend foundation (NestJS, Prisma, PostgreSQL, Redis, Socket.IO)",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "nest build",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "TS_NODE_PROJECT=tsconfig.paths-runtime.json node -r tsconfig-paths/register dist/main.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"{src,test,prisma}/**/*.{ts,json,md}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:integration": "jest --config test/jest-integration.config.js --runInBand",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "prepare": "husky || true"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "cpu-features",
+      "esbuild",
+      "msgpackr-extract",
+      "prisma",
+      "ssh2"
+    ]
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "@nest-lab/throttler-storage-redis": "^1.1.0",
+    "@nestjs/bullmq": "^11.0.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/platform-socket.io": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@nestjs/throttler": "^6.3.0",
+    "@nestjs/websockets": "^11.0.0",
+    "@prisma/client": "^6.1.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "argon2": "^0.41.1",
+    "bullmq": "^5.30.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "compression": "^1.7.5",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.0",
+    "nestjs-pino": "^4.1.0",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.0",
+    "tsconfig-paths": "^4.2.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@eslint/js": "^9.17.0",
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@testcontainers/postgresql": "^10.16.0",
+    "@types/compression": "^1.7.5",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.0",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^10.0.0",
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "lint-staged": "^15.2.0",
+    "pino-pretty": "^13.0.0",
+    "prettier": "^3.4.0",
+    "prisma": "^6.1.0",
+    "supertest": "^7.0.0",
+    "testcontainers": "^10.16.0",
+    "ts-jest": "^29.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0"
+  }
+}
