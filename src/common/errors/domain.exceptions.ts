@@ -50,3 +50,9 @@ export class DuplicateResourceException extends DomainException {
     super(HttpStatus.CONFLICT, 'CONFLICT', message);
   }
 }
+
+export class TooManyRequestsException extends DomainException {
+  constructor(message = 'Too many requests') {
+    super(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY_REQUESTS', message);
+  }
+}

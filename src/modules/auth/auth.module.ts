@@ -8,7 +8,7 @@ import type { AppConfig } from '@/config/configuration';
 import { UsersModule } from '@/modules/users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { PasswordService } from './password.service';
+import { OtpService } from './otp.service';
 import { RefreshSessionRepository } from './refresh-session.repository';
 import { TokenDenylistService } from './token-denylist.service';
 
@@ -32,12 +32,12 @@ import { TokenDenylistService } from './token-denylist.service';
   controllers: [AuthController],
   providers: [
     AuthService,
-    PasswordService,
     RefreshSessionRepository,
     TokenDenylistService,
+    OtpService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AuthService, PasswordService, TokenDenylistService],
+  exports: [AuthService, TokenDenylistService],
 })
 export class AuthModule {}

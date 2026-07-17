@@ -2,12 +2,14 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import type { Role } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
+import { toRoles } from '@/common/utils/roles';
 import type { AppConfig } from '@/config/configuration';
 import { UsersRepository } from '@/modules/users/users.repository';
 import type { TokenPairDto } from './auth.dto';
+import { OtpService } from './otp.service';
 import { RefreshSessionRepository } from './refresh-session.repository';
 import { TokenDenylistService } from './token-denylist.service';
 
@@ -27,8 +29,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *    atomic claim race) proves the token was used twice — the whole session
  *    family is revoked, forcing re-login on every device in that chain.
  *
- * `issueTokenPair` is the seam the future login flows (OTP verify, Google
- * OAuth) will call after they establish the user's identity.
+ * `issueTokenPair` is the seam login flows call after they establish the
+ * user's identity — currently just phone/OTP (`loginWithPhone`).
  */
 @Injectable()
 export class AuthService {
@@ -41,14 +43,27 @@ export class AuthService {
     private readonly sessions: RefreshSessionRepository,
     private readonly users: UsersRepository,
     private readonly denylist: TokenDenylistService,
+    private readonly otp: OtpService,
     config: ConfigService<AppConfig, true>,
   ) {
     this.accessTtlSeconds = config.get('jwt.accessTtlSeconds', { infer: true });
     this.refreshTtlDays = config.get('jwt.refreshTtlDays', { infer: true });
   }
 
+  /** Sends (logs, for now) an OTP to [phone]. Returns the resend cooldown in seconds. */
+  async requestOtp(phone: string): Promise<number> {
+    return this.otp.issue(phone);
+  }
+
+  /** Verifies the OTP, finding or creating the user, then issues a token pair. */
+  async loginWithPhone(phone: string, code: string, meta: SessionMeta): Promise<TokenPairDto> {
+    await this.otp.verify(phone, code);
+    const user = (await this.users.findByPhone(phone)) ?? (await this.users.createByPhone(phone));
+    return this.issueTokenPair(user, meta);
+  }
+
   async issueTokenPair(
-    user: { id: string; roles: Role[] },
+    user: { id: string; roles: Prisma.JsonValue },
     meta: SessionMeta,
     familyId: string = randomUUID(),
   ): Promise<TokenPairDto> {
@@ -64,7 +79,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, user.roles),
+      accessToken: await this.signAccessToken(user.id, toRoles(user.roles)),
       refreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,
@@ -114,7 +129,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, user.roles),
+      accessToken: await this.signAccessToken(user.id, toRoles(user.roles)),
       refreshToken: newRefreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,

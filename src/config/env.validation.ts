@@ -19,6 +19,9 @@ export const envSchema = z.object({
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
+  OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(30),
+
   THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(100),
 

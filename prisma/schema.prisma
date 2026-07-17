@@ -11,7 +11,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -23,19 +23,25 @@ enum Role {
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
 model User {
-  id           String    @id @default(uuid(7)) @db.Uuid
+  id           String    @id @default(uuid(7)) @db.Char(36)
   phone        String?   @unique
   email        String?   @unique
-  name         String
-  /// argon2id hash — null until password/registration flows exist
-  passwordHash String?
-  roles        Role[]    @default([USER])
+  /// null until the user completes their profile — phone/OTP signup collects
+  /// no name up front
+  name         String?
+  /// JSON array of `Role` values — MySQL has no enum arrays. Narrowed back to
+  /// Role[] at the auth boundary (see src/common/utils/roles.ts).
+  roles        Json      @default("[\"USER\"]")
+  /// ISO 639-1 code of the user's preferred app language
+  language     String    @default("en")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  sessions RefreshSession[]
+  sessions  RefreshSession[]
+  addresses Address[]
+  bookings  Booking[]
 
   @@index([deletedAt])
   @@map("users")
@@ -45,11 +51,11 @@ model User {
 /// only its SHA-256 hash. `familyId` groups a rotation chain so that a
 /// detected token reuse can revoke the whole chain at once.
 model RefreshSession {
-  id                  String    @id @default(uuid(7)) @db.Uuid
-  userId              String    @db.Uuid
+  id                  String    @id @default(uuid(7)) @db.Char(36)
+  userId              String    @db.Char(36)
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash           String    @unique
-  familyId            String    @db.Uuid
+  familyId            String    @db.Char(36)
   userAgent           String?
   ip                  String?
   expiresAt           DateTime
@@ -62,4 +68,111 @@ model RefreshSession {
   @@index([userId])
   @@index([familyId])
   @@map("refresh_sessions")
+}
+
+/// A saved location (address book entry). `formattedAddress` and the
+/// coordinates are resolved client-side (device maps SDK / GPS) — the
+/// backend just stores whatever the client resolved, no server-side
+/// geocoding. Soft-deletable (see src/database/prisma.extension.ts).
+model Address {
+  id               String    @id @default(uuid(7)) @db.Char(36)
+  userId           String    @db.Char(36)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label            String
+  formattedAddress String
+  lat              Float
+  lng              Float
+  isDefault        Boolean   @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@map("addresses")
+}
+
+/// Top-level service category (Cleaning, Laundry, AC Service, ...).
+/// `slug` is the stable natural key used by the seed and deep links.
+model ServiceCategory {
+  id       String @id @default(uuid(7)) @db.Char(36)
+  slug     String @unique
+  name     String
+  icon     String
+  /// ARGB color for the home-grid tile, e.g. 0xFFE0F7F5
+  colorHex Int    @default(4293848814) @db.UnsignedInt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services Service[]
+
+  @@map("service_categories")
+}
+
+/// A bookable service in the catalog. Provider / rating / bookings fields are
+/// seeded display values for now — they become relations/aggregates when the
+/// provider and review modules exist.
+model Service {
+  id         String          @id @default(uuid(7)) @db.Char(36)
+  categoryId String          @db.Char(36)
+  category   ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  slug       String          @unique
+  name       String
+  icon       String
+  badge      String?
+  description String         @db.Text
+  price      Decimal         @db.Decimal(10, 2)
+  priceUnit  String
+  durationLabel String
+  teamSizeLabel String
+  /// JSON array of strings shown as "What's included"
+  included   Json            @default("[]")
+
+  providerName       String
+  providerExperience String
+  rating             Float  @default(0)
+  reviewCount        Int    @default(0)
+  bookingsLabel      String @default("0")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([categoryId])
+  @@map("services")
+}
+
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+/// A home-services booking. Money fields are computed server-side from the
+/// service price — the client's total is never trusted. `addressText` is a
+/// snapshot: editing the saved address later must not rewrite history.
+model Booking {
+  id          String        @id @default(uuid(7)) @db.Char(36)
+  /// Human-facing reference shown on the confirmation screen, e.g. ELK-2026-48213
+  reference   String        @unique
+  userId      String        @db.Char(36)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId   String        @db.Char(36)
+  service     Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  status      BookingStatus @default(CONFIRMED)
+  scheduledAt DateTime
+  addressText String
+  serviceFee  Decimal       @db.Decimal(10, 2)
+  total       Decimal       @db.Decimal(10, 2)
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([serviceId])
+  @@map("bookings")
 }

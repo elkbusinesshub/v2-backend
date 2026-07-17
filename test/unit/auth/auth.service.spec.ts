@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { Role } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import { AuthService } from '@/modules/auth/auth.service';
+import { OtpService } from '@/modules/auth/otp.service';
 import {
   RefreshSessionRepository,
   SessionWithUser,
@@ -16,8 +17,8 @@ const user = {
   phone: '+971500000001',
   email: null,
   name: 'Test User',
-  passwordHash: null,
   roles: [Role.USER],
+  language: 'en',
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,
@@ -46,6 +47,7 @@ describe('AuthService', () => {
   let sessions: jest.Mocked<RefreshSessionRepository>;
   let users: jest.Mocked<UsersRepository>;
   let denylist: jest.Mocked<TokenDenylistService>;
+  let otp: jest.Mocked<OtpService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -68,11 +70,19 @@ describe('AuthService', () => {
         },
         {
           provide: UsersRepository,
-          useValue: { findById: jest.fn().mockResolvedValue(user) },
+          useValue: {
+            findById: jest.fn().mockResolvedValue(user),
+            findByPhone: jest.fn(),
+            createByPhone: jest.fn(),
+          },
         },
         {
           provide: TokenDenylistService,
           useValue: { revoke: jest.fn().mockResolvedValue(undefined), isRevoked: jest.fn() },
+        },
+        {
+          provide: OtpService,
+          useValue: { issue: jest.fn(), verify: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: ConfigService,
@@ -89,6 +99,38 @@ describe('AuthService', () => {
     sessions = moduleRef.get(RefreshSessionRepository);
     users = moduleRef.get(UsersRepository);
     denylist = moduleRef.get(TokenDenylistService);
+    otp = moduleRef.get(OtpService);
+  });
+
+  describe('loginWithPhone', () => {
+    it('verifies the OTP and issues a token pair for an existing user', async () => {
+      users.findByPhone.mockResolvedValue(user);
+
+      const pair = await service.loginWithPhone(user.phone, '1234', {});
+
+      expect(otp.verify).toHaveBeenCalledWith(user.phone, '1234');
+      expect(users.createByPhone).not.toHaveBeenCalled();
+      expect(pair.accessToken).toBe('signed.jwt');
+    });
+
+    it('creates the user on first login', async () => {
+      users.findByPhone.mockResolvedValue(null);
+      users.createByPhone.mockResolvedValue(user);
+
+      const pair = await service.loginWithPhone(user.phone, '1234', {});
+
+      expect(users.createByPhone).toHaveBeenCalledWith(user.phone);
+      expect(pair.accessToken).toBe('signed.jwt');
+    });
+
+    it('propagates OTP verification failure without touching users', async () => {
+      otp.verify.mockRejectedValue(new UnauthenticatedException('Invalid OTP'));
+
+      await expect(service.loginWithPhone(user.phone, '0000', {})).rejects.toBeInstanceOf(
+        UnauthenticatedException,
+      );
+      expect(users.findByPhone).not.toHaveBeenCalled();
+    });
   });
 
   describe('issueTokenPair', () => {

@@ -14,7 +14,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
  *    explicit `deletedAt` condition) in `where` — the spread below lets an
  *    explicit condition win.
  */
-const SOFT_DELETE_MODELS: ReadonlySet<Prisma.ModelName> = new Set(['User']);
+const SOFT_DELETE_MODELS: ReadonlySet<Prisma.ModelName> = new Set(['User', 'Address']);
 
 function isSoftDeletable(model: string): boolean {
   return SOFT_DELETE_MODELS.has(model as Prisma.ModelName);

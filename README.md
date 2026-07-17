@@ -1,7 +1,7 @@
 # ELK Business Hub — Backend
 
 Production backend foundation for the ELK Business Hub super-app.
-**NestJS · TypeScript (strict) · PostgreSQL + Prisma · Redis · Socket.IO · pnpm**
+**NestJS · TypeScript (strict) · MySQL + Prisma · Redis · Socket.IO · npm**
 
 New here? Read [docs/architecture.md](docs/architecture.md) first, then
 [docs/conventions.md](docs/conventions.md) before adding a module.
@@ -9,24 +9,23 @@ New here? Read [docs/architecture.md](docs/architecture.md) first, then
 ## Quick start
 
 ```bash
-# 1. prerequisites: Node ≥ 20.11, Docker, corepack enabled
-corepack enable
+# 1. prerequisites: Node ≥ 20.11, Docker
 
 # 2. dependencies
-pnpm install
+npm install
 
-# 3. local Postgres + Redis
+# 3. local MySQL + Redis
 docker compose up -d
 
 # 4. environment
 cp .env.example .env          # defaults match docker-compose
 
 # 5. database
-pnpm db:migrate               # apply migrations (creates them in dev)
-pnpm db:seed                  # demo users
+npm run db:migrate            # apply migrations (creates them in dev)
+npm run db:seed               # demo users
 
 # 6. run
-pnpm start:dev                # hot reload on :3000
+npm run start:dev             # hot reload on :3000
 ```
 
 - API base: `http://localhost:3000/api/v1`
@@ -35,16 +34,16 @@ pnpm start:dev                # hot reload on :3000
 
 ## Scripts
 
-| Script                           | Purpose                                              |
-| -------------------------------- | ---------------------------------------------------- |
-| `pnpm start:dev`                 | dev server with hot reload                           |
-| `pnpm build` / `pnpm start:prod` | compile / run production build                       |
-| `pnpm lint` / `pnpm lint:fix`    | ESLint (includes architecture rules)                 |
-| `pnpm typecheck`                 | strict `tsc --noEmit`                                |
-| `pnpm test`                      | unit tests (mocked boundaries)                       |
-| `pnpm test:integration`          | full stack against Testcontainers (needs Docker)     |
-| `pnpm db:migrate` / `db:deploy`  | create+apply migrations (dev) / apply only (CI/prod) |
-| `pnpm db:seed` / `db:studio`     | seed demo data / browse DB                           |
+| Script                                     | Purpose                                              |
+| ------------------------------------------ | ---------------------------------------------------- |
+| `npm run start:dev`                        | dev server with hot reload                           |
+| `npm run build` / `npm run start:prod`     | compile / run production build                       |
+| `npm run lint` / `npm run lint:fix`        | ESLint (includes architecture rules)                 |
+| `npm run typecheck`                        | strict `tsc --noEmit`                                |
+| `npm test`                                 | unit tests (mocked boundaries)                       |
+| `npm run test:integration`                 | full stack against Testcontainers (needs Docker)     |
+| `npm run db:migrate` / `npm run db:deploy` | create+apply migrations (dev) / apply only (CI/prod) |
+| `npm run db:seed` / `npm run db:studio`    | seed demo data / browse DB                           |
 
 ## Environment
 
@@ -92,11 +91,11 @@ docker build -t elk-backend .
 docker compose --profile full up   # full stack locally
 ```
 
-Migrations run as a deploy step (`pnpm db:deploy`), never at container start.
+Migrations run as a deploy step (`npm run db:deploy`), never at container start.
 
 ## Testing strategy
 
 - **Unit** (`test/unit`): services with repositories/infrastructure mocked at
   their interfaces. Fast, run on every commit.
 - **Integration** (`test/integration`): the real HTTP pipeline against real
-  Postgres/Redis via Testcontainers — no mocked databases.
+  MySQL/Redis via Testcontainers — no mocked databases.

@@ -1,19 +1,18 @@
-# Local development: `docker compose up -d` starts Postgres + Redis.
+# Local development: `docker compose up -d` starts MySQL + Redis.
 # `docker compose --profile full up` also builds and runs the API container.
 services:
-  postgres:
-    image: postgres:17-alpine
+  mysql:
+    image: mysql:8.4
     environment:
-      POSTGRES_USER: elk
-      POSTGRES_PASSWORD: elk
-      POSTGRES_DB: elk
+      MYSQL_ROOT_PASSWORD: elk
+      MYSQL_DATABASE: elk
     ports:
-      # host 5433 → avoids colliding with a locally installed Postgres
-      - '5433:5432'
+      # host 3307 → avoids colliding with a locally installed MySQL
+      - '3307:3306'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U elk -d elk']
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-pelk']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -37,16 +36,16 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://elk:elk@postgres:5432/elk?schema=public
+      DATABASE_URL: mysql://root:elk@mysql:3306/elk
       REDIS_URL: redis://redis:6379
       JWT_ACCESS_SECRET: local-compose-secret-do-not-use-in-production-1234
       CORS_ORIGINS: http://localhost:3000
       LOG_LEVEL: info
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
 
 volumes:
-  pgdata:
+  mysqldata:

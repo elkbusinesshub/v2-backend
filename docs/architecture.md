@@ -11,7 +11,7 @@ HTTP request
   → Controller     (thin: parse → service → ApiResponse)
   → Service        (business logic; throws DomainException subclasses)
   → Repository     (the ONLY layer touching Prisma — enforced by ESLint)
-  → PostgreSQL
+  → MySQL
   ← EnvelopeInterceptor (success envelope)
   ← AllExceptionsFilter (error envelope, single source of error responses)
 ```

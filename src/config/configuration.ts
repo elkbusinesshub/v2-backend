@@ -29,6 +29,10 @@ export function configuration() {
       accessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
       refreshTtlDays: env.JWT_REFRESH_TTL_DAYS,
     },
+    otp: {
+      ttlSeconds: env.OTP_TTL_SECONDS,
+      resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+    },
     throttle: {
       ttlSeconds: env.THROTTLE_TTL_SECONDS,
       limit: env.THROTTLE_LIMIT,

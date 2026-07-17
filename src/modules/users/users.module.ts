@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
+import { UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
+import { UsersService } from './users.service';
 
-/**
- * Foundation only: exposes the repository for other modules (auth).
- * User-facing endpoints/services arrive with the registration feature.
- */
 @Module({
-  providers: [UsersRepository],
+  controllers: [UsersController],
+  providers: [UsersService, UsersRepository],
   exports: [UsersRepository],
 })
 export class UsersModule {}

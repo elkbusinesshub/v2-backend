@@ -1,24 +1,18 @@
 # syntax=docker/dockerfile:1
 
-# ── base: node + pnpm (pinned via package.json packageManager) ───────────────
+# ── base: node ────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS base
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
 WORKDIR /app
 
 # ── deps: full install (dev deps needed to build) ────────────────────────────
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,id=npm,target=/root/.npm npm ci
 
 # ── build: prisma client + compiled dist, then drop dev deps ─────────────────
-# pnpm's symlinked node_modules keeps the generated Prisma client inside the
-# .pnpm store, so we prune this stage to prod deps and ship its node_modules
-# (client included) instead of doing a separate prod-only install.
 FROM deps AS build
 COPY . .
-RUN pnpm prisma generate && pnpm build && pnpm prune --prod
+RUN npx prisma generate && npm run build && npm prune --omit=dev
 
 # ── runner: minimal, non-root ────────────────────────────────────────────────
 FROM node:22-alpine AS runner
@@ -37,5 +31,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# migrations run as a deploy step (pnpm db:deploy), NOT at container start
+# migrations run as a deploy step (npm run db:deploy), NOT at container start
 CMD ["node", "-r", "tsconfig-paths/register", "dist/main.js"]

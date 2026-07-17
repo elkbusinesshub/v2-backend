@@ -35,24 +35,23 @@ Rules:
 - Commits: Conventional Commits (`feat(auth): add OTP verification`) —
   enforced by commitlint.
 
-## Indexing guidelines (Postgres)
+## Indexing guidelines (MySQL)
 
-- Index every foreign key (`@@index([userId])`) — Postgres does not do this
-  automatically.
+- Index every foreign key (`@@index([userId])`) — InnoDB adds one implicitly
+  when none exists, but the explicit index keeps it visible in the schema.
 - Index columns used in `WHERE` / `ORDER BY` of hot queries; composite indexes
   match the query's column order, most-selective first.
-- Soft-deleted tables: queries always filter `deletedAt IS NULL`; for large
-  tables add a partial index, e.g.
-  `CREATE INDEX ... ON users (phone) WHERE deleted_at IS NULL;`
-  (create via a manual migration).
+- Soft-deleted tables: queries always filter `deletedAt IS NULL`; MySQL has no
+  partial indexes — for large tables lead a composite index with the filter
+  column instead, e.g. `@@index([deletedAt, phone])`.
 - Never add speculative indexes — they tax every write. Add them with the
   query that needs them, verified by `EXPLAIN ANALYZE`.
 
 ## Migrations
 
-- Dev: `pnpm db:migrate` (generates SQL under `prisma/migrations/`, reviewed
+- Dev: `npm run db:migrate` (generates SQL under `prisma/migrations/`, reviewed
   in the PR like any code).
-- CI/prod: `pnpm db:deploy` (applies committed migrations only) as a release
+- CI/prod: `npm run db:deploy` (applies committed migrations only) as a release
   step, before the new app version starts.
 - Never edit an applied migration; write a new one.
 

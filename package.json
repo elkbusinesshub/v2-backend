@@ -1,10 +1,9 @@
 {
   "name": "elk-backend",
   "version": "0.1.0",
-  "description": "ELK Business Hub — production backend foundation (NestJS, Prisma, PostgreSQL, Redis, Socket.IO)",
+  "description": "ELK Business Hub — production backend foundation (NestJS, Prisma, MySQL, Redis, Socket.IO)",
   "private": true,
   "license": "UNLICENSED",
-  "packageManager": "pnpm@10.14.0",
   "engines": {
     "node": ">=20.11"
   },
@@ -31,18 +30,6 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/client",
-      "@prisma/engines",
-      "argon2",
-      "cpu-features",
-      "esbuild",
-      "msgpackr-extract",
-      "prisma",
-      "ssh2"
-    ]
-  },
   "lint-staged": {
     "*.ts": [
       "eslint --fix",
@@ -68,7 +55,6 @@
     "@nestjs/websockets": "^11.0.0",
     "@prisma/client": "^6.1.0",
     "@socket.io/redis-adapter": "^8.3.0",
-    "argon2": "^0.41.1",
     "bullmq": "^5.30.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -91,7 +77,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.0",
-    "@testcontainers/postgresql": "^10.16.0",
+    "@testcontainers/mysql": "^10.16.0",
     "@types/compression": "^1.7.5",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",

@@ -1,40 +1,42 @@
 import { execSync } from 'node:child_process';
-import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { MySqlContainer, StartedMySqlContainer } from '@testcontainers/mysql';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Role, type User } from '@prisma/client';
+import type Redis from 'ioredis';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
 /**
  * Full-stack integration: real Nest app (production pipeline via
- * configureApp) + real PostgreSQL + real Redis from Testcontainers.
+ * configureApp) + real MySQL + real Redis from Testcontainers.
  * Covers: envelope shape, guard behaviour, refresh rotation, reuse
  * detection (family revocation), logout denylist.
  */
 describe('Auth (integration)', () => {
-  let postgres: StartedPostgreSqlContainer;
+  let mysql: StartedMySqlContainer;
   let redis: StartedTestContainer;
   let app: NestExpressApplication;
   let user: User;
+  let redisClient: Redis;
   // resolved lazily so env vars are set before src/config is imported
   let authService: import('@/modules/auth/auth.service').AuthService;
 
   beforeAll(async () => {
-    [postgres, redis] = await Promise.all([
-      new PostgreSqlContainer('postgres:17-alpine').start(),
+    [mysql, redis] = await Promise.all([
+      new MySqlContainer('mysql:8.4').start(),
       new GenericContainer('redis:7-alpine').withExposedPorts(6379).start(),
     ]);
 
     process.env.NODE_ENV = 'test';
-    process.env.DATABASE_URL = postgres.getConnectionUri();
+    process.env.DATABASE_URL = mysql.getConnectionUri();
     process.env.REDIS_URL = `redis://${redis.getHost()}:${redis.getMappedPort(6379)}`;
     process.env.JWT_ACCESS_SECRET = 'integration-test-secret-with-enough-entropy-123456';
     process.env.SWAGGER_ENABLED = 'false';
     process.env.LOG_LEVEL = 'warn';
 
-    execSync('pnpm exec prisma migrate deploy', {
+    execSync('npx prisma migrate deploy', {
       env: process.env,
       stdio: 'inherit',
     });
@@ -43,6 +45,7 @@ describe('Auth (integration)', () => {
     const { configureApp } = await import('@/app.setup');
     const { AuthService } = await import('@/modules/auth/auth.service');
     const { PRISMA } = await import('@/database/prisma.constants');
+    const { REDIS_CLIENT } = await import('@/cache/redis.constants');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestExpressApplication>();
@@ -50,6 +53,7 @@ describe('Auth (integration)', () => {
     await app.init();
 
     authService = app.get(AuthService);
+    redisClient = app.get<Redis>(REDIS_CLIENT);
     const prisma = app.get<import('@/database/prisma.extension').ExtendedPrismaClient>(PRISMA);
     user = await prisma.user.create({
       data: { phone: '+971509999999', name: 'Integration User', roles: [Role.USER] },
@@ -58,7 +62,7 @@ describe('Auth (integration)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await Promise.all([postgres?.stop(), redis?.stop()]);
+    await Promise.all([mysql?.stop(), redis?.stop()]);
   });
 
   const http = (): App => app.getHttpServer();
@@ -66,6 +70,39 @@ describe('Auth (integration)', () => {
   it('GET /health/ready reports dependencies up', async () => {
     const res = await request(http()).get('/health/ready').expect(200);
     expect(res.body).toEqual({ status: 'ok', checks: { database: 'up', redis: 'up' } });
+  });
+
+  it('requests and verifies an OTP, creating the user on first login', async () => {
+    const phone = '+971501112222';
+
+    const requestRes = await request(http())
+      .post('/api/v1/auth/otp/request')
+      .send({ phone })
+      .expect(200);
+    expect(requestRes.body.data.resendInSeconds).toBeGreaterThan(0);
+
+    const code = await redisClient.get(`auth:otp:${phone}`);
+    expect(code).toMatch(/^\d{4}$/);
+
+    const verifyRes = await request(http())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, otp: code })
+      .expect(200);
+    expect(verifyRes.body).toMatchObject({ success: true, data: { tokenType: 'Bearer' } });
+
+    // the code is single-use
+    await request(http()).post('/api/v1/auth/otp/verify').send({ phone, otp: code }).expect(401);
+  });
+
+  it('rejects an incorrect OTP with the error envelope', async () => {
+    const phone = '+971503334444';
+    await request(http()).post('/api/v1/auth/otp/request').send({ phone }).expect(200);
+
+    const res = await request(http())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, otp: '0000' })
+      .expect(401);
+    expect(res.body).toMatchObject({ success: false, error: 'UNAUTHENTICATED' });
   });
 
   it('rejects an unauthenticated request with the error envelope', async () => {
