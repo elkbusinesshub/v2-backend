@@ -23,25 +23,30 @@ enum Role {
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
 model User {
-  id           String    @id @default(uuid(7)) @db.Char(36)
-  phone        String?   @unique
-  email        String?   @unique
+  id       String  @id @default(uuid(7)) @db.Char(36)
+  phone    String? @unique
+  email    String? @unique
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
-  name         String?
+  name     String?
   /// JSON array of `Role` values — MySQL has no enum arrays. Narrowed back to
   /// Role[] at the auth boundary (see src/common/utils/roles.ts).
-  roles        Json      @default("[\"USER\"]")
+  roles    Json    @default("[\"USER\"]")
   /// ISO 639-1 code of the user's preferred app language
-  language     String    @default("en")
+  language String  @default("en")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  sessions  RefreshSession[]
-  addresses Address[]
-  bookings  Booking[]
+  sessions       RefreshSession[]
+  addresses      Address[]
+  bookings       Booking[]
+  stays          Stay[]           @relation("ProviderStays")
+  stayBookings   StayBooking[]
+  stayFavorites  StayFavorite[]
+  rentalCars     RentalCar[]      @relation("ProviderRentalCars")
+  rentalBookings RentalBooking[]
 
   @@index([deletedAt])
   @@map("users")
@@ -75,14 +80,14 @@ model RefreshSession {
 /// backend just stores whatever the client resolved, no server-side
 /// geocoding. Soft-deletable (see src/database/prisma.extension.ts).
 model Address {
-  id               String    @id @default(uuid(7)) @db.Char(36)
-  userId           String    @db.Char(36)
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String  @id @default(uuid(7)) @db.Char(36)
+  userId           String  @db.Char(36)
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   label            String
   formattedAddress String
   lat              Float
   lng              Float
-  isDefault        Boolean   @default(false)
+  isDefault        Boolean @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -115,20 +120,20 @@ model ServiceCategory {
 /// seeded display values for now — they become relations/aggregates when the
 /// provider and review modules exist.
 model Service {
-  id         String          @id @default(uuid(7)) @db.Char(36)
-  categoryId String          @db.Char(36)
-  category   ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  slug       String          @unique
-  name       String
-  icon       String
-  badge      String?
-  description String         @db.Text
-  price      Decimal         @db.Decimal(10, 2)
-  priceUnit  String
+  id            String          @id @default(uuid(7)) @db.Char(36)
+  categoryId    String          @db.Char(36)
+  category      ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  slug          String          @unique
+  name          String
+  icon          String
+  badge         String?
+  description   String          @db.Text
+  price         Decimal         @db.Decimal(10, 2)
+  priceUnit     String
   durationLabel String
   teamSizeLabel String
   /// JSON array of strings shown as "What's included"
-  included   Json            @default("[]")
+  included      Json            @default("[]")
 
   providerName       String
   providerExperience String
@@ -175,4 +180,352 @@ model Booking {
   @@index([userId])
   @@index([serviceId])
   @@map("bookings")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ELK Stay module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum StayCategoryType {
+  PG_STAY
+  MENS_HOSTEL
+  WOMENS_HOSTEL
+  HOMESTAY
+}
+
+enum StayBookingType {
+  STAY
+  VISIT
+}
+
+enum StayBookingStatus {
+  PENDING
+  VISIT_BOOKED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+/// A property listing (PG, hostel, homestay). Soft-deletable.
+/// Gradient colors are ARGB values like 0xFF1C5044 — they exceed a 4-byte
+/// Int, hence BigInt (serialized to JSON numbers in the mapping layer).
+model Stay {
+  id            String           @id @default(uuid(7)) @db.Char(36)
+  /// stable human key — makes seeding idempotent and URLs debuggable
+  slug          String           @unique
+  providerId    String?          @db.Char(36)
+  provider      User?            @relation("ProviderStays", fields: [providerId], references: [id])
+  name          String
+  categoryType  StayCategoryType
+  badge         String
+  /// display summary shown on cards, e.g. "Single room"
+  roomType      String
+  location      String
+  fullAddress   String
+  /// static until the geo layer computes this from lat/lng + user position
+  distanceKm    Decimal          @db.Decimal(6, 2)
+  latitude      Decimal?         @db.Decimal(9, 6)
+  longitude     Decimal?         @db.Decimal(9, 6)
+  /// starting-from price (min of room options), denormalized for list cards
+  pricePerMonth Int
+  /// denormalized aggregate; reviews module will maintain it later
+  rating        Decimal          @default(0) @db.Decimal(2, 1)
+  isVerified    Boolean          @default(false)
+  description   String           @db.Text
+  gradientStart BigInt
+  gradientEnd   BigInt
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  amenities   StayAmenity[]
+  roomOptions StayRoomOption[]
+  bookings    StayBooking[]
+  favorites   StayFavorite[]
+
+  @@index([categoryType])
+  @@index([providerId])
+  @@index([isVerified])
+  @@index([deletedAt])
+  @@map("stays")
+}
+
+model StayAmenity {
+  id        String @id @default(uuid(7)) @db.Char(36)
+  stayId    String @db.Char(36)
+  stay      Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  iconKey   String
+  label     String
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stayId])
+  @@map("stay_amenities")
+}
+
+model StayRoomOption {
+  id            String @id @default(uuid(7)) @db.Char(36)
+  stayId        String @db.Char(36)
+  stay          Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  kind          String
+  subtitle      String
+  pricePerMonth Int
+  sortOrder     Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings StayBooking[]
+
+  @@index([stayId])
+  @@map("stay_room_options")
+}
+
+/// One row per visit request or stay reservation. Money amounts are integers
+/// in the app currency's main unit (matching frontend display). Payment is
+/// recorded inline as a mock/internal charge until the payments module owns
+/// real payment tables. Cancellation is a status, not a delete.
+model StayBooking {
+  id             String            @id @default(uuid(7)) @db.Char(36)
+  /// user-facing reference shown on the success ticket, e.g. ELK-7GK2P
+  code           String            @unique
+  userId         String            @db.Char(36)
+  user           User              @relation(fields: [userId], references: [id])
+  stayId         String            @db.Char(36)
+  stay           Stay              @relation(fields: [stayId], references: [id])
+  roomOptionId   String?           @db.Char(36)
+  roomOption     StayRoomOption?   @relation(fields: [roomOptionId], references: [id])
+  type           StayBookingType
+  status         StayBookingStatus
+  moveInDate     DateTime?         @db.Date
+  durationMonths Int?
+  visitAt        DateTime?
+  rentPerMonth   Int?
+  depositAmount  Int?
+  serviceFee     Int?
+  discountAmount Int               @default(0)
+  couponCode     String?
+  totalPaid      Int?
+  paymentMethod  String?
+  paymentRef     String?
+  paidAt         DateTime?
+  nextDueDate    DateTime?         @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([stayId])
+  @@index([roomOptionId])
+  @@index([status])
+  @@map("stay_bookings")
+}
+
+model StayCoupon {
+  id             String  @id @default(uuid(7)) @db.Char(36)
+  code           String  @unique
+  discountAmount Int
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("stay_coupons")
+}
+
+model StayFavorite {
+  id     String @id @default(uuid(7)) @db.Char(36)
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stayId String @db.Char(36)
+  stay   Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, stayId])
+  @@index([stayId])
+  @@map("stay_favorites")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Car Rental module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum RentalCarCategory {
+  SEDAN
+  SUV
+  LUXURY
+}
+
+enum RentalType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RentalFulfilment {
+  PICKUP
+  DELIVERY
+}
+
+enum RentalBookingStatus {
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+/// A rentable vehicle. Soft-deletable.
+model RentalCar {
+  id           String            @id @default(uuid(7)) @db.Char(36)
+  slug         String            @unique
+  providerId   String?           @db.Char(36)
+  provider     User?             @relation("ProviderRentalCars", fields: [providerId], references: [id])
+  name         String
+  category     RentalCarCategory
+  /// SVG asset key the app renders, e.g. "rental_sedan"
+  iconKey      String
+  seats        Int
+  transmission String
+  fuel         String
+  /// denormalized aggregate; reviews module will maintain it later
+  rating       Decimal           @default(0) @db.Decimal(2, 1)
+  pricePerDay  Int
+  /// "BEST DEAL" | "PREMIUM" | null — rendered verbatim by the app
+  badge        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  bookings RentalBooking[]
+
+  @@index([category])
+  @@index([providerId])
+  @@index([deletedAt])
+  @@map("rental_cars")
+}
+
+/// Self-pickup branch locations.
+model RentalBranch {
+  id            String @id @default(uuid(7)) @db.Char(36)
+  slug          String @unique
+  name          String
+  address       String
+  /// static display label, e.g. "1.2 km" — becomes computed when geo lands
+  distanceLabel String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings RentalBooking[]
+
+  @@map("rental_branches")
+}
+
+/// Add-ons priced per rental day (protection, extra driver, …).
+model RentalExtra {
+  id          String  @id @default(uuid(7)) @db.Char(36)
+  key         String  @unique
+  name        String
+  description String
+  pricePerDay Int
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookingExtras RentalBookingExtra[]
+
+  @@map("rental_extras")
+}
+
+/// Percentage promo codes for rentals (ELK10 = 10%).
+model RentalPromo {
+  id       String  @id @default(uuid(7)) @db.Char(36)
+  code     String  @unique
+  percent  Int
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rental_promos")
+}
+
+/// One rental order with a full price snapshot (amounts in AED). Status flow:
+/// CONFIRMED → ACTIVE (pickup confirmed) → COMPLETED (return confirmed,
+/// late fee applied if overdue); CONFIRMED → CANCELLED (free cancellation
+/// before pickup, mock refund recorded via refundedAt).
+model RentalBooking {
+  id               String           @id @default(uuid(7)) @db.Char(36)
+  /// user-facing reference on the success ticket, e.g. ELK-48213
+  code             String           @unique
+  userId           String           @db.Char(36)
+  user             User             @relation(fields: [userId], references: [id])
+  carId            String           @db.Char(36)
+  car              RentalCar        @relation(fields: [carId], references: [id])
+  rentalType       RentalType
+  fulfilment       RentalFulfilment
+  branchId         String?          @db.Char(36)
+  branch           RentalBranch?    @relation(fields: [branchId], references: [id])
+  deliveryAddress  String?
+  deliveryBuilding String?
+  deliveryNotes    String?
+  pickupAt         DateTime
+  returnAt         DateTime
+  actualPickupAt   DateTime?
+  actualReturnAt   DateTime?
+
+  days          Int
+  dailyRate     Int
+  rentalTotal   Int
+  deliveryFee   Int
+  extrasTotal   Int
+  subtotal      Int
+  promoCode     String?
+  promoDiscount Int     @default(0)
+  vatAmount     Int
+  totalAmount   Int
+  lateFee       Int     @default(0)
+
+  status        RentalBookingStatus
+  paymentMethod String
+  paymentRef    String?
+  paidAt        DateTime?
+  refundedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  extras RentalBookingExtra[]
+
+  @@index([userId])
+  @@index([carId, status])
+  @@index([branchId])
+  @@index([status])
+  @@map("rental_bookings")
+}
+
+/// Extras chosen on a booking, with the per-day price snapshotted at booking
+/// time — later catalog price changes must not rewrite history.
+model RentalBookingExtra {
+  id          String        @id @default(uuid(7)) @db.Char(36)
+  bookingId   String        @db.Char(36)
+  booking     RentalBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  extraId     String        @db.Char(36)
+  extra       RentalExtra   @relation(fields: [extraId], references: [id])
+  name        String
+  pricePerDay Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, extraId])
+  @@index([extraId])
+  @@map("rental_booking_extras")
 }
