@@ -47,6 +47,8 @@ model User {
   stayFavorites  StayFavorite[]
   rentalCars     RentalCar[]      @relation("ProviderRentalCars")
   rentalBookings RentalBooking[]
+  cleanBookings  CleanBooking[]
+  porterBookings PorterBooking[]
 
   @@index([deletedAt])
   @@map("users")
@@ -528,4 +530,296 @@ model RentalBookingExtra {
   @@unique([bookingId, extraId])
   @@index([extraId])
   @@map("rental_booking_extras")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ELK Clean module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum CleanBookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum CleanPromoKind {
+  PERCENT
+  FIXED
+}
+
+/// A cleaning vertical tile on the ELK Clean home grid (Home Cleaning,
+/// Water Tank, Sofa & Upholstery, ...).
+model CleanCategory {
+  id        String  @id @default(uuid(7)) @db.Char(36)
+  /// stable wire id used by the app's tiles, e.g. "tnk"
+  slug      String  @unique
+  /// SKU prefix for services in this category, e.g. "TNK"
+  code      String
+  label     String
+  blurb     String
+  /// SVG asset key the app renders, e.g. "ic_water_tank"
+  iconKey   String
+  /// yellow tile badge, e.g. "40% Off"
+  badge     String?
+  /// featured (starred) tile on the home grid
+  star      Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services CleanService[]
+
+  @@map("clean_categories")
+}
+
+/// A bookable cleaning service. Prices are integer AED per unit (per seat /
+/// per room / per kg — the unit lives in the name & duration labels).
+/// Deactivation (isActive) is the retirement mechanism — history keeps
+/// snapshots, so no soft delete needed.
+model CleanService {
+  id            String        @id @default(uuid(7)) @db.Char(36)
+  /// human SKU shown across the app, e.g. "CLN-01"
+  code          String        @unique
+  categoryId    String        @db.Char(36)
+  category      CleanCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  price         Int
+  durationLabel String
+  /// "Popular" | "Featured" | null — list-card ribbon
+  tag           String?
+  /// JSON array of strings — the "what's included" checklist
+  checklist     Json
+  /// JSON array of strings — process timeline (water-tank flow); null when N/A
+  steps         Json?
+  isActive      Boolean       @default(true)
+  sortOrder     Int           @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookingItems CleanBookingItem[]
+
+  @@index([categoryId])
+  @@map("clean_services")
+}
+
+/// Home-screen offer card (display content; the promo code on it is
+/// redeemable via CleanPromo).
+model CleanOffer {
+  id            String  @id @default(uuid(7)) @db.Char(36)
+  title         String
+  /// e.g. "Up to 60% off" / "AED 70 off"
+  discountLabel String
+  promoCode     String
+  /// speed chip, e.g. "60" + "MINUTES" or "Same" + "DAY"
+  timeLabel     String
+  timeUnit      String
+  categoryLabel String
+  iconKey       String
+  sortOrder     Int     @default(0)
+  isActive      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clean_offers")
+}
+
+/// Redeemable promo codes for cleans — percentage (SOFA50 = 50%) or fixed
+/// AED amount (DEEP70 = AED 70 off the service subtotal).
+model CleanPromo {
+  id       String         @id @default(uuid(7)) @db.Char(36)
+  code     String         @unique
+  kind     CleanPromoKind
+  value    Int
+  isActive Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clean_promos")
+}
+
+/// One cleaning order (multi-service cart). Prices are snapshotted at
+/// booking time; the address is a text snapshot so later edits to the saved
+/// address never rewrite history. Payment is a mock/internal charge until
+/// the payments module exists. Cancellation is a status, not a delete.
+model CleanBooking {
+  id             String             @id @default(uuid(7)) @db.Char(36)
+  /// user-facing reference on the done screen, e.g. ELC-3391
+  code           String             @unique
+  userId         String             @db.Char(36)
+  user           User               @relation(fields: [userId], references: [id])
+  status         CleanBookingStatus
+  scheduledDate  DateTime           @db.Date
+  /// arrival-window start, e.g. "10:00"
+  timeSlot       String
+  /// scheduledDate + timeSlot in Gulf time — drives the 2h cancellation cutoff
+  scheduledAt    DateTime
+  addressLabel   String
+  addressText    String
+  subtotal       Int
+  supplyFee      Int
+  promoCode      String?
+  discountAmount Int                @default(0)
+  totalAmount    Int
+  paymentMethod  String
+  paymentRef     String?
+  paidAt         DateTime?
+  cancelledAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items CleanBookingItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("clean_bookings")
+}
+
+/// A cart line on a booking, with the unit price snapshotted at booking
+/// time — later catalog price changes must not rewrite history.
+model CleanBookingItem {
+  id        String       @id @default(uuid(7)) @db.Char(36)
+  bookingId String       @db.Char(36)
+  booking   CleanBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  serviceId String       @db.Char(36)
+  service   CleanService @relation(fields: [serviceId], references: [id])
+  name      String
+  unitPrice Int
+  quantity  Int
+  lineTotal Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId])
+  @@index([serviceId])
+  @@map("clean_booking_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ELK Porter module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum PorterBookingStatus {
+  CONFIRMED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+}
+
+/// A delivery vehicle class (Bike / Car / Truck). Money is Decimal(10,2)
+/// here — porter fares carry fils (AED 3.50 fee, 5% VAT), unlike the
+/// integer-priced verticals.
+model PorterVehicle {
+  id            String  @id @default(uuid(7)) @db.Char(36)
+  /// stable wire id the app selects by, e.g. "bike"
+  slug          String  @unique
+  name          String
+  /// legacy PorterVehicleModel renders `emoji`; the new cards use iconKey
+  emoji         String
+  iconKey       String
+  capacityLabel String
+  /// static arrival estimate until live dispatch exists
+  etaMinutes    Int
+  baseFare      Decimal @db.Decimal(10, 2)
+  /// "FASTEST" | null — rendered verbatim by the app
+  badge         String?
+  isActive      Boolean @default(true)
+  sortOrder     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings PorterBooking[]
+
+  @@map("porter_vehicles")
+}
+
+/// Flat-priced booking add-ons (loading helper, fragile handling, insurance).
+model PorterAddon {
+  id        String  @id @default(uuid(7)) @db.Char(36)
+  key       String  @unique
+  label     String
+  price     Decimal @db.Decimal(10, 2)
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookingAddons PorterBookingAddon[]
+
+  @@map("porter_addons")
+}
+
+/// One porter delivery. Addresses are text snapshots (client-side geocoding
+/// by decision); distance/ETA are static estimates until the maps layer
+/// exists. Payment is a mock/internal charge until the payments module owns
+/// real payment tables. Cancellation is a status, not a delete.
+model PorterBooking {
+  id            String              @id @default(uuid(7)) @db.Char(36)
+  /// tracking id on the success screen, e.g. ELK-4821-QF
+  code          String              @unique
+  userId        String              @db.Char(36)
+  user          User                @relation(fields: [userId], references: [id])
+  vehicleId     String              @db.Char(36)
+  vehicle       PorterVehicle       @relation(fields: [vehicleId], references: [id])
+  status        PorterBookingStatus
+  pickupAddress String
+  dropAddress   String
+  packageType   String?
+  weightLabel   String?
+  /// null = pick up now (ASAP); set = "schedule for later"
+  scheduledAt   DateTime?
+  /// display label of the chosen window, e.g. "9:00 – 10:00"
+  pickupWindow  String?
+  distanceKm    Decimal             @db.Decimal(6, 2)
+  etaMinutes    Int
+
+  baseFare    Decimal @db.Decimal(10, 2)
+  addonsTotal Decimal @db.Decimal(10, 2)
+  serviceFee  Decimal @db.Decimal(10, 2)
+  vatAmount   Decimal @db.Decimal(10, 2)
+  totalAmount Decimal @db.Decimal(10, 2)
+
+  paymentMethod String
+  paymentRef    String?
+  paidAt        DateTime?
+  pickedUpAt    DateTime?
+  deliveredAt   DateTime?
+  cancelledAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  addons PorterBookingAddon[]
+
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([status])
+  @@map("porter_bookings")
+}
+
+/// Add-ons chosen on a booking, price snapshotted at booking time — later
+/// catalog price changes must not rewrite history.
+model PorterBookingAddon {
+  id        String        @id @default(uuid(7)) @db.Char(36)
+  bookingId String        @db.Char(36)
+  booking   PorterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addonId   String        @db.Char(36)
+  addon     PorterAddon   @relation(fields: [addonId], references: [id])
+  label     String
+  price     Decimal       @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, addonId])
+  @@index([addonId])
+  @@map("porter_booking_addons")
 }

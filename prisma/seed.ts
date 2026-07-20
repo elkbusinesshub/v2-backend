@@ -1,4 +1,5 @@
 import {
+  CleanPromoKind,
   PrismaClient,
   RentalCarCategory,
   Role,
@@ -439,6 +440,368 @@ async function seedRentals(providerId: string): Promise<void> {
   });
 }
 
+// ─── ELK Clean fixtures (mirror elkclean_data.dart) ──────────────────────────
+
+const CLEAN_CATEGORIES = [
+  // prettier-ignore
+  { slug: 'cln', code: 'CLN', label: 'Home Cleaning', blurb: 'Standard, deep & move-out', iconKey: 'ic_home_clean', badge: null as string | null, star: false },
+  // prettier-ignore
+  { slug: 'deep', code: 'DCP', label: 'Deep Cleaning', blurb: 'Top-to-bottom detail clean', iconKey: 'ic_deep_clean', badge: '40% Off', star: false },
+  // prettier-ignore
+  { slug: 'tnk', code: 'TNK', label: 'Water Tank', blurb: 'Drain, scrub & disinfect', iconKey: 'ic_water_tank', badge: null, star: true },
+  // prettier-ignore
+  { slug: 'sof', code: 'SOF', label: 'Sofa & Upholstery', blurb: 'Shampoo & protect', iconKey: 'ic_sofa', badge: null, star: false },
+  // prettier-ignore
+  { slug: 'crp', code: 'CRP', label: 'Carpet & Rug', blurb: 'Steam deep clean', iconKey: 'ic_carpet', badge: null, star: false },
+  // prettier-ignore
+  { slug: 'kit', code: 'KIT', label: 'Kitchen Clean', blurb: 'Degrease & sanitise', iconKey: 'ic_kitchen', badge: null, star: false },
+  // prettier-ignore
+  { slug: 'bth', code: 'BTH', label: 'Bathroom Clean', blurb: 'Sanitise & descale', iconKey: 'ic_bath', badge: null, star: false },
+  // prettier-ignore
+  { slug: 'lndr', code: 'LND', label: 'Laundry & Iron', blurb: 'Wash, dry & press', iconKey: 'ic_laundry', badge: null, star: false },
+];
+
+interface CleanServiceSeed {
+  code: string;
+  name: string;
+  description: string;
+  price: number;
+  durationLabel: string;
+  tag?: string;
+  checklist: string[];
+  steps?: string[];
+}
+
+const CLEAN_SERVICES: Record<string, CleanServiceSeed[]> = {
+  cln: [
+    {
+      code: 'CLN-01',
+      name: 'Standard Home Cleaning',
+      description: 'Dusting, mopping & surface wipe-down.',
+      price: 79,
+      durationLabel: '2–3 hrs',
+      tag: 'Popular',
+      checklist: [
+        'Dust all surfaces & fittings',
+        'Vacuum & mop floors',
+        'Wipe doors, switches, skirting',
+        'Empty bins & tidy',
+      ],
+    },
+    {
+      code: 'CLN-02',
+      name: 'Deep Cleaning (Full Home)',
+      description: 'Top-to-bottom detailed clean.',
+      price: 199,
+      durationLabel: 'Half day',
+      checklist: [
+        'Everything in standard clean',
+        'Inside cabinets & appliances',
+        'Descale taps & fittings',
+        'Detail corners, vents & frames',
+        'Sanitise high-touch points',
+      ],
+    },
+    {
+      code: 'CLN-03',
+      name: 'Move-in / Move-out Clean',
+      description: 'Handover-ready spotless finish.',
+      price: 249,
+      durationLabel: 'Half day',
+      checklist: [
+        'Full deep clean of empty home',
+        'Inside all cupboards & drawers',
+        'Mark & scuff removal',
+        'Balcony & window tracks',
+      ],
+    },
+  ],
+  deep: [
+    {
+      code: 'DCP-01',
+      name: 'Full Home Deep Clean',
+      description: 'Top-to-bottom detail clean, inside & out.',
+      price: 199,
+      durationLabel: 'Half day',
+      tag: 'Popular',
+      checklist: [
+        'Everything in standard clean',
+        'Inside cabinets & appliances',
+        'Descale taps & fittings',
+        'Detail corners, vents & frames',
+        'Sanitise high-touch points',
+      ],
+    },
+    {
+      code: 'DCP-02',
+      name: 'Move-in / Move-out Clean',
+      description: 'Handover-ready spotless finish.',
+      price: 249,
+      durationLabel: 'Half day',
+      checklist: [
+        'Full deep clean of empty home',
+        'Inside all cupboards & drawers',
+        'Mark & scuff removal',
+        'Balcony & window tracks',
+      ],
+    },
+  ],
+  tnk: [
+    {
+      code: 'TNK-01',
+      name: 'Water Tank Cleaning – up to 1000L',
+      description: 'Drain, scrub, disinfect & refill.',
+      price: 149,
+      durationLabel: '60–90 min',
+      tag: 'Featured',
+      checklist: [
+        'Full drain & sludge removal',
+        'Manual scrub of walls & base',
+        'Anti-bacterial disinfection',
+        'Fresh water refill',
+        'Cleanliness photo report',
+      ],
+      steps: ['Inspect', 'Drain', 'Scrub', 'Disinfect', 'Refill', 'Report'],
+    },
+    {
+      code: 'TNK-02',
+      name: 'Large / Underground Tank – 1000L+',
+      description: 'For villas & buildings, per tank.',
+      price: 299,
+      durationLabel: '2–3 hrs',
+      checklist: [
+        'Confined-space trained crew',
+        'Full sediment & sludge removal',
+        'Pressure wash + disinfect',
+        'Refill & chlorination test',
+        'Hygiene certificate',
+      ],
+      steps: ['Inspect', 'Drain', 'Pressure wash', 'Disinfect', 'Refill', 'Certify'],
+    },
+    {
+      code: 'TNK-03',
+      name: 'Tank Disinfection Only',
+      description: 'Sanitise without full drain.',
+      price: 89,
+      durationLabel: '45 min',
+      checklist: [
+        'Surface skim & debris removal',
+        'Anti-bacterial fogging',
+        'Safe-to-use water test',
+      ],
+      steps: ['Inspect', 'Skim', 'Disinfect', 'Test'],
+    },
+  ],
+  sof: [
+    {
+      code: 'SOF-01',
+      name: 'Sofa Shampoo (per seat)',
+      description: 'Lift stains, odours & dust mites.',
+      price: 35,
+      durationLabel: '20 min/seat',
+      tag: 'Popular',
+      checklist: ['Pre-treat stains', 'Deep shampoo extraction', 'Deodorise & fast-dry'],
+    },
+    {
+      code: 'SOF-02',
+      name: 'Fabric Protection Coat',
+      description: 'Repels future spills & stains.',
+      price: 49,
+      durationLabel: '30 min',
+      checklist: ['Apply protective layer', 'Cure & buff', 'Spill-resistant finish'],
+    },
+  ],
+  crp: [
+    {
+      code: 'CRP-01',
+      name: 'Carpet Steam Clean (per room)',
+      description: 'Hot-water extraction deep clean.',
+      price: 69,
+      durationLabel: '45 min',
+      tag: 'Popular',
+      checklist: [
+        'Vacuum & pre-spray',
+        'Hot steam extraction',
+        'Spot-treat stains',
+        'Speed-dry pass',
+      ],
+    },
+    {
+      code: 'CRP-02',
+      name: 'Rug Deep Clean',
+      description: 'Per rug, collected if needed.',
+      price: 89,
+      durationLabel: 'By size',
+      checklist: ['Dust & beat out grit', 'Submersion wash', 'Fibre-safe dry & groom'],
+    },
+  ],
+  kit: [
+    {
+      code: 'KIT-01',
+      name: 'Kitchen Deep Clean',
+      description: 'Degrease every surface.',
+      price: 119,
+      durationLabel: '2 hrs',
+      tag: 'Popular',
+      checklist: [
+        'Degrease counters & backsplash',
+        'Inside & outside cabinets',
+        'Sink descale & polish',
+        'Floor scrub',
+      ],
+    },
+    {
+      code: 'KIT-02',
+      name: 'Oven & Hob Degrease',
+      description: 'Baked-on grime removal.',
+      price: 79,
+      durationLabel: '60 min',
+      checklist: ['Dismantle racks & trays', 'Soak & scrub', 'Polish glass & hob'],
+    },
+  ],
+  bth: [
+    {
+      code: 'BTH-01',
+      name: 'Bathroom Sanitation',
+      description: 'Descale, sanitise & shine.',
+      price: 59,
+      durationLabel: '45 min',
+      tag: 'Popular',
+      checklist: [
+        'Descale taps & glass',
+        'Disinfect toilet & basin',
+        'Scrub tiles & floor',
+        'Mirror & fittings polish',
+      ],
+    },
+    {
+      code: 'BTH-02',
+      name: 'Grout & Tile Restoration',
+      description: 'Bring tiles back to new.',
+      price: 99,
+      durationLabel: '90 min',
+      checklist: ['Deep-scrub grout lines', 'Mould & stain treatment', 'Seal & protect'],
+    },
+  ],
+  lndr: [
+    {
+      code: 'LND-01',
+      name: 'Wash & Iron (per kg)',
+      description: 'Wash, dry and press clothes to perfection.',
+      price: 12,
+      durationLabel: '24 hrs',
+      tag: 'Popular',
+      checklist: [
+        'Sort & pre-treat stains',
+        'Machine wash at correct temp',
+        'Tumble-dry & press',
+        'Fold & pack neatly',
+      ],
+    },
+    {
+      code: 'LND-02',
+      name: 'Dry Cleaning (per item)',
+      description: 'Professional dry cleaning for delicates.',
+      price: 25,
+      durationLabel: '48 hrs',
+      checklist: ['Inspect & tag items', 'Chemical clean', 'Steam press & finish'],
+    },
+    {
+      code: 'LND-03',
+      name: 'Curtain Cleaning',
+      description: 'Remove & rehang after full clean.',
+      price: 69,
+      durationLabel: '3–4 hrs',
+      checklist: ['Remove & label curtains', 'Steam or wash as needed', 'Press & rehang'],
+    },
+  ],
+};
+
+const CLEAN_OFFERS = [
+  // prettier-ignore
+  { title: 'Instant Tank Refresh', discountLabel: 'Up to 60% off', promoCode: 'TANK60', timeLabel: '60', timeUnit: 'MINUTES', categoryLabel: 'Water Tank', iconKey: 'ic_water_tank' },
+  // prettier-ignore
+  { title: 'Sofa & Carpet Revival', discountLabel: 'Flat 50% off', promoCode: 'SOFA50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Upholstery', iconKey: 'ic_sofa' },
+  // prettier-ignore
+  { title: 'Sparkling Deep Clean', discountLabel: 'AED 70 off', promoCode: 'DEEP70', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Deep Clean', iconKey: 'ic_deep_clean' },
+];
+
+const CLEAN_PROMOS = [
+  { code: 'TANK60', kind: CleanPromoKind.PERCENT, value: 60 },
+  { code: 'SOFA50', kind: CleanPromoKind.PERCENT, value: 50 },
+  { code: 'DEEP70', kind: CleanPromoKind.FIXED, value: 70 },
+];
+
+async function seedClean(): Promise<void> {
+  for (const [i, cat] of CLEAN_CATEGORIES.entries()) {
+    const category = await prisma.cleanCategory.upsert({
+      where: { slug: cat.slug },
+      update: {},
+      create: { ...cat, sortOrder: i },
+    });
+    for (const [j, svc] of (CLEAN_SERVICES[cat.slug] ?? []).entries()) {
+      await prisma.cleanService.upsert({
+        where: { code: svc.code },
+        update: {},
+        create: {
+          ...svc,
+          tag: svc.tag ?? null,
+          steps: svc.steps ?? undefined,
+          categoryId: category.id,
+          sortOrder: j,
+        },
+      });
+    }
+  }
+  for (const [i, offer] of CLEAN_OFFERS.entries()) {
+    const existing = await prisma.cleanOffer.findFirst({ where: { promoCode: offer.promoCode } });
+    if (!existing) {
+      await prisma.cleanOffer.create({ data: { ...offer, sortOrder: i } });
+    }
+  }
+  for (const promo of CLEAN_PROMOS) {
+    await prisma.cleanPromo.upsert({
+      where: { code: promo.code },
+      update: {},
+      create: promo,
+    });
+  }
+}
+
+// ─── ELK Porter fixtures (mirror porter_screen.dart / dummy_data.dart) ───────
+
+const PORTER_VEHICLES = [
+  // prettier-ignore
+  { slug: 'bike', name: 'Bike', emoji: '🏍️', iconKey: 'veh_bike', capacityLabel: 'Up to 5 kg', etaMinutes: 12, baseFare: 35, badge: 'FASTEST' as string | null },
+  // prettier-ignore
+  { slug: 'car', name: 'Car', emoji: '🚐', iconKey: 'veh_car', capacityLabel: 'Up to 100 kg', etaMinutes: 18, baseFare: 65, badge: null },
+  // prettier-ignore
+  { slug: 'truck', name: 'Truck', emoji: '🚚', iconKey: 'veh_truck', capacityLabel: 'Up to 3 Ton', etaMinutes: 25, baseFare: 180, badge: null },
+];
+
+const PORTER_ADDONS = [
+  { key: 'helper', label: 'Loading helper', price: 30 },
+  { key: 'fragile', label: 'Fragile handling', price: 15 },
+  { key: 'insure', label: 'Insurance', price: 10 },
+];
+
+async function seedPorter(): Promise<void> {
+  for (const [i, vehicle] of PORTER_VEHICLES.entries()) {
+    await prisma.porterVehicle.upsert({
+      where: { slug: vehicle.slug },
+      update: {},
+      create: { ...vehicle, sortOrder: i },
+    });
+  }
+  for (const [i, addon] of PORTER_ADDONS.entries()) {
+    await prisma.porterAddon.upsert({
+      where: { key: addon.key },
+      update: {},
+      create: { ...addon, sortOrder: i },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const demoUser = await prisma.user.upsert({
     where: { phone: '+971500000001' },
@@ -476,16 +839,23 @@ async function main(): Promise<void> {
   await seedStayCoupon();
   await seedStayBookings(demoUser.id);
   await seedRentals(provider.id);
+  await seedClean();
+  await seedPorter();
 
   const stays = await prisma.stay.count();
   const stayBookings = await prisma.stayBooking.count();
   const cars = await prisma.rentalCar.count();
+  const cleanServices = await prisma.cleanService.count();
 
   console.log(`Seeded users: ${demoUser.name} (${demoUser.id}), ${admin.name} (${admin.id})`);
   console.log(`Seeded catalog: ${catalog.length} categories, ${serviceCount} services`);
   console.log(
     `Seeded: ${stays} stays, ${stayBookings} stay bookings, ${cars} rental cars, coupons ELKNEW/ELK10`,
   );
+  console.log(
+    `Seeded clean: ${CLEAN_CATEGORIES.length} categories, ${cleanServices} services, promos TANK60/SOFA50/DEEP70`,
+  );
+  console.log(`Seeded porter: ${PORTER_VEHICLES.length} vehicles, ${PORTER_ADDONS.length} add-ons`);
 }
 
 main()
