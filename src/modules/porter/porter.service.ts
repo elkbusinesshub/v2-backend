@@ -7,6 +7,7 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
+import { LocationsRepository } from '@/modules/locations/locations.repository';
 import {
   PORTER_CODE_ALPHABET,
   PORTER_CODE_MIN,
@@ -49,6 +50,7 @@ export class PorterService {
   constructor(
     private readonly catalog: PorterCatalogRepository,
     private readonly bookings: PorterBookingsRepository,
+    private readonly locations: LocationsRepository,
   ) {}
 
   // ─── options (the exact payload the app's repository already fetches) ──────
@@ -125,6 +127,10 @@ export class PorterService {
   ): Promise<Record<string, unknown>> {
     const schedule = this.resolveSchedule(dto);
     const q = await this.resolveQuote(dto);
+    const [pickupAddress, dropAddress] = await Promise.all([
+      this.resolveAddress(user, dto.pickupAddressId, dto.pickupAddress),
+      this.resolveAddress(user, dto.dropAddressId, dto.dropAddress),
+    ]);
     const code = await this.generateCode();
 
     const booking = await this.bookings.create({
@@ -133,8 +139,8 @@ export class PorterService {
         userId: user.id,
         vehicleId: q.vehicle.id,
         status: PorterBookingStatus.CONFIRMED,
-        pickupAddress: dto.pickupAddress,
-        dropAddress: dto.dropAddress,
+        pickupAddress,
+        dropAddress,
         packageType: dto.packageType ?? null,
         weightLabel: dto.weightLabel ?? null,
         scheduledAt: schedule.scheduledAt,
@@ -218,6 +224,27 @@ export class PorterService {
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * A saved address (looked up scoped to the caller — a mismatched owner
+   * behaves like "not found") takes priority over freeform text, which
+   * covers the map-pick / current-location picker options that have no
+   * saved address id.
+   */
+  private async resolveAddress(
+    user: AuthUser,
+    addressId: string | undefined,
+    freeText: string | undefined,
+  ): Promise<string> {
+    if (!addressId) {
+      return freeText!;
+    }
+    const address = await this.locations.findByIdForUser(addressId, user.id);
+    if (!address) {
+      throw new ResourceNotFoundException('Address');
+    }
+    return address.formattedAddress;
+  }
 
   private async assertBookingExists(id: string) {
     const booking = await this.bookings.findById(id);

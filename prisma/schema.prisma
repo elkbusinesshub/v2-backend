@@ -23,32 +23,44 @@ enum Role {
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
 model User {
-  id       String  @id @default(uuid(7)) @db.Char(36)
-  phone    String? @unique
-  email    String? @unique
+  id            String  @id @default(uuid(7)) @db.Char(36)
+  phone         String? @unique
+  email         String? @unique
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
-  name     String?
+  name          String?
   /// JSON array of `Role` values — MySQL has no enum arrays. Narrowed back to
   /// Role[] at the auth boundary (see src/common/utils/roles.ts).
-  roles    Json    @default("[\"USER\"]")
+  roles         Json    @default("[\"USER\"]")
   /// ISO 639-1 code of the user's preferred app language
-  language String  @default("en")
+  language      String  @default("en")
+  /// Loyalty points balance — earned by leaving reviews, redeemable via offers.
+  rewardPoints  Int     @default(0)
+  /// ELK Wallet balance. Top-up/withdraw and /payments/charge (wallet method)
+  /// are the only things that move it — other verticals' "wallet" payment
+  /// option is a mock charge today and doesn't yet debit this balance.
+  walletBalance Decimal @default(0) @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  sessions       RefreshSession[]
-  addresses      Address[]
-  bookings       Booking[]
-  stays          Stay[]           @relation("ProviderStays")
-  stayBookings   StayBooking[]
-  stayFavorites  StayFavorite[]
-  rentalCars     RentalCar[]      @relation("ProviderRentalCars")
-  rentalBookings RentalBooking[]
-  cleanBookings  CleanBooking[]
-  porterBookings PorterBooking[]
+  sessions           RefreshSession[]
+  addresses          Address[]
+  bookings           Booking[]
+  stays              Stay[]              @relation("ProviderStays")
+  stayBookings       StayBooking[]
+  stayFavorites      StayFavorite[]
+  rentalCars         RentalCar[]         @relation("ProviderRentalCars")
+  rentalBookings     RentalBooking[]
+  cleanBookings      CleanBooking[]
+  porterBookings     PorterBooking[]
+  rideBookings       RideBooking[]
+  repairBookings     RepairBooking[]
+  reviews            Review[]
+  notifications      Notification[]
+  walletTransactions WalletTransaction[]
+  providerProfile    ProviderProfile?
 
   @@index([deletedAt])
   @@map("users")
@@ -178,6 +190,9 @@ model Booking {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  review       Review?
+  chatMessages ChatMessage[]
 
   @@index([userId])
   @@index([serviceId])
@@ -822,4 +837,459 @@ model PorterBookingAddon {
   @@unique([bookingId, addonId])
   @@index([addonId])
   @@map("porter_booking_addons")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Rides (Taxi) module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum RideBookingStatus {
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// A ride class (Auto / Economy / Premium / ELK XL). `baseFare` is the flat
+/// fare for the default trip estimate — there's no live meter yet, so it
+/// doubles as the total (matches the app's fixed per-class pricing).
+model RideType {
+  id              String  @id @default(uuid(7)) @db.Char(36)
+  /// stable wire id the app selects by, e.g. "auto"
+  slug            String  @unique
+  name            String
+  /// legacy RideTypeModel renders `emoji`; the new cards use iconKey (SVG)
+  emoji           String
+  iconKey         String
+  seats           Int
+  /// static arrival estimate until live dispatch exists
+  etaMinutes      Int
+  baseFare        Decimal @db.Decimal(10, 2)
+  /// informational only — no cancellation charge is processed yet
+  cancellationFee Decimal @db.Decimal(10, 2)
+  /// "FASTER" | "POPULAR" | null — rendered verbatim by the app
+  badge           String?
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings RideBooking[]
+
+  @@map("ride_types")
+}
+
+/// One ride booking. Addresses are text snapshots (client-side geocoding by
+/// decision); distance/ETA are static estimates until the maps layer exists.
+/// Driver fields are a stub — plain snapshot strings, not a relation, until
+/// a real driver/provider module exists (mirrors `Service.providerName`).
+/// The OTP is shown to the rider to hand to the driver at pickup, then
+/// verified server-side to start the trip. Payment is a mock/internal
+/// charge until the payments module owns real payment tables.
+model RideBooking {
+  id         String            @id @default(uuid(7)) @db.Char(36)
+  /// tracking id on the receipt, e.g. ELK-7GK2P4W
+  code       String            @unique
+  userId     String            @db.Char(36)
+  user       User              @relation(fields: [userId], references: [id])
+  rideTypeId String            @db.Char(36)
+  rideType   RideType          @relation(fields: [rideTypeId], references: [id])
+  status     RideBookingStatus @default(CONFIRMED)
+
+  pickupAddress String
+  dropAddress   String
+  distanceKm    Decimal @db.Decimal(6, 2)
+  etaMinutes    Int
+
+  driverName   String
+  vehicleLabel String
+  plateNumber  String
+  otpCode      String
+
+  fare            Decimal @db.Decimal(10, 2)
+  cancellationFee Decimal @db.Decimal(10, 2)
+  tipAmount       Decimal @default(0) @db.Decimal(10, 2)
+  ratingStars     Int?
+
+  paymentMethod String
+  paymentRef    String?
+  paidAt        DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([rideTypeId])
+  @@index([status])
+  @@map("ride_bookings")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ELK Rep (repair) module
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum RepairBookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum RepairPromoKind {
+  PERCENT
+  FIXED
+}
+
+/// A trade vertical on the ELK Rep home grid (AC & Cooling, Plumbing, ...).
+model RepairCategory {
+  id        String @id @default(uuid(7)) @db.Char(36)
+  /// stable wire id used by the app's tiles, e.g. "ac"
+  slug      String @unique
+  /// SKU prefix for services in this category, e.g. "AC"
+  code      String
+  label     String
+  blurb     String
+  /// SVG asset key the app renders, e.g. "ic_ac"
+  iconKey   String
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services RepairService[]
+
+  @@map("repair_categories")
+}
+
+/// A bookable repair job. Prices are integer AED per job. The "what's
+/// included" checklist is identical static copy across every service in the
+/// app (inspection, labour, parts, clean-up, warranty) — presentational
+/// text, not per-service data, so it isn't modeled as a column.
+model RepairService {
+  id            String         @id @default(uuid(7)) @db.Char(36)
+  /// human SKU shown across the app, e.g. "AC-01"
+  code          String         @unique
+  categoryId    String         @db.Char(36)
+  category      RepairCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  price         Int
+  durationLabel String
+  /// "Popular" | "Diagnostic" | null — list-card ribbon
+  tag           String?
+  isActive      Boolean        @default(true)
+  sortOrder     Int            @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookingItems RepairBookingItem[]
+
+  @@index([categoryId])
+  @@map("repair_services")
+}
+
+/// Home-screen offer card (display content; the promo code on it is
+/// redeemable via RepairPromo).
+model RepairOffer {
+  id            String  @id @default(uuid(7)) @db.Char(36)
+  title         String
+  /// e.g. "Up to 60% off" / "AED 120 off"
+  discountLabel String
+  promoCode     String
+  /// speed chip, e.g. "60" + "MINUTES" or "Same" + "DAY"
+  timeLabel     String
+  timeUnit      String
+  categoryLabel String
+  iconKey       String
+  sortOrder     Int     @default(0)
+  isActive      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("repair_offers")
+}
+
+/// Redeemable promo codes for repairs — percentage (AC60 = 60%) or fixed
+/// AED amount (PAINT120 = AED 120 off the service subtotal).
+model RepairPromo {
+  id       String          @id @default(uuid(7)) @db.Char(36)
+  code     String          @unique
+  kind     RepairPromoKind
+  value    Int
+  isActive Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("repair_promos")
+}
+
+/// One repair work order (multi-service cart). Prices are snapshotted at
+/// booking time; the address is a text snapshot so later edits to the saved
+/// address never rewrite history. Payment is a mock/internal charge until
+/// the payments module exists. Cancellation is a status, not a delete.
+model RepairBooking {
+  id             String              @id @default(uuid(7)) @db.Char(36)
+  /// user-facing reference on the done screen, e.g. ELK-2487
+  code           String              @unique
+  userId         String              @db.Char(36)
+  user           User                @relation(fields: [userId], references: [id])
+  status         RepairBookingStatus
+  scheduledDate  DateTime            @db.Date
+  /// arrival-window start, e.g. "10:00"
+  timeSlot       String
+  /// scheduledDate + timeSlot in Gulf time — drives the cancellation cutoff
+  scheduledAt    DateTime
+  addressLabel   String
+  addressText    String
+  subtotal       Int
+  visitFee       Int
+  promoCode      String?
+  discountAmount Int                 @default(0)
+  totalAmount    Int
+  paymentMethod  String
+  paymentRef     String?
+  paidAt         DateTime?
+  cancelledAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items RepairBookingItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("repair_bookings")
+}
+
+/// A cart line on a booking, with the unit price snapshotted at booking
+/// time — later catalog price changes must not rewrite history.
+model RepairBookingItem {
+  id        String        @id @default(uuid(7)) @db.Char(36)
+  bookingId String        @db.Char(36)
+  booking   RepairBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  serviceId String        @db.Char(36)
+  service   RepairService @relation(fields: [serviceId], references: [id])
+  name      String
+  unitPrice Int
+  quantity  Int
+  lineTotal Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId])
+  @@index([serviceId])
+  @@map("repair_booking_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Reviews module
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A rating + review left on a completed home-services booking. One review
+/// per booking (bookingId is unique). Submitting one recomputes the
+/// service's `rating`/`reviewCount` aggregate — the seeded display values
+/// on `Service` become real once reviews start arriving.
+model Review {
+  id        String  @id @default(uuid(7)) @db.Char(36)
+  bookingId String  @unique @db.Char(36)
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  userId    String  @db.Char(36)
+  user      User    @relation(fields: [userId], references: [id])
+  rating    Int
+  /// JSON array of quick-tag strings, e.g. ["On Time", "Professional"]
+  tags      Json
+  comment   String  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("reviews")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Notifications module
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// An in-app notification (booking updates, payments, promos, rewards).
+/// No per-item read state — the app only ever marks all of a user's
+/// notifications read at once.
+model Notification {
+  id       String  @id @default(uuid(7)) @db.Char(36)
+  userId   String  @db.Char(36)
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// emoji shown in the tile, e.g. "🧹"
+  icon     String
+  /// ARGB tile background, e.g. 0xFFE0F7F5
+  colorHex Int     @db.UnsignedInt
+  title    String
+  message  String  @db.Text
+  isRead   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Offers module
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A promotional banner on the Offers screen. `code` is display-only today
+/// (no redemption wiring in the app) — the per-vertical promo tables
+/// (CleanPromo, RepairPromo, RentalPromo) are what checkout actually applies.
+model Offer {
+  id               String  @id @default(uuid(7)) @db.Char(36)
+  tagLabel         String
+  title            String
+  description      String
+  code             String  @unique
+  expiryLabel      String
+  discountLabel    String
+  discountSubLabel String
+  /// ARGB gradient colors, e.g. 0xFF0D3D35
+  gradientStartHex Int     @db.UnsignedInt
+  gradientEndHex   Int     @db.UnsignedInt
+  sortOrder        Int     @default(0)
+  isActive         Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("offers")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Wallet / Payments module
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A wallet activity line: top-ups/withdrawals (which move `User.walletBalance`)
+/// and payment debits recorded for history regardless of the method actually
+/// charged (mirrors the app's mixed wallet-history fixture).
+model WalletTransaction {
+  id       String  @id @default(uuid(7)) @db.Char(36)
+  userId   String  @db.Char(36)
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  icon     String
+  title    String
+  amount   Decimal @db.Decimal(10, 2)
+  isCredit Boolean
+  /// ARGB tile background, e.g. 0xFFD1FAE5
+  colorHex Int     @db.UnsignedInt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("wallet_transactions")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Orders module (chat + tracking over a home-services Booking)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// One chat message on a booking's order thread. `fromProvider` marks the
+/// provider side (incoming in the app) vs the customer (outgoing); there is
+/// no distinct provider identity yet, so the provider is represented by the
+/// booking's seeded `service.providerName`. Delivered in realtime via the
+/// /chat Socket.IO gateway and persisted here for history.
+model ChatMessage {
+  id           String  @id @default(uuid(7)) @db.Char(36)
+  bookingId    String  @db.Char(36)
+  booking      Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromProvider Boolean
+  text         String  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId])
+  @@map("chat_messages")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Provider module (second persona: dashboard, schedule, earnings, requests)
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum ProviderStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ProviderRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+/// A service provider's business profile. Created by registration (PENDING),
+/// then admin-verified (which grants the PROVIDER role). `isAvailable` is the
+/// online toggle. Rating/earnings/job aggregates are stored display values
+/// until a real jobs ledger exists (mirrors the seeded values on `Service`).
+/// `scheduleDays` is a 7-element JSON array of booleans (Mon→Sun availability).
+model ProviderProfile {
+  id                   String         @id @default(uuid(7)) @db.Char(36)
+  userId               String         @unique @db.Char(36)
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName         String
+  serviceCategory      String
+  contactNumber        String
+  serviceArea          String
+  tradeLicenseUploaded Boolean        @default(false)
+  idDocumentUploaded   Boolean        @default(false)
+  status               ProviderStatus @default(PENDING)
+  isAvailable          Boolean        @default(false)
+
+  rating        Decimal @default(0) @db.Decimal(2, 1)
+  reviewCount   Int     @default(0)
+  totalEarnings Decimal @default(0) @db.Decimal(10, 2)
+  completedJobs Int     @default(0)
+  avgPerJob     Decimal @default(0) @db.Decimal(10, 2)
+  /// Mon→Sun availability, e.g. [true,true,false,true,true,false,false]
+  scheduleDays  Json    @default("[true,true,true,true,true,false,false]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests ProviderRequest[]
+
+  @@index([status])
+  @@map("provider_profiles")
+}
+
+/// A job request directed at a provider. Accept/decline are real status
+/// transitions (the dashboard's respond action). Not yet linked to a
+/// customer `Booking` — customer/service are snapshot display strings until
+/// the dispatch engine wires requests to real bookings.
+model ProviderRequest {
+  id           String                @id @default(uuid(7)) @db.Char(36)
+  providerId   String                @db.Char(36)
+  provider     ProviderProfile       @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  serviceName  String
+  customerName String
+  location     String
+  /// display label, e.g. "Today 12:00 PM"
+  timeLabel    String
+  amount       Decimal               @db.Decimal(10, 2)
+  status       ProviderRequestStatus @default(PENDING)
+  /// icon + tile color for the earnings transaction row this becomes
+  icon         String                @default("🧹")
+  colorHex     Int                   @default(4285668597) @db.UnsignedInt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([providerId, status])
+  @@map("provider_requests")
 }

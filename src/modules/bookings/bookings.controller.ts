@@ -1,6 +1,8 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
 import { BookingConfirmationDto, BookingListItemDto, CreateBookingDto } from './bookings.dto';
@@ -34,5 +36,14 @@ export class BookingsController {
   async cancel(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<ApiResponse<null>> {
     await this.bookingsService.cancel(user.id, id);
     return ApiResponse.of(null, 'Booking cancelled');
+  }
+
+  @Post(':id/complete')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark the job done → COMPLETED (ops/admin)' })
+  async complete(@Param('id') id: string): Promise<ApiResponse<null>> {
+    await this.bookingsService.complete(id);
+    return ApiResponse.of(null, 'Booking completed');
   }
 }

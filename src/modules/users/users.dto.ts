@@ -18,6 +18,12 @@ export class UpdateProfileDto {
   language?: string;
 }
 
+export class SelectLanguageDto {
+  /** ISO 639-1 code, e.g. "en", "hi", "ml", "ta" */
+  @Matches(/^[a-z]{2}$/, { message: 'language must be a two-letter ISO 639-1 code' })
+  language!: string;
+}
+
 export class ProfileDto {
   id!: string;
   phone!: string | null;

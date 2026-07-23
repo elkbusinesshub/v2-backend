@@ -6,6 +6,8 @@ CREATE TABLE `users` (
     `name` VARCHAR(191) NULL,
     `roles` JSON NOT NULL,
     `language` VARCHAR(191) NOT NULL DEFAULT 'en',
+    `rewardPoints` INTEGER NOT NULL DEFAULT 0,
+    `walletBalance` DECIMAL(10, 2) NOT NULL DEFAULT 0,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `deletedAt` DATETIME(3) NULL,
@@ -565,6 +567,304 @@ CREATE TABLE `porter_booking_addons` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `ride_types` (
+    `id` CHAR(36) NOT NULL,
+    `slug` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `emoji` VARCHAR(191) NOT NULL,
+    `iconKey` VARCHAR(191) NOT NULL,
+    `seats` INTEGER NOT NULL,
+    `etaMinutes` INTEGER NOT NULL,
+    `baseFare` DECIMAL(10, 2) NOT NULL,
+    `cancellationFee` DECIMAL(10, 2) NOT NULL,
+    `badge` VARCHAR(191) NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `ride_types_slug_key`(`slug`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ride_bookings` (
+    `id` CHAR(36) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `rideTypeId` CHAR(36) NOT NULL,
+    `status` ENUM('CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'CONFIRMED',
+    `pickupAddress` VARCHAR(191) NOT NULL,
+    `dropAddress` VARCHAR(191) NOT NULL,
+    `distanceKm` DECIMAL(6, 2) NOT NULL,
+    `etaMinutes` INTEGER NOT NULL,
+    `driverName` VARCHAR(191) NOT NULL,
+    `vehicleLabel` VARCHAR(191) NOT NULL,
+    `plateNumber` VARCHAR(191) NOT NULL,
+    `otpCode` VARCHAR(191) NOT NULL,
+    `fare` DECIMAL(10, 2) NOT NULL,
+    `cancellationFee` DECIMAL(10, 2) NOT NULL,
+    `tipAmount` DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    `ratingStars` INTEGER NULL,
+    `paymentMethod` VARCHAR(191) NOT NULL,
+    `paymentRef` VARCHAR(191) NULL,
+    `paidAt` DATETIME(3) NULL,
+    `startedAt` DATETIME(3) NULL,
+    `completedAt` DATETIME(3) NULL,
+    `cancelledAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `ride_bookings_code_key`(`code`),
+    INDEX `ride_bookings_userId_idx`(`userId`),
+    INDEX `ride_bookings_rideTypeId_idx`(`rideTypeId`),
+    INDEX `ride_bookings_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_categories` (
+    `id` CHAR(36) NOT NULL,
+    `slug` VARCHAR(191) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `label` VARCHAR(191) NOT NULL,
+    `blurb` VARCHAR(191) NOT NULL,
+    `iconKey` VARCHAR(191) NOT NULL,
+    `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `repair_categories_slug_key`(`slug`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_services` (
+    `id` CHAR(36) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `categoryId` CHAR(36) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `description` VARCHAR(191) NOT NULL,
+    `price` INTEGER NOT NULL,
+    `durationLabel` VARCHAR(191) NOT NULL,
+    `tag` VARCHAR(191) NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `repair_services_code_key`(`code`),
+    INDEX `repair_services_categoryId_idx`(`categoryId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_offers` (
+    `id` CHAR(36) NOT NULL,
+    `title` VARCHAR(191) NOT NULL,
+    `discountLabel` VARCHAR(191) NOT NULL,
+    `promoCode` VARCHAR(191) NOT NULL,
+    `timeLabel` VARCHAR(191) NOT NULL,
+    `timeUnit` VARCHAR(191) NOT NULL,
+    `categoryLabel` VARCHAR(191) NOT NULL,
+    `iconKey` VARCHAR(191) NOT NULL,
+    `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_promos` (
+    `id` CHAR(36) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `kind` ENUM('PERCENT', 'FIXED') NOT NULL,
+    `value` INTEGER NOT NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `repair_promos_code_key`(`code`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_bookings` (
+    `id` CHAR(36) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `status` ENUM('CONFIRMED', 'COMPLETED', 'CANCELLED') NOT NULL,
+    `scheduledDate` DATE NOT NULL,
+    `timeSlot` VARCHAR(191) NOT NULL,
+    `scheduledAt` DATETIME(3) NOT NULL,
+    `addressLabel` VARCHAR(191) NOT NULL,
+    `addressText` VARCHAR(191) NOT NULL,
+    `subtotal` INTEGER NOT NULL,
+    `visitFee` INTEGER NOT NULL,
+    `promoCode` VARCHAR(191) NULL,
+    `discountAmount` INTEGER NOT NULL DEFAULT 0,
+    `totalAmount` INTEGER NOT NULL,
+    `paymentMethod` VARCHAR(191) NOT NULL,
+    `paymentRef` VARCHAR(191) NULL,
+    `paidAt` DATETIME(3) NULL,
+    `cancelledAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `repair_bookings_code_key`(`code`),
+    INDEX `repair_bookings_userId_idx`(`userId`),
+    INDEX `repair_bookings_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `repair_booking_items` (
+    `id` CHAR(36) NOT NULL,
+    `bookingId` CHAR(36) NOT NULL,
+    `serviceId` CHAR(36) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `unitPrice` INTEGER NOT NULL,
+    `quantity` INTEGER NOT NULL,
+    `lineTotal` INTEGER NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `repair_booking_items_bookingId_idx`(`bookingId`),
+    INDEX `repair_booking_items_serviceId_idx`(`serviceId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `reviews` (
+    `id` CHAR(36) NOT NULL,
+    `bookingId` CHAR(36) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `rating` INTEGER NOT NULL,
+    `tags` JSON NOT NULL,
+    `comment` TEXT NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `reviews_bookingId_key`(`bookingId`),
+    INDEX `reviews_userId_idx`(`userId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `notifications` (
+    `id` CHAR(36) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `icon` VARCHAR(191) NOT NULL,
+    `colorHex` INTEGER UNSIGNED NOT NULL,
+    `title` VARCHAR(191) NOT NULL,
+    `message` TEXT NOT NULL,
+    `isRead` BOOLEAN NOT NULL DEFAULT false,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `notifications_userId_idx`(`userId`),
+    INDEX `notifications_userId_isRead_idx`(`userId`, `isRead`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `offers` (
+    `id` CHAR(36) NOT NULL,
+    `tagLabel` VARCHAR(191) NOT NULL,
+    `title` VARCHAR(191) NOT NULL,
+    `description` VARCHAR(191) NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `expiryLabel` VARCHAR(191) NOT NULL,
+    `discountLabel` VARCHAR(191) NOT NULL,
+    `discountSubLabel` VARCHAR(191) NOT NULL,
+    `gradientStartHex` INTEGER UNSIGNED NOT NULL,
+    `gradientEndHex` INTEGER UNSIGNED NOT NULL,
+    `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `offers_code_key`(`code`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `wallet_transactions` (
+    `id` CHAR(36) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `icon` VARCHAR(191) NOT NULL,
+    `title` VARCHAR(191) NOT NULL,
+    `amount` DECIMAL(10, 2) NOT NULL,
+    `isCredit` BOOLEAN NOT NULL,
+    `colorHex` INTEGER UNSIGNED NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `wallet_transactions_userId_idx`(`userId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `chat_messages` (
+    `id` CHAR(36) NOT NULL,
+    `bookingId` CHAR(36) NOT NULL,
+    `fromProvider` BOOLEAN NOT NULL,
+    `text` TEXT NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `chat_messages_bookingId_idx`(`bookingId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `provider_profiles` (
+    `id` CHAR(36) NOT NULL,
+    `userId` CHAR(36) NOT NULL,
+    `businessName` VARCHAR(191) NOT NULL,
+    `serviceCategory` VARCHAR(191) NOT NULL,
+    `contactNumber` VARCHAR(191) NOT NULL,
+    `serviceArea` VARCHAR(191) NOT NULL,
+    `tradeLicenseUploaded` BOOLEAN NOT NULL DEFAULT false,
+    `idDocumentUploaded` BOOLEAN NOT NULL DEFAULT false,
+    `status` ENUM('PENDING', 'VERIFIED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    `isAvailable` BOOLEAN NOT NULL DEFAULT false,
+    `rating` DECIMAL(2, 1) NOT NULL DEFAULT 0,
+    `reviewCount` INTEGER NOT NULL DEFAULT 0,
+    `totalEarnings` DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    `completedJobs` INTEGER NOT NULL DEFAULT 0,
+    `avgPerJob` DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    `scheduleDays` JSON NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `provider_profiles_userId_key`(`userId`),
+    INDEX `provider_profiles_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `provider_requests` (
+    `id` CHAR(36) NOT NULL,
+    `providerId` CHAR(36) NOT NULL,
+    `serviceName` VARCHAR(191) NOT NULL,
+    `customerName` VARCHAR(191) NOT NULL,
+    `location` VARCHAR(191) NOT NULL,
+    `timeLabel` VARCHAR(191) NOT NULL,
+    `amount` DECIMAL(10, 2) NOT NULL,
+    `status` ENUM('PENDING', 'ACCEPTED', 'DECLINED') NOT NULL DEFAULT 'PENDING',
+    `icon` VARCHAR(191) NOT NULL DEFAULT '🧹',
+    `colorHex` INTEGER UNSIGNED NOT NULL DEFAULT 4285668597,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `provider_requests_providerId_status_idx`(`providerId`, `status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `refresh_sessions` ADD CONSTRAINT `refresh_sessions_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -645,4 +945,43 @@ ALTER TABLE `porter_booking_addons` ADD CONSTRAINT `porter_booking_addons_bookin
 
 -- AddForeignKey
 ALTER TABLE `porter_booking_addons` ADD CONSTRAINT `porter_booking_addons_addonId_fkey` FOREIGN KEY (`addonId`) REFERENCES `porter_addons`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ride_bookings` ADD CONSTRAINT `ride_bookings_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ride_bookings` ADD CONSTRAINT `ride_bookings_rideTypeId_fkey` FOREIGN KEY (`rideTypeId`) REFERENCES `ride_types`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `repair_services` ADD CONSTRAINT `repair_services_categoryId_fkey` FOREIGN KEY (`categoryId`) REFERENCES `repair_categories`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `repair_bookings` ADD CONSTRAINT `repair_bookings_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `repair_booking_items` ADD CONSTRAINT `repair_booking_items_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `repair_bookings`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `repair_booking_items` ADD CONSTRAINT `repair_booking_items_serviceId_fkey` FOREIGN KEY (`serviceId`) REFERENCES `repair_services`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `reviews` ADD CONSTRAINT `reviews_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `reviews` ADD CONSTRAINT `reviews_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `notifications` ADD CONSTRAINT `notifications_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `wallet_transactions` ADD CONSTRAINT `wallet_transactions_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `chat_messages` ADD CONSTRAINT `chat_messages_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `provider_profiles` ADD CONSTRAINT `provider_profiles_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `provider_requests` ADD CONSTRAINT `provider_requests_providerId_fkey` FOREIGN KEY (`providerId`) REFERENCES `provider_profiles`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 

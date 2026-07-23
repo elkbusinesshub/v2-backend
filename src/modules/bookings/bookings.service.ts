@@ -74,6 +74,18 @@ export class BookingsService {
     }
   }
 
+  /** Ops marks the job done (admin-only until crew assignment exists). */
+  async complete(id: string): Promise<void> {
+    const completed = await this.bookings.markCompleted(id);
+    if (!completed) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'INVALID_TRANSITION',
+        'Only a confirmed booking can be completed',
+      );
+    }
+  }
+
   /** Retries on the (unlikely) reference collision instead of surfacing a 409. */
   private async createWithReference(data: Omit<Prisma.BookingUncheckedCreateInput, 'reference'>) {
     for (let attempt = 1; ; attempt += 1) {

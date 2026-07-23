@@ -82,6 +82,7 @@ describe('BookingsService', () => {
             findAllByUser: jest.fn(),
             findByIdForUser: jest.fn(),
             cancel: jest.fn().mockResolvedValue(true),
+            markCompleted: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -221,6 +222,18 @@ describe('BookingsService', () => {
       bookings.cancel.mockResolvedValue(false);
 
       await expect(bookingsService.cancel('u-1', 'bk-1')).rejects.toBeInstanceOf(DomainException);
+    });
+  });
+
+  describe('complete', () => {
+    it('marks a confirmed booking done', async () => {
+      await bookingsService.complete('bk-1');
+      expect(bookings.markCompleted).toHaveBeenCalledWith('bk-1');
+    });
+
+    it('409s unless the booking was confirmed', async () => {
+      bookings.markCompleted.mockResolvedValue(false);
+      await expect(bookingsService.complete('bk-1')).rejects.toBeInstanceOf(DomainException);
     });
   });
 });

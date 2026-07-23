@@ -27,4 +27,8 @@ export class UsersRepository {
   ): Promise<User> {
     return this.db.user.update({ where: { id }, data });
   }
+
+  async incrementRewardPoints(id: string, amount: number): Promise<void> {
+    await this.db.user.update({ where: { id }, data: { rewardPoints: { increment: amount } } });
+  }
 }

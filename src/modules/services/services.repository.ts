@@ -32,4 +32,9 @@ export class ServicesRepository {
       .filter((s) => !seen.has(s.providerName) && Boolean(seen.add(s.providerName)))
       .slice(0, limit);
   }
+
+  /** Overwrites the seeded display rating/count with a real review aggregate. */
+  async updateRatingAggregate(id: string, rating: number, reviewCount: number): Promise<void> {
+    await this.db.service.update({ where: { id }, data: { rating, reviewCount } });
+  }
 }

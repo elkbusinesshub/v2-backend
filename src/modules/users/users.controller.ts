@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
-import { ProfileDto, UpdateProfileDto } from './users.dto';
+import { ProfileDto, SelectLanguageDto, UpdateProfileDto } from './users.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
@@ -26,5 +26,15 @@ export class UsersController {
   ): Promise<ApiResponse<ProfileDto>> {
     const profile = await this.usersService.updateProfile(user.id, dto);
     return ApiResponse.of(profile, 'Profile updated');
+  }
+
+  @Patch('me/language')
+  @ApiOperation({ summary: 'Set the preferred app language' })
+  async selectLanguage(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SelectLanguageDto,
+  ): Promise<ApiResponse<ProfileDto>> {
+    const profile = await this.usersService.updateProfile(user.id, dto);
+    return ApiResponse.of(profile, 'Language updated');
   }
 }

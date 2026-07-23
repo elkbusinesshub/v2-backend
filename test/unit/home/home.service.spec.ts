@@ -12,6 +12,8 @@ const user = {
   name: 'Ahmed',
   roles: [Role.USER],
   language: 'en',
+  rewardPoints: 0,
+  walletBalance: new Prisma.Decimal(0),
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,

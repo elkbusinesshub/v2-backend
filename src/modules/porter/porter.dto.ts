@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   ValidateIf,
@@ -38,15 +39,29 @@ export class PorterQuoteDto {
 }
 
 export class CreatePorterBookingDto extends PorterQuoteDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  pickupAddress!: string;
+  /** A saved address from /locations — takes priority over pickupAddress if both are sent. */
+  @IsUUID()
+  @IsOptional()
+  pickupAddressId?: string;
 
+  /** Required unless pickupAddressId is given (map pick / current-location text). */
+  @ValidateIf((o: CreatePorterBookingDto) => !o.pickupAddressId)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  dropAddress!: string;
+  pickupAddress?: string;
+
+  /** A saved address from /locations — takes priority over dropAddress if both are sent. */
+  @IsUUID()
+  @IsOptional()
+  dropAddressId?: string;
+
+  /** Required unless dropAddressId is given (map pick / current-location text). */
+  @ValidateIf((o: CreatePorterBookingDto) => !o.dropAddressId)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  dropAddress?: string;
 
   @ApiPropertyOptional({ example: 'Electronics' })
   @IsString()
