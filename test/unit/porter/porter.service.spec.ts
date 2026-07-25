@@ -6,6 +6,7 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
+import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { PorterBookingsRepository } from '@/modules/porter/porter-bookings.repository';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { PorterService } from '@/modules/porter/porter.service';
@@ -56,10 +57,24 @@ function tomorrow(): string {
   return new Date(Date.now() + 4 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
 }
 
+const savedAddress = {
+  id: 'addr-1',
+  userId: 'u-1',
+  label: 'Home',
+  formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+  lat: 24.5,
+  lng: 54.4,
+  isDefault: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  deletedAt: null,
+};
+
 describe('PorterService', () => {
   let service: PorterService;
   let catalog: jest.Mocked<PorterCatalogRepository>;
   let bookings: jest.Mocked<PorterBookingsRepository>;
+  let locations: jest.Mocked<LocationsRepository>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -99,12 +114,17 @@ describe('PorterService', () => {
             codeExists: jest.fn().mockResolvedValue(false),
           },
         },
+        {
+          provide: LocationsRepository,
+          useValue: { findByIdForUser: jest.fn().mockResolvedValue(null) },
+        },
       ],
     }).compile();
 
     service = moduleRef.get(PorterService);
     catalog = moduleRef.get(PorterCatalogRepository);
     bookings = moduleRef.get(PorterBookingsRepository);
+    locations = moduleRef.get(LocationsRepository);
   });
 
   describe('quote', () => {
@@ -189,6 +209,30 @@ describe('PorterService', () => {
       await expect(
         service.createBooking(user, { ...base, scheduledDate: tomorrow() }),
       ).rejects.toBeInstanceOf(ValidationFailedException);
+    });
+
+    it('resolves a saved address id to its formatted text, overriding free text', async () => {
+      locations.findByIdForUser.mockResolvedValue(savedAddress);
+      const booking = await service.createBooking(user, {
+        vehicleId: 'bike',
+        pickupAddressId: 'addr-1',
+        dropAddress: 'Downtown Dubai, Tower 4',
+        paymentMethod: 'wallet',
+      });
+      expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+      expect(locations.findByIdForUser).toHaveBeenCalledWith('addr-1', user.id);
+    });
+
+    it("404s when the saved address isn't the caller's", async () => {
+      locations.findByIdForUser.mockResolvedValue(null);
+      await expect(
+        service.createBooking(user, {
+          vehicleId: 'bike',
+          pickupAddressId: 'addr-x',
+          dropAddress: 'Downtown Dubai, Tower 4',
+          paymentMethod: 'wallet',
+        }),
+      ).rejects.toBeInstanceOf(ResourceNotFoundException);
     });
   });
 

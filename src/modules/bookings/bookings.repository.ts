@@ -37,4 +37,13 @@ export class BookingsRepository {
     });
     return result.count === 1;
   }
+
+  /** Ops marks the job done — only a confirmed booking can complete. */
+  async markCompleted(id: string): Promise<boolean> {
+    const result = await this.db.booking.updateMany({
+      where: { id, status: BookingStatus.CONFIRMED },
+      data: { status: BookingStatus.COMPLETED },
+    });
+    return result.count === 1;
+  }
 }

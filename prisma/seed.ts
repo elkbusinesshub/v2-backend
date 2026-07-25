@@ -2,6 +2,7 @@ import {
   CleanPromoKind,
   PrismaClient,
   RentalCarCategory,
+  RepairPromoKind,
   Role,
   StayBookingStatus,
   StayBookingType,
@@ -802,6 +803,517 @@ async function seedPorter(): Promise<void> {
   }
 }
 
+// ─── Rides (Taxi) fixtures (mirror taxi_screen.dart) ─────────────────────────
+
+const RIDE_TYPES = [
+  // prettier-ignore
+  { slug: 'auto', name: 'Auto', emoji: '🛺', iconKey: 'car_auto', seats: 3, etaMinutes: 4, baseFare: 8, cancellationFee: 6.0, badge: 'FASTER' as string | null },
+  // prettier-ignore
+  { slug: 'economy', name: 'Economy', emoji: '🚗', iconKey: 'car_sedan', seats: 4, etaMinutes: 5, baseFare: 15, cancellationFee: 10.0, badge: null },
+  // prettier-ignore
+  { slug: 'premium', name: 'Premium', emoji: '🚙', iconKey: 'car_premium', seats: 4, etaMinutes: 6, baseFare: 28, cancellationFee: 15.0, badge: 'POPULAR' },
+  // prettier-ignore
+  { slug: 'xl', name: 'ELK XL', emoji: '🚐', iconKey: 'car_van', seats: 6, etaMinutes: 7, baseFare: 35, cancellationFee: 15.0, badge: null },
+];
+
+async function seedRides(): Promise<void> {
+  for (const [i, rideType] of RIDE_TYPES.entries()) {
+    await prisma.rideType.upsert({
+      where: { slug: rideType.slug },
+      update: {},
+      create: { ...rideType, sortOrder: i },
+    });
+  }
+}
+
+// ─── ELK Rep fixtures (mirror elkrep_data.dart) ──────────────────────────────
+
+const REPAIR_CATEGORIES = [
+  {
+    slug: 'ac',
+    code: 'AC',
+    label: 'AC & Cooling',
+    blurb: 'Service, gas, deep clean',
+    iconKey: 'ic_ac',
+  },
+  {
+    slug: 'plm',
+    code: 'PLM',
+    label: 'Plumbing',
+    blurb: 'Leaks, taps, drains',
+    iconKey: 'ic_plumb',
+  },
+  {
+    slug: 'elc',
+    code: 'ELC',
+    label: 'Electrical',
+    blurb: 'Wiring, fittings, faults',
+    iconKey: 'ic_elec',
+  },
+  // prettier-ignore
+  { slug: 'cpt', code: 'CPT', label: 'Carpentry', blurb: 'Doors, furniture, fixes', iconKey: 'ic_carpentry' },
+  { slug: 'pnt', code: 'PNT', label: 'Painting', blurb: 'Walls, touch-ups', iconKey: 'ic_paint' },
+  {
+    slug: 'gen',
+    code: 'GEN',
+    label: 'Handyman',
+    blurb: 'Odd jobs & mounting',
+    iconKey: 'ic_handyman',
+  },
+];
+
+interface RepairServiceSeed {
+  code: string;
+  name: string;
+  description: string;
+  price: number;
+  durationLabel: string;
+  tag?: string;
+}
+
+const REPAIR_SERVICES: Record<string, RepairServiceSeed[]> = {
+  ac: [
+    {
+      code: 'AC-01',
+      name: 'AC General Service',
+      description: 'Coil clean, filter wash, performance check.',
+      price: 89,
+      durationLabel: '45–60 min',
+      tag: 'Popular',
+    },
+    {
+      code: 'AC-02',
+      name: 'AC Deep Cleaning',
+      description: 'Full unit dismantle, jet wash, sanitise.',
+      price: 149,
+      durationLabel: '60–90 min',
+    },
+    {
+      code: 'AC-03',
+      name: 'Gas Refill (R410)',
+      description: 'Leak test, vacuum & refill refrigerant.',
+      price: 199,
+      durationLabel: '60 min',
+    },
+    {
+      code: 'AC-04',
+      name: 'AC Not Cooling – Diagnose',
+      description: 'Technician inspects & quotes the fix.',
+      price: 25,
+      durationLabel: '30 min',
+      tag: 'Diagnostic',
+    },
+  ],
+  plm: [
+    {
+      code: 'PLM-01',
+      name: 'Tap / Mixer Repair',
+      description: 'Fix drips, replace cartridge or washer.',
+      price: 69,
+      durationLabel: '30–45 min',
+      tag: 'Popular',
+    },
+    {
+      code: 'PLM-02',
+      name: 'Leak Detection & Fix',
+      description: 'Trace hidden leaks, seal & test.',
+      price: 129,
+      durationLabel: '60 min',
+    },
+    {
+      code: 'PLM-03',
+      name: 'Drain Unblocking',
+      description: 'Clear sink, basin or floor drains.',
+      price: 99,
+      durationLabel: '45 min',
+    },
+  ],
+  elc: [
+    {
+      code: 'ELC-01',
+      name: 'Switch / Socket Fix',
+      description: 'Replace faulty points, safety check.',
+      price: 59,
+      durationLabel: '30 min',
+      tag: 'Popular',
+    },
+    {
+      code: 'ELC-02',
+      name: 'Light Fitting Install',
+      description: 'Mount & wire fixtures, chandeliers.',
+      price: 89,
+      durationLabel: '45 min',
+    },
+    {
+      code: 'ELC-03',
+      name: 'Power Trip Diagnose',
+      description: 'Find the fault behind tripping.',
+      price: 25,
+      durationLabel: '30 min',
+      tag: 'Diagnostic',
+    },
+  ],
+  cpt: [
+    {
+      code: 'CPT-01',
+      name: 'Door Repair / Align',
+      description: 'Hinges, locks, sticking doors.',
+      price: 79,
+      durationLabel: '45 min',
+    },
+    {
+      code: 'CPT-02',
+      name: 'Furniture Assembly',
+      description: 'Flat-pack build, per unit.',
+      price: 99,
+      durationLabel: '60 min',
+      tag: 'Popular',
+    },
+  ],
+  pnt: [
+    {
+      code: 'PNT-01',
+      name: 'Single Room Painting',
+      description: 'Walls prep, two coats, clean finish.',
+      price: 299,
+      durationLabel: 'Half day',
+      tag: 'Popular',
+    },
+    {
+      code: 'PNT-02',
+      name: 'Patch & Touch-up',
+      description: 'Cracks, dents, small wall areas.',
+      price: 119,
+      durationLabel: '60 min',
+    },
+  ],
+  gen: [
+    {
+      code: 'GEN-01',
+      name: 'TV / Shelf Mounting',
+      description: 'Wall-mount with level & anchors.',
+      price: 79,
+      durationLabel: '45 min',
+      tag: 'Popular',
+    },
+    {
+      code: 'GEN-02',
+      name: 'Curtain / Blind Fitting',
+      description: 'Brackets, rods, per window.',
+      price: 59,
+      durationLabel: '30 min',
+    },
+  ],
+};
+
+const REPAIR_OFFERS = [
+  // prettier-ignore
+  { title: 'Instant AC Refresh', discountLabel: 'Up to 60% off', promoCode: 'AC60', timeLabel: '60', timeUnit: 'MINUTES', categoryLabel: 'AC & Cooling', iconKey: 'ic_ac' },
+  // prettier-ignore
+  { title: 'Leak Fix Express', discountLabel: 'Flat 50% off', promoCode: 'LEAK50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Plumbing', iconKey: 'ic_plumb' },
+  // prettier-ignore
+  { title: 'Full Home Repaint', discountLabel: 'AED 120 off', promoCode: 'PAINT120', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Painting', iconKey: 'ic_paint' },
+];
+
+const REPAIR_PROMOS = [
+  { code: 'AC60', kind: RepairPromoKind.PERCENT, value: 60 },
+  { code: 'LEAK50', kind: RepairPromoKind.PERCENT, value: 50 },
+  { code: 'PAINT120', kind: RepairPromoKind.FIXED, value: 120 },
+];
+
+async function seedRepair(): Promise<void> {
+  for (const [i, cat] of REPAIR_CATEGORIES.entries()) {
+    const category = await prisma.repairCategory.upsert({
+      where: { slug: cat.slug },
+      update: {},
+      create: { ...cat, sortOrder: i },
+    });
+    for (const [j, svc] of (REPAIR_SERVICES[cat.slug] ?? []).entries()) {
+      await prisma.repairService.upsert({
+        where: { code: svc.code },
+        update: {},
+        create: { ...svc, tag: svc.tag ?? null, categoryId: category.id, sortOrder: j },
+      });
+    }
+  }
+  for (const [i, offer] of REPAIR_OFFERS.entries()) {
+    const existing = await prisma.repairOffer.findFirst({ where: { promoCode: offer.promoCode } });
+    if (!existing) {
+      await prisma.repairOffer.create({ data: { ...offer, sortOrder: i } });
+    }
+  }
+  for (const promo of REPAIR_PROMOS) {
+    await prisma.repairPromo.upsert({
+      where: { code: promo.code },
+      update: {},
+      create: promo,
+    });
+  }
+}
+
+// ─── Notifications fixtures (mirror dummyNotificationsJson) ─────────────────
+
+const MINUTE = 60_000;
+const NOTIFICATIONS = [
+  {
+    icon: '🧹',
+    colorHex: 0xffe0f7f5,
+    title: 'Provider On The Way',
+    message: 'Royal Shine is heading to your location. ETA: 12 mins',
+    ageMinutes: 2,
+    isRead: false,
+  },
+  {
+    icon: '🎉',
+    colorHex: 0xfffef3c7,
+    title: 'Special Weekend Offer!',
+    message: 'Get AED 30 off on cleaning services this weekend. Use CLEAN30',
+    ageMinutes: 60,
+    isRead: false,
+  },
+  {
+    icon: '✅',
+    colorHex: 0xffd1fae5,
+    title: 'Booking Confirmed',
+    message: 'Your Deep Cleaning booking #ELK-04921 is confirmed for 19 May',
+    ageMinutes: 3 * 60,
+    isRead: true,
+  },
+  {
+    icon: '💳',
+    colorHex: 0xffdbeafe,
+    title: 'Payment Successful',
+    message: 'AED 119 paid for Deep Home Cleaning. Receipt sent to email',
+    ageMinutes: 24 * 60,
+    isRead: true,
+  },
+  {
+    icon: '⭐',
+    colorHex: 0xffede9fe,
+    title: 'You Earned 15 Points!',
+    message: 'Thanks for rating your last service. Points added to wallet',
+    ageMinutes: 2 * 24 * 60,
+    isRead: true,
+  },
+];
+
+async function seedNotifications(userId: string): Promise<void> {
+  const existing = await prisma.notification.count({ where: { userId } });
+  if (existing > 0) return;
+  const now = Date.now();
+  for (const n of NOTIFICATIONS) {
+    await prisma.notification.create({
+      data: {
+        userId,
+        icon: n.icon,
+        colorHex: n.colorHex,
+        title: n.title,
+        message: n.message,
+        isRead: n.isRead,
+        createdAt: new Date(now - n.ageMinutes * MINUTE),
+      },
+    });
+  }
+}
+
+// ─── Offers fixtures (mirror dummyOffersJson) ────────────────────────────────
+
+const OFFERS = [
+  {
+    tagLabel: 'FOR NEW USERS',
+    title: 'Welcome Offer',
+    description: 'Get 20% off your first booking on any service category',
+    code: 'ELK20',
+    expiryLabel: 'Expires 31 May 2026',
+    discountLabel: '20%',
+    discountSubLabel: 'OFF',
+    gradientStartHex: 0xff0d3d35,
+    gradientEndHex: 0xff4bbfb0,
+  },
+  {
+    tagLabel: 'CLEANING SPECIAL',
+    title: 'Flat AED 30 Off',
+    description: 'On deep cleaning or AC services booked this weekend',
+    code: 'CLEAN30',
+    expiryLabel: 'Valid: Fri-Sun only',
+    discountLabel: 'AED',
+    discountSubLabel: '30',
+    gradientStartHex: 0xff1a2e3d,
+    gradientEndHex: 0xff4f46e5,
+  },
+];
+
+async function seedOffers(): Promise<void> {
+  for (const [i, offer] of OFFERS.entries()) {
+    await prisma.offer.upsert({
+      where: { code: offer.code },
+      update: {},
+      create: { ...offer, sortOrder: i },
+    });
+  }
+}
+
+// ─── Wallet fixtures (mirror dummyWalletSummaryJson) ─────────────────────────
+
+const WALLET_TRANSACTIONS = [
+  {
+    icon: '🧹',
+    title: 'Deep Home Cleaning',
+    date: '2026-05-19',
+    amount: 119,
+    isCredit: false,
+    colorHex: 0xffe0f7f5,
+  },
+  {
+    icon: '💳',
+    title: 'Wallet Top-up',
+    date: '2026-05-17',
+    amount: 200,
+    isCredit: true,
+    colorHex: 0xffd1fae5,
+  },
+  {
+    icon: '🚕',
+    title: 'Taxi Ride · Economy',
+    date: '2026-05-16',
+    amount: 15,
+    isCredit: false,
+    colorHex: 0xffdbeafe,
+  },
+  {
+    icon: '🎁',
+    title: 'Referral Bonus',
+    date: '2026-05-14',
+    amount: 25,
+    isCredit: true,
+    colorHex: 0xfffef3c7,
+  },
+  {
+    icon: '🚗',
+    title: 'Car Rental · 3 Days',
+    date: '2026-05-10',
+    amount: 450,
+    isCredit: false,
+    colorHex: 0xffede9fe,
+  },
+];
+
+async function seedWallet(userId: string): Promise<void> {
+  const existing = await prisma.walletTransaction.count({ where: { userId } });
+  if (existing > 0) return;
+  for (const t of WALLET_TRANSACTIONS) {
+    await prisma.walletTransaction.create({
+      data: {
+        userId,
+        icon: t.icon,
+        title: t.title,
+        amount: t.amount,
+        isCredit: t.isCredit,
+        colorHex: t.colorHex,
+        createdAt: new Date(`${t.date}T12:00:00.000Z`),
+      },
+    });
+  }
+  await prisma.user.update({ where: { id: userId }, data: { walletBalance: 240.5 } });
+}
+
+// ─── Order chat fixtures (mirror dummyChatThreadJson) ────────────────────────
+
+const CHAT_MESSAGES = [
+  {
+    fromProvider: true,
+    text: "Hello! I have confirmed your booking for today at 12:00 PM. I'll be there soon!",
+    ageMinutes: 45,
+  },
+  {
+    fromProvider: false,
+    text: 'Great! Please ring the doorbell when you arrive. The entrance is at Block B.',
+    ageMinutes: 43,
+  },
+  {
+    fromProvider: true,
+    text: "Noted! I'm currently on my way. Will arrive in about 12 minutes. 🚐",
+    ageMinutes: 20,
+  },
+];
+
+/** Creates one demo home-services booking with a seeded provider chat thread. */
+async function seedOrderChat(userId: string): Promise<string | null> {
+  const service = await prisma.service.findUnique({ where: { slug: 'deep_cleaning' } });
+  if (!service) return null;
+
+  const existing = await prisma.booking.findUnique({ where: { reference: 'ELK-2026-04921' } });
+  const booking =
+    existing ??
+    (await prisma.booking.create({
+      data: {
+        reference: 'ELK-2026-04921',
+        userId,
+        serviceId: service.id,
+        scheduledAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
+        addressText: 'Tower 3, Apt 1204, Al Reem Island',
+        serviceFee: service.price,
+        total: service.price,
+      },
+    }));
+
+  const messageCount = await prisma.chatMessage.count({ where: { bookingId: booking.id } });
+  if (messageCount === 0) {
+    const now = Date.now();
+    for (const m of CHAT_MESSAGES) {
+      await prisma.chatMessage.create({
+        data: {
+          bookingId: booking.id,
+          fromProvider: m.fromProvider,
+          text: m.text,
+          createdAt: new Date(now - m.ageMinutes * 60_000),
+        },
+      });
+    }
+  }
+  return booking.id;
+}
+
+// ─── Provider fixtures (mirror dummyProviderProfileJson / earnings / requests) ─
+
+const PROVIDER_REQUESTS = [
+  // prettier-ignore
+  { serviceName: 'Deep Home Cleaning', customerName: 'Ahmed Al-Rashid', location: 'Dubai Marina', timeLabel: 'Today 12:00 PM', amount: 149, status: 'PENDING' as const, icon: '🧹', colorHex: 0xffe0f7f5 },
+  // prettier-ignore
+  { serviceName: 'Kitchen Cleaning', customerName: 'Sara Mohammed', location: 'JBR', timeLabel: 'Today 4:00 PM', amount: 99, status: 'ACCEPTED' as const, icon: '💳', colorHex: 0xffd1fae5 },
+];
+
+async function seedProvider(userId: string): Promise<void> {
+  const profile = await prisma.providerProfile.upsert({
+    where: { userId },
+    update: {},
+    create: {
+      userId,
+      businessName: 'Royal Shine Co.',
+      serviceCategory: 'Cleaning',
+      contactNumber: '+971500000002',
+      serviceArea: 'Dubai Marina',
+      tradeLicenseUploaded: true,
+      idDocumentUploaded: true,
+      status: 'VERIFIED',
+      isAvailable: true,
+      rating: 4.9,
+      reviewCount: 284,
+      totalEarnings: 2840,
+      completedJobs: 38,
+      avgPerJob: 74,
+      scheduleDays: [true, true, false, true, true, false, false],
+    },
+  });
+
+  const existing = await prisma.providerRequest.count({ where: { providerId: profile.id } });
+  if (existing === 0) {
+    for (const r of PROVIDER_REQUESTS) {
+      await prisma.providerRequest.create({ data: { ...r, providerId: profile.id } });
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const demoUser = await prisma.user.upsert({
     where: { phone: '+971500000001' },
@@ -810,6 +1322,7 @@ async function main(): Promise<void> {
       phone: '+971500000001',
       name: 'Demo User',
       roles: [Role.USER],
+      rewardPoints: 150,
     },
   });
 
@@ -841,11 +1354,19 @@ async function main(): Promise<void> {
   await seedRentals(provider.id);
   await seedClean();
   await seedPorter();
+  await seedRides();
+  await seedRepair();
+  await seedNotifications(demoUser.id);
+  await seedOffers();
+  await seedWallet(demoUser.id);
+  await seedOrderChat(demoUser.id);
+  await seedProvider(provider.id);
 
   const stays = await prisma.stay.count();
   const stayBookings = await prisma.stayBooking.count();
   const cars = await prisma.rentalCar.count();
   const cleanServices = await prisma.cleanService.count();
+  const repairServices = await prisma.repairService.count();
 
   console.log(`Seeded users: ${demoUser.name} (${demoUser.id}), ${admin.name} (${admin.id})`);
   console.log(`Seeded catalog: ${catalog.length} categories, ${serviceCount} services`);
@@ -856,6 +1377,19 @@ async function main(): Promise<void> {
     `Seeded clean: ${CLEAN_CATEGORIES.length} categories, ${cleanServices} services, promos TANK60/SOFA50/DEEP70`,
   );
   console.log(`Seeded porter: ${PORTER_VEHICLES.length} vehicles, ${PORTER_ADDONS.length} add-ons`);
+  console.log(`Seeded rides: ${RIDE_TYPES.length} ride types`);
+  console.log(
+    `Seeded repair: ${REPAIR_CATEGORIES.length} categories, ${repairServices} services, promos AC60/LEAK50/PAINT120`,
+  );
+  console.log(`Seeded notifications: ${NOTIFICATIONS.length} for ${demoUser.name}`);
+  console.log(
+    `Seeded offers: ${OFFERS.length} banners, ${demoUser.name} has ${demoUser.rewardPoints} reward points`,
+  );
+  console.log(`Seeded wallet: ${WALLET_TRANSACTIONS.length} transactions, balance AED 240.50`);
+  console.log(`Seeded order chat: booking ELK-2026-04921 with ${CHAT_MESSAGES.length} messages`);
+  console.log(
+    `Seeded provider: ${provider.name} (VERIFIED) with ${PROVIDER_REQUESTS.length} requests`,
+  );
 }
 
 main()

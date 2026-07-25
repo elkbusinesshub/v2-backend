@@ -8,5 +8,7 @@ import { BookingsService } from './bookings.service';
   imports: [ServicesModule],
   controllers: [BookingsController],
   providers: [BookingsService, BookingsRepository],
+  // repository exported for the reviews module (review-target/ownership lookups)
+  exports: [BookingsRepository],
 })
 export class BookingsModule {}

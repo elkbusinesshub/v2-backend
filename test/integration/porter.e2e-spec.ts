@@ -113,6 +113,54 @@ describe('Porter (integration)', () => {
     });
   });
 
+  it('books against a saved address id, overriding any free text', async () => {
+    const addr = await request(http())
+      .post('/api/v1/locations')
+      .set('Authorization', bearer(userToken))
+      .send({
+        label: 'Home',
+        formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+        lat: 24.494,
+        lng: 54.407,
+        isDefault: true,
+      })
+      .expect(201);
+
+    const res = await request(http())
+      .post('/api/v1/porter/bookings')
+      .set('Authorization', bearer(userToken))
+      .send({
+        vehicleId: 'bike',
+        pickupAddressId: addr.body.data.id,
+        dropAddress: 'Downtown Dubai, Tower 4',
+        paymentMethod: 'wallet',
+      })
+      .expect(201);
+
+    expect(res.body.data.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+  });
+
+  it("404s a pickupAddressId that isn't the caller's", async () => {
+    await request(http())
+      .post('/api/v1/porter/bookings')
+      .set('Authorization', bearer(userToken))
+      .send({
+        vehicleId: 'bike',
+        pickupAddressId: '00000000-0000-7000-8000-000000000000',
+        dropAddress: 'Downtown Dubai, Tower 4',
+        paymentMethod: 'wallet',
+      })
+      .expect(404);
+  });
+
+  it('rejects a booking with neither pickupAddress nor pickupAddressId', async () => {
+    await request(http())
+      .post('/api/v1/porter/bookings')
+      .set('Authorization', bearer(userToken))
+      .send({ vehicleId: 'bike', dropAddress: 'Downtown Dubai, Tower 4', paymentMethod: 'wallet' })
+      .expect(400);
+  });
+
   it('books an ASAP delivery and lists it', async () => {
     const res = await request(http())
       .post('/api/v1/porter/bookings')

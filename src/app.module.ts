@@ -17,15 +17,24 @@ import { PrismaModule } from '@/database/prisma.module';
 import { JobsModule } from '@/jobs/jobs.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
+import { AppConfigModule } from '@/modules/config/config.module';
 import { ElkCleanModule } from '@/modules/elkclean/elkclean.module';
 import { ElkStayModule } from '@/modules/elkstay/elkstay.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
+import { OffersModule } from '@/modules/offers/offers.module';
+import { OrdersModule } from '@/modules/orders/orders.module';
 import { PorterModule } from '@/modules/porter/porter.module';
+import { ProviderModule } from '@/modules/provider/provider.module';
+import { ElkRepModule } from '@/modules/repair/repair.module';
 import { RentalsModule } from '@/modules/rentals/rentals.module';
+import { RidesModule } from '@/modules/rides/rides.module';
+import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { ServicesModule } from '@/modules/services/services.module';
 import { UsersModule } from '@/modules/users/users.module';
+import { WalletModule } from '@/modules/wallet/wallet.module';
 import { SocketsModule } from '@/sockets/sockets.module';
 import { StorageModule } from '@/storage/storage.module';
 
@@ -111,6 +120,15 @@ import { StorageModule } from '@/storage/storage.module';
     RentalsModule,
     ElkCleanModule,
     PorterModule,
+    RidesModule,
+    ElkRepModule,
+    ReviewsModule,
+    NotificationsModule,
+    OffersModule,
+    AppConfigModule,
+    WalletModule,
+    OrdersModule,
+    ProviderModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },
