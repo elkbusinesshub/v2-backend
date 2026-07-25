@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/**)",
+      "Read(//home/rafseena/Desktop/Projects/ME/**)",
+      "Bash(find /home/rafseena/Desktop/Projects/ME/V2/lib -iname '*clean*' -o -iname '*porter*' | head -20; echo ---; ls /home/rafseena/Desktop/Projects/ME/V2/lib)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/**)",
+      "Bash(find /home/rafseena/Desktop/Projects/ME/V2/lib/features/elkclean -type f | head -30; echo ---; find /home/rafseena/Desktop/Projects/ME/V2/lib/data -iname '*clean*' -o -iname '*elkclean*' | head)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/features/elkclean/**)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/data/**)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/data/datasources/**)",
+      "Bash(wc -l /home/rafseena/Desktop/Projects/ME/V2/lib/features/elkclean/elkclean_shell.dart)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/data/models/**)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/data/repositories/**)",
+      "Bash(grep -n -A30 'dummyPorterJson' /home/rafseena/Desktop/Projects/ME/V2/lib/data/datasources/dummy_data.dart | head -50; wc -l /home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/view/porter_screen.dart /home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/view/porter_booking_flow.dart /home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/cubit/porter_cubit.dart)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/view/**)",
+      "Bash(grep -n 'fare\\\\|Fare\\\\|packageType\\\\|weight\\\\|vehicle\\\\|estimate\\\\|km\\\\|eta' /home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/view/porter_screen.dart | head -40; echo ---; cat /home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/cubit/porter_cubit.dart)",
+      "Read(//home/rafseena/Desktop/Projects/ME/V2/lib/features/porter/cubit/**)"
+    ]
+  }
+}
