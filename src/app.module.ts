@@ -23,10 +23,13 @@ import { ElkStayModule } from '@/modules/elkstay/elkstay.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
+import { MarketplaceModule } from '@/modules/marketplace/marketplace.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { OffersModule } from '@/modules/offers/offers.module';
 import { OrdersModule } from '@/modules/orders/orders.module';
+import { PlacesModule } from '@/modules/places/places.module';
 import { PorterModule } from '@/modules/porter/porter.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProviderModule } from '@/modules/provider/provider.module';
 import { ElkRepModule } from '@/modules/repair/repair.module';
 import { RentalsModule } from '@/modules/rentals/rentals.module';
@@ -35,6 +38,7 @@ import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { ServicesModule } from '@/modules/services/services.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { WalletModule } from '@/modules/wallet/wallet.module';
+import { PushModule } from '@/push/push.module';
 import { SocketsModule } from '@/sockets/sockets.module';
 import { StorageModule } from '@/storage/storage.module';
 
@@ -105,6 +109,7 @@ import { StorageModule } from '@/storage/storage.module';
     PrismaModule,
     RedisModule,
     StorageModule,
+    PushModule,
     JobsModule,
     SocketsModule,
 
@@ -113,6 +118,8 @@ import { StorageModule } from '@/storage/storage.module';
     AuthModule,
     HealthModule,
     LocationsModule,
+    MarketplaceModule,
+    PlacesModule,
     ServicesModule,
     HomeModule,
     BookingsModule,
@@ -129,6 +136,7 @@ import { StorageModule } from '@/storage/storage.module';
     WalletModule,
     OrdersModule,
     ProviderModule,
+    UploadsModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

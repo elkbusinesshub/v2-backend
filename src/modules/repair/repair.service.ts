@@ -114,6 +114,9 @@ export class ElkRepService {
         label: a.label,
         line: a.formattedAddress,
         isDefault: a.isDefault,
+        // Coordinates so the client can draw the address on a real map.
+        lat: a.lat,
+        lng: a.lng,
       })),
     };
   }
@@ -311,17 +314,34 @@ export class ElkRepService {
 
   // ─── helpers ───────────────────────────────────────────────────────────────
 
-  /** The app's 6-day strip, in the operating region's calendar. */
+  /**
+   * The app's 6-day strip, in the operating region's calendar.
+   *
+   * Carries the slots still bookable on each date and drops a date with none
+   * left — see the same helper in ElkCleanService for why.
+   */
   private upcomingDates(): Record<string, unknown>[] {
     const now = Date.now();
+    const todayRegion = new Date(now + OFFSET_MS).toISOString().slice(0, 10);
+
     return Array.from({ length: REPAIR_BOOKABLE_DAYS }, (_, i) => {
       const local = new Date(now + OFFSET_MS + i * MS_PER_DAY);
+      const date = local.toISOString().slice(0, 10);
       return {
-        date: local.toISOString().slice(0, 10),
+        date,
         day: local.getUTCDate(),
-        weekday: i === 0 ? 'TODAY' : WEEKDAYS[local.getUTCDay()]!,
+        weekday: date === todayRegion ? 'TODAY' : WEEKDAYS[local.getUTCDay()]!,
+        slots: this.remainingSlots(date),
       };
-    });
+    }).filter((d) => d.slots.length > 0);
+  }
+
+  /** Arrival windows on [date] whose start is still in the future. */
+  private remainingSlots(date: string): string[] {
+    const now = Date.now();
+    return REPAIR_TIME_SLOTS.filter(
+      (slot) => new Date(`${date}T${slot}:00.000${REPAIR_UTC_OFFSET}`).getTime() > now,
+    );
   }
 
   /** Validates date-in-window + slot-not-passed; returns the slot instant. */

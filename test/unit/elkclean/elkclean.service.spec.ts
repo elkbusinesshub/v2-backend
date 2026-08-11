@@ -59,7 +59,7 @@ const address = {
   id: 'addr-1',
   userId: 'u-1',
   label: 'Home',
-  formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+  formattedAddress: 'Tower 3, Apt 1204, Koramangala',
   lat: 24.5,
   lng: 54.4,
   isDefault: true,
@@ -223,7 +223,7 @@ describe('ElkCleanService', () => {
       expect(booking.status).toBe('confirmed');
       expect(booking.address).toEqual({
         label: 'Home',
-        line: 'Tower 3, Apt 1204, Al Reem Island',
+        line: 'Tower 3, Apt 1204, Koramangala',
       });
       const breakdown = booking.breakdown as Record<string, number | null>;
       expect(breakdown.totalAmount).toBe(299);
@@ -288,6 +288,74 @@ describe('ElkCleanService', () => {
       await expect(service.getService('svc-tank')).rejects.toBeInstanceOf(
         ResourceNotFoundException,
       );
+    });
+  });
+
+  describe('booking options — bookable slots', () => {
+    // IST. The app preselects the first slot of the first date, so anything
+    // already past that the options advertise becomes a guaranteed 400.
+    const at = (iso: string) => jest.setSystemTime(new Date(iso));
+
+    beforeEach(() => jest.useFakeTimers({ doNotFake: ['nextTick'] }));
+    afterEach(() => jest.useRealTimers());
+
+    type DateOption = { date: string; weekday: string; slots: string[] };
+    const datesOf = async (): Promise<DateOption[]> =>
+      (await service.getBookingOptions(user)).dates as DateOption[];
+
+    it('drops slots that have already passed today', async () => {
+      at('2026-08-09T08:19:00.000Z'); // 13:49 IST
+      const [today] = await datesOf();
+
+      expect(today!.weekday).toBe('TODAY');
+      expect(today!.slots).toEqual(['14:00', '16:00', '18:00']);
+    });
+
+    it('offers every slot on a future date', async () => {
+      at('2026-08-09T08:19:00.000Z');
+      const [, tomorrow] = await datesOf();
+
+      expect(tomorrow!.slots).toEqual(['08:00', '10:00', '12:00', '14:00', '16:00', '18:00']);
+    });
+
+    it('drops today entirely once its last window has passed', async () => {
+      at('2026-08-09T13:00:00.000Z'); // 18:30 IST — past the 18:00 window
+      const dates = await datesOf();
+
+      expect(dates[0]!.date).toBe('2026-08-10');
+      // Index 0 is no longer today, so it must not still claim to be.
+      expect(dates[0]!.weekday).not.toBe('TODAY');
+    });
+
+    it('every advertised slot is one createBooking will accept', async () => {
+      at('2026-08-09T08:19:00.000Z');
+      const [today] = await datesOf();
+
+      for (const slot of today!.slots) {
+        await expect(
+          service.createBooking(user, {
+            ...cart,
+            scheduledDate: today!.date,
+            timeSlot: slot,
+            addressId: 'addr-1',
+            paymentMethod: 'card',
+          }),
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('still rejects a passed slot that a stale client submits', async () => {
+      at('2026-08-09T08:19:00.000Z');
+
+      await expect(
+        service.createBooking(user, {
+          ...cart,
+          scheduledDate: '2026-08-09',
+          timeSlot: '08:00',
+          addressId: 'addr-1',
+          paymentMethod: 'card',
+        }),
+      ).rejects.toBeInstanceOf(ValidationFailedException);
     });
   });
 });

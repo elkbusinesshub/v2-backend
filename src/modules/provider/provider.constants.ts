@@ -20,7 +20,7 @@ export const SCHEDULE_SLOTS = ['09:00 – 12:00', '13:00 – 16:00', '17:00 – 
 export const EARNINGS_TREND = {
   month: '▲ 12% vs last month',
   completedJobs: '▲ 6 this week',
-  avgPerJob: '▲ AED 8',
+  avgPerJob: '▲ ₹8',
 } as const;
 
 export const DASHBOARD_TREND = {

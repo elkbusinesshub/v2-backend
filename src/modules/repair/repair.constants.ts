@@ -1,4 +1,4 @@
-/** Flat "Visit & inspection fee" added to every repair booking (AED). */
+/** Flat "Visit & inspection fee" added to every repair booking (INR). */
 export const REPAIR_VISIT_FEE = 15;
 
 /** Arrival-window start times offered by the scheduler (2-hour windows). */
@@ -10,8 +10,8 @@ export const REPAIR_BOOKABLE_DAYS = 6;
 /** "Free cancellation" cutoff before the arrival window. */
 export const REPAIR_CANCEL_CUTOFF_HOURS = 2;
 
-/** Slots are wall-clock times in the operating region (UAE). */
-export const REPAIR_UTC_OFFSET = '+04:00';
+/** Slots are wall-clock times in the operating region — IST, see CLEAN_UTC_OFFSET. */
+export const REPAIR_UTC_OFFSET = '+05:30';
 
 /** Booking reference: ELK-#### (4-digit number), per the done screen. */
 export const REPAIR_CODE_MIN = 1000;
@@ -21,7 +21,7 @@ export const REPAIR_CODE_SPAN = 9000;
 export const REPAIR_PAYMENT_METHODS = ['card', 'apple', 'wallet'] as const;
 
 /** Placeholder header location until the app sends the user's area. */
-export const REPAIR_DEFAULT_LOCATION = 'Al Reem Island';
+export const REPAIR_DEFAULT_LOCATION = 'Koramangala';
 
 /** Cart guard rails. */
 export const REPAIR_MAX_CART_LINES = 20;

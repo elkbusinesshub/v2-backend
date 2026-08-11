@@ -18,7 +18,7 @@ const profile = {
   businessName: 'Royal Shine Co.',
   serviceCategory: 'Cleaning',
   contactNumber: '+971500000002',
-  serviceArea: 'Dubai Marina',
+  serviceArea: 'Indiranagar',
   tradeLicenseUploaded: true,
   idDocumentUploaded: true,
   status: ProviderStatus.VERIFIED,
@@ -39,7 +39,7 @@ const requests = [
     providerId: 'pp-1',
     serviceName: 'Deep Home Cleaning',
     customerName: 'Ahmed Al-Rashid',
-    location: 'Dubai Marina',
+    location: 'Indiranagar',
     timeLabel: 'Today 12:00 PM',
     amount: new Prisma.Decimal(149),
     status: ProviderRequestStatus.PENDING,
@@ -133,7 +133,7 @@ describe('ProviderService', () => {
       expect(dashboard).toMatchObject({ businessName: 'Royal Shine Co.', modeLabel: '✓ VERIFIED' });
       const stats = dashboard.stats as { label: string; value: string }[];
       expect(stats[0]).toMatchObject({ label: 'Active Orders', value: '1' });
-      expect(stats[1]).toMatchObject({ label: 'This Month', value: 'AED 2,840' });
+      expect(stats[1]).toMatchObject({ label: 'This Month', value: '₹2,840' });
       expect(stats[2]).toMatchObject({ label: 'Rating', value: '4.9★', trend: '284 reviews' });
       expect(dashboard.requests).toHaveLength(2);
     });

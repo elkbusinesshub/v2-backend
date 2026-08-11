@@ -72,7 +72,7 @@ describe('Offers & Config (integration)', () => {
 
     expect(res.body.data).toMatchObject({
       rewardPoints: 150,
-      rewardDiscountLabel: '≈ AED 15 discount available',
+      rewardDiscountLabel: '≈ ₹15 discount available',
     });
     expect(res.body.data.offers).toHaveLength(2);
     expect(res.body.data.offers[0]).toMatchObject({ code: 'ELK20', discountLabel: '20%' });

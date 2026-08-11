@@ -95,7 +95,7 @@ describe('Rides (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         label: 'Home',
-        formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+        formattedAddress: 'Tower 3, Apt 1204, Koramangala',
         lat: 24.494,
         lng: 54.407,
         isDefault: true,
@@ -108,13 +108,13 @@ describe('Rides (integration)', () => {
       .send({
         rideTypeId: 'premium',
         pickupAddressId: addr.body.data.id,
-        dropAddress: 'Downtown Dubai · Burj Khalifa',
+        dropAddress: 'MG Road · Brigade Towers',
         paymentMethod: 'card',
       })
       .expect(201);
 
     const booking = res.body.data;
-    expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+    expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Koramangala');
     expect(booking.status).toBe('confirmed');
     expect(booking.breakdown.totalAmount).toBe(28);
     expect(booking.otpCode).toMatch(/^\d{4}$/);
@@ -127,7 +127,7 @@ describe('Rides (integration)', () => {
       .send({
         rideTypeId: 'auto',
         pickupAddressId: '00000000-0000-7000-8000-000000000000',
-        dropAddress: 'Downtown Dubai · Burj Khalifa',
+        dropAddress: 'MG Road · Brigade Towers',
         paymentMethod: 'cash',
       })
       .expect(404);
@@ -137,7 +137,7 @@ describe('Rides (integration)', () => {
     await request(http())
       .post('/api/v1/rides/bookings')
       .set('Authorization', bearer(userToken))
-      .send({ rideTypeId: 'auto', pickupAddress: 'Dubai Marina · Gate 3', paymentMethod: 'cash' })
+      .send({ rideTypeId: 'auto', pickupAddress: 'Indiranagar · Gate 3', paymentMethod: 'cash' })
       .expect(400);
   });
 
@@ -147,8 +147,8 @@ describe('Rides (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         rideTypeId: 'auto',
-        pickupAddress: 'Dubai Marina · Gate 3',
-        dropAddress: 'Downtown Dubai · Burj Khalifa',
+        pickupAddress: 'Indiranagar · Gate 3',
+        dropAddress: 'MG Road · Brigade Towers',
         paymentMethod: 'cash',
       })
       .expect(201);
@@ -209,8 +209,8 @@ describe('Rides (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         rideTypeId: 'xl',
-        pickupAddress: 'Al Barsha, Mall of the Emirates',
-        dropAddress: 'Dubai Internet City',
+        pickupAddress: 'Whitefield, Phoenix Mall',
+        dropAddress: 'Bengaluru Internet City',
         paymentMethod: 'wallet',
       })
       .expect(201);

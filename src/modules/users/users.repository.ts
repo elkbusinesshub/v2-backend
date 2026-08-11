@@ -21,6 +21,10 @@ export class UsersRepository {
     return this.db.user.create({ data: { phone, roles: [Role.USER] } });
   }
 
+  async setRoles(id: string, roles: Role[]): Promise<User> {
+    return this.db.user.update({ where: { id }, data: { roles } });
+  }
+
   async updateProfile(
     id: string,
     data: { name?: string; email?: string; language?: string },

@@ -64,20 +64,20 @@ describe('OffersService', () => {
     users = moduleRef.get(UsersRepository);
   });
 
-  it('computes the AED-equivalent discount label from reward points', async () => {
+  it('computes the ₹-equivalent discount label from reward points', async () => {
     const page = await service.getOffersPage(user);
     expect(page).toMatchObject({
       rewardPoints: 150,
-      rewardDiscountLabel: '≈ AED 15 discount available',
+      rewardDiscountLabel: '≈ ₹15 discount available',
     });
     const offerList = page.offers as Record<string, unknown>[];
     expect(offerList[0]).toMatchObject({ code: 'ELK20', discountLabel: '20%' });
   });
 
-  it('floors an uneven points-to-AED conversion', async () => {
+  it('floors an uneven points-to-₹conversion', async () => {
     users.findById.mockResolvedValue({ ...account, rewardPoints: 47 });
     const page = await service.getOffersPage(user);
-    expect(page.rewardDiscountLabel).toBe('≈ AED 4 discount available');
+    expect(page.rewardDiscountLabel).toBe('≈ ₹4 discount available');
   });
 
   it('404s a deleted/missing account', async () => {

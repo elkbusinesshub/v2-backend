@@ -7,6 +7,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import { BookingsRepository, BookingWithService } from '@/modules/bookings/bookings.repository';
 import { BookingsService } from '@/modules/bookings/bookings.service';
+import { UnifiedBookingsRepository } from '@/modules/bookings/unified-bookings.repository';
 import { TIME_SLOTS, upcomingDates } from '@/modules/services/booking-window';
 import { ServicesRepository, ServiceWithCategory } from '@/modules/services/services.repository';
 
@@ -51,7 +52,9 @@ function makeBooking(overrides: Partial<BookingWithService> = {}): BookingWithSe
     serviceId: service.id,
     status: BookingStatus.CONFIRMED,
     scheduledAt: new Date('2026-07-08T10:00:00Z'),
-    addressText: 'Marina Bay',
+    addressText: 'Koramangala',
+    lat: null,
+    lng: null,
     serviceFee: new Prisma.Decimal(149),
     total: new Prisma.Decimal(149),
     cancelledAt: null,
@@ -70,6 +73,7 @@ describe('BookingsService', () => {
   let bookingsService: BookingsService;
   let bookings: jest.Mocked<BookingsRepository>;
   let services: jest.Mocked<ServicesRepository>;
+  let unified: jest.Mocked<UnifiedBookingsRepository>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -89,12 +93,17 @@ describe('BookingsService', () => {
           provide: ServicesRepository,
           useValue: { findById: jest.fn().mockResolvedValue(service) },
         },
+        {
+          provide: UnifiedBookingsRepository,
+          useValue: { findAllByUser: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 
     bookingsService = moduleRef.get(BookingsService);
     bookings = moduleRef.get(BookingsRepository);
     services = moduleRef.get(ServicesRepository);
+    unified = moduleRef.get(UnifiedBookingsRepository);
   });
 
   describe('create', () => {
@@ -103,7 +112,7 @@ describe('BookingsService', () => {
         serviceId: service.id,
         day: validDay,
         time: validTime,
-        address: 'Marina Bay',
+        address: 'Koramangala',
         total: 1, // must be ignored
       });
 
@@ -124,7 +133,7 @@ describe('BookingsService', () => {
           serviceId: service.id,
           day: outsideDay,
           time: validTime,
-          address: 'Marina Bay',
+          address: 'Koramangala',
         }),
       ).rejects.toBeInstanceOf(ValidationFailedException);
       expect(bookings.create).not.toHaveBeenCalled();
@@ -136,7 +145,7 @@ describe('BookingsService', () => {
           serviceId: service.id,
           day: validDay,
           time: '09:37',
-          address: 'Marina Bay',
+          address: 'Koramangala',
         }),
       ).rejects.toBeInstanceOf(ValidationFailedException);
     });
@@ -149,7 +158,7 @@ describe('BookingsService', () => {
           serviceId: 'ghost',
           day: validDay,
           time: validTime,
-          address: 'Marina Bay',
+          address: 'Koramangala',
         }),
       ).rejects.toBeInstanceOf(ResourceNotFoundException);
     });
@@ -169,7 +178,7 @@ describe('BookingsService', () => {
         serviceId: service.id,
         day: validDay,
         time: validTime,
-        address: 'Marina Bay',
+        address: 'Koramangala',
       });
 
       expect(bookings.create).toHaveBeenCalledTimes(2);
@@ -178,24 +187,72 @@ describe('BookingsService', () => {
   });
 
   describe('list', () => {
-    it('maps rows to list items with numeric totals', async () => {
-      bookings.findAllByUser.mockResolvedValue([makeBooking()]);
-
-      const items = await bookingsService.list('u-1');
-
-      expect(items).toEqual([
+    it('maps every vertical onto one list shape, carrying the vertical through', async () => {
+      unified.findAllByUser.mockResolvedValue([
         {
           id: 'bk-1',
+          vertical: 'services',
           reference: 'ELK-2026-00001',
           serviceName: 'Deep Cleaning',
           serviceIcon: '✨',
           providerName: 'Royal Shine Cleaning Co.',
-          status: BookingStatus.CONFIRMED,
-          scheduledAt: '2026-07-08T10:00:00.000Z',
-          addressText: 'Marina Bay',
+          status: 'CONFIRMED',
+          scheduledAt: new Date('2026-07-08T10:00:00.000Z'),
+          addressText: 'Koramangala',
           total: 149,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+        {
+          id: 'cl-1',
+          vertical: 'elkclean',
+          reference: 'ELC-6600',
+          serviceName: 'Water Tank Cleaning +1 more',
+          serviceIcon: '🧹',
+          providerName: 'ELK Clean',
+          status: 'CONFIRMED',
+          scheduledAt: new Date('2026-07-07T10:00:00.000Z'),
+          addressText: 'Koramangala',
+          total: 210,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
         },
       ]);
+
+      const items = await bookingsService.list('u-1');
+
+      expect(items.map((i) => i.vertical)).toEqual(['services', 'elkclean']);
+      expect(items[0]).toEqual({
+        id: 'bk-1',
+        vertical: 'services',
+        reference: 'ELK-2026-00001',
+        serviceName: 'Deep Cleaning',
+        serviceIcon: '✨',
+        providerName: 'Royal Shine Cleaning Co.',
+        status: BookingStatus.CONFIRMED,
+        scheduledAt: '2026-07-08T10:00:00.000Z',
+        addressText: 'Koramangala',
+        total: 149,
+      });
+    });
+
+    it('serialises a booking with no schedule as a null date rather than crashing', async () => {
+      unified.findAllByUser.mockResolvedValue([
+        {
+          id: 'po-1',
+          vertical: 'porter',
+          reference: 'ELK-4390-LX',
+          serviceName: 'Bike delivery',
+          serviceIcon: '📦',
+          providerName: 'ELK Porter',
+          status: 'CONFIRMED',
+          scheduledAt: null, // "pickup now" carries no scheduled time
+          addressText: 'Indiranagar → MG Road',
+          total: 60,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const items = await bookingsService.list('u-1');
+      expect(items[0]!.scheduledAt).toBeNull();
     });
   });
 

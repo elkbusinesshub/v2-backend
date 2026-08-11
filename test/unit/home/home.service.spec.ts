@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { Prisma, Role } from '@prisma/client';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { HomeService } from '@/modules/home/home.service';
+import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
 import { ServicesRepository, ServiceWithCategory } from '@/modules/services/services.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
 
@@ -60,6 +61,7 @@ describe('HomeService', () => {
   let users: jest.Mocked<UsersRepository>;
   let locations: jest.Mocked<LocationsRepository>;
   let services: jest.Mocked<ServicesRepository>;
+  let marketplace: jest.Mocked<MarketplaceService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -74,6 +76,10 @@ describe('HomeService', () => {
           provide: ServicesRepository,
           useValue: { findTopRated: jest.fn().mockResolvedValue([makeService()]) },
         },
+        {
+          provide: MarketplaceService,
+          useValue: { topSellers: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 
@@ -81,6 +87,7 @@ describe('HomeService', () => {
     users = moduleRef.get(UsersRepository);
     locations = moduleRef.get(LocationsRepository);
     services = moduleRef.get(ServicesRepository);
+    marketplace = moduleRef.get(MarketplaceService);
   });
 
   it('assembles greeting, nav tiles, promo, and best sellers', async () => {
@@ -88,7 +95,7 @@ describe('HomeService', () => {
       id: 'addr-1',
       userId: 'u-1',
       label: 'Home',
-      formattedAddress: 'Marina Bay',
+      formattedAddress: 'Koramangala',
       lat: 24.45,
       lng: 54.37,
       isDefault: true,
@@ -101,6 +108,9 @@ describe('HomeService', () => {
 
     expect(feed.userName).toBe('Ahmed');
     expect(feed.location).toBe('Home');
+    // The header shows the address; the label alone does not tell the user
+    // which of their saved addresses is selected.
+    expect(feed.locationAddress).toBe('Koramangala');
     expect(feed.promo.title).toContain('20% OFF');
     expect(feed.categories).toHaveLength(6);
     expect(feed.categories.map((c) => c.id)).toEqual([
@@ -116,8 +126,8 @@ describe('HomeService', () => {
         id: 'svc-1',
         name: 'Royal Shine Cleaning Co.',
         initials: 'RS',
-        category: 'Cleaning · AED 85',
-        priceLabel: 'AED 85',
+        category: 'Cleaning · ₹85',
+        priceLabel: '₹85',
         rating: 4.9,
         colorHex: category.colorHex,
         verified: true,
@@ -133,6 +143,20 @@ describe('HomeService', () => {
 
     expect(feed.userName).toBe('');
     expect(feed.location).toBe('');
+    expect(feed.locationAddress).toBe('');
     expect(feed.bestSellers).toEqual([]);
+  });
+
+  it('embeds the engagement-ranked seller ads in the feed', async () => {
+    marketplace.topSellers.mockResolvedValue([
+      { id: 'ad-1', title: 'Deep Home Cleaning', wishlistCount: 4, viewCount: 30 } as never,
+    ]);
+
+    const feed = await service.getFeed('u-1');
+
+    // The rail is above the fold, so it has to ride along on the one call the
+    // home screen already makes rather than costing a second round trip.
+    expect(marketplace.topSellers).toHaveBeenCalledWith('u-1', 10);
+    expect(feed.topSellers).toHaveLength(1);
   });
 });

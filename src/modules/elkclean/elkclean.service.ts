@@ -108,6 +108,8 @@ export class ElkCleanService {
     const addresses = await this.locations.findAllByUser(user.id);
     return {
       dates: this.upcomingDates(),
+      // The full catalogue of windows. What is actually bookable is per-date,
+      // on `dates[].slots` — clients should read that.
       timeSlots: [...CLEAN_TIME_SLOTS],
       supplyFee: CLEAN_SUPPLY_FEE,
       addresses: addresses.map((a) => ({
@@ -115,6 +117,9 @@ export class ElkCleanService {
         label: a.label,
         line: a.formattedAddress,
         isDefault: a.isDefault,
+        // Coordinates so the client can draw the address on a real map.
+        lat: a.lat,
+        lng: a.lng,
       })),
     };
   }
@@ -315,17 +320,38 @@ export class ElkCleanService {
 
   // ─── helpers ───────────────────────────────────────────────────────────────
 
-  /** The app's 6-day strip, in the operating region's calendar. */
+  /**
+   * The app's 6-day strip, in the operating region's calendar.
+   *
+   * Each entry carries the slots still bookable on that date, and a date with
+   * none left is dropped entirely. Without this the strip offered today's
+   * 08:00 window at 18:00 — and the app preselects the first slot, so the
+   * default choice was one `resolveSlot` was always going to reject.
+   */
   private upcomingDates(): Record<string, unknown>[] {
     const now = Date.now();
+    const todayRegion = new Date(now + OFFSET_MS).toISOString().slice(0, 10);
+
     return Array.from({ length: CLEAN_BOOKABLE_DAYS }, (_, i) => {
       const local = new Date(now + OFFSET_MS + i * MS_PER_DAY);
+      const date = local.toISOString().slice(0, 10);
       return {
-        date: local.toISOString().slice(0, 10),
+        date,
         day: local.getUTCDate(),
-        weekday: i === 0 ? 'TODAY' : WEEKDAYS[local.getUTCDay()]!,
+        // Computed from the date, not the index: once a spent today drops out,
+        // index 0 is tomorrow and must not still say TODAY.
+        weekday: date === todayRegion ? 'TODAY' : WEEKDAYS[local.getUTCDay()]!,
+        slots: this.remainingSlots(date),
       };
-    });
+    }).filter((d) => d.slots.length > 0);
+  }
+
+  /** Arrival windows on [date] whose start is still in the future. */
+  private remainingSlots(date: string): string[] {
+    const now = Date.now();
+    return CLEAN_TIME_SLOTS.filter(
+      (slot) => new Date(`${date}T${slot}:00.000${CLEAN_UTC_OFFSET}`).getTime() > now,
+    );
   }
 
   /** Validates date-in-window + slot-not-passed; returns the slot instant. */

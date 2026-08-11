@@ -51,6 +51,8 @@ const completedBooking = {
   status: BookingStatus.COMPLETED,
   scheduledAt: new Date(),
   addressText: 'Home',
+  lat: null,
+  lng: null,
   serviceFee: new Prisma.Decimal(149),
   total: new Prisma.Decimal(149),
   cancelledAt: null,

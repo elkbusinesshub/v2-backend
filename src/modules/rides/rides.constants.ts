@@ -8,8 +8,8 @@ export const RIDE_DEFAULT_ETA_MINUTES = 14;
 
 /** Legacy /rides/current-estimate payload (display fixture, matches dummy data). */
 export const RIDE_DEFAULT_ESTIMATE = {
-  pickup: 'Dubai Marina · Gate 3',
-  drop: 'Downtown Dubai, Burj Khalifa',
+  pickup: 'Indiranagar · Gate 3',
+  drop: 'MG Road, Brigade Towers',
 } as const;
 
 /** Payment sheet options (all mock/internal charges until payments exist). */

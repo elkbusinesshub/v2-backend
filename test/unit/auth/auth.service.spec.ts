@@ -44,6 +44,9 @@ function makeSession(overrides: Partial<SessionWithUser> = {}): SessionWithUser 
   };
 }
 
+/** Mutated in place by tests — AuthService captures this array in its constructor. */
+const adminPhones: string[] = [];
+
 describe('AuthService', () => {
   let service: AuthService;
   let sessions: jest.Mocked<RefreshSessionRepository>;
@@ -76,6 +79,7 @@ describe('AuthService', () => {
             findById: jest.fn().mockResolvedValue(user),
             findByPhone: jest.fn(),
             createByPhone: jest.fn(),
+            setRoles: jest.fn(),
           },
         },
         {
@@ -89,13 +93,18 @@ describe('AuthService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) =>
-              key === 'jwt.accessTtlSeconds' ? 900 : key === 'jwt.refreshTtlDays' ? 30 : undefined,
-            ),
+            get: jest.fn((key: string) => {
+              if (key === 'jwt.accessTtlSeconds') return 900;
+              if (key === 'jwt.refreshTtlDays') return 30;
+              if (key === 'admin.phones') return adminPhones;
+              return undefined;
+            }),
           },
         },
       ],
     }).compile();
+
+    adminPhones.length = 0;
 
     service = moduleRef.get(AuthService);
     sessions = moduleRef.get(RefreshSessionRepository);
@@ -123,6 +132,43 @@ describe('AuthService', () => {
 
       expect(users.createByPhone).toHaveBeenCalledWith(user.phone);
       expect(pair.accessToken).toBe('signed.jwt');
+    });
+
+    it('grants ADMIN to a phone on the allowlist', async () => {
+      adminPhones.push('+919876500001');
+      const user = { id: 'u1', phone: '+919876500001', roles: [Role.USER] };
+      users.findByPhone.mockResolvedValue(user as never);
+      users.setRoles.mockResolvedValue({ ...user, roles: [Role.USER, Role.ADMIN] } as never);
+
+      await service.loginWithPhone('+919876500001', '1234', {});
+
+      expect(users.setRoles).toHaveBeenCalledWith('u1', [Role.USER, Role.ADMIN]);
+    });
+
+    it('leaves a phone that is not on the allowlist alone', async () => {
+      adminPhones.push('+919999999999');
+      users.findByPhone.mockResolvedValue({
+        id: 'u2',
+        phone: '+919876500001',
+        roles: [Role.USER],
+      } as never);
+
+      await service.loginWithPhone('+919876500001', '1234', {});
+
+      expect(users.setRoles).not.toHaveBeenCalled();
+    });
+
+    it('does not re-grant ADMIN to a user who already has it', async () => {
+      adminPhones.push('+919876500001');
+      users.findByPhone.mockResolvedValue({
+        id: 'u3',
+        phone: '+919876500001',
+        roles: [Role.USER, Role.ADMIN],
+      } as never);
+
+      await service.loginWithPhone('+919876500001', '1234', {});
+
+      expect(users.setRoles).not.toHaveBeenCalled();
     });
 
     it('propagates OTP verification failure without touching users', async () => {

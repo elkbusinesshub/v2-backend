@@ -1,7 +1,7 @@
 import { BookingStatus } from '@prisma/client';
 
 /** Display timezone for chat timestamps and tracking step times. */
-export const ORDERS_DISPLAY_TIMEZONE = 'Asia/Dubai';
+export const ORDERS_DISPLAY_TIMEZONE = 'Asia/Kolkata';
 
 /** Socket.IO namespace for realtime order chat. */
 export const CHAT_NAMESPACE = '/chat';

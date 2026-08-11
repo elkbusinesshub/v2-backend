@@ -10,6 +10,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { OtpService } from './otp.service';
 import { RefreshSessionRepository } from './refresh-session.repository';
+import { SmsService } from './sms.service';
 import { TokenDenylistService } from './token-denylist.service';
 
 /**
@@ -35,6 +36,7 @@ import { TokenDenylistService } from './token-denylist.service';
     RefreshSessionRepository,
     TokenDenylistService,
     OtpService,
+    SmsService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],

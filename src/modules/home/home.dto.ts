@@ -1,3 +1,4 @@
+import type { AdDto } from '@/modules/marketplace/marketplace.dto';
 /** Shapes match the Flutter models in lib/data/models/{home,provider}_models.dart. */
 
 export class PromoBannerDto {
@@ -29,8 +30,20 @@ export class BestSellerDto {
 
 export class HomeFeedDto {
   userName!: string;
+
+  /** The default address's label ("Home"), kept for existing clients. */
   location!: string;
+
+  /**
+   * The default address's full text ("Koramangala, Bengaluru"). The home
+   * header shows this — a label alone does not tell the user where they are.
+   * Empty when the user has no saved address.
+   */
+  locationAddress!: string;
   promo!: PromoBannerDto;
   categories!: HomeCategoryDto[];
   bestSellers!: BestSellerDto[];
+
+  /** Seller ads ranked by engagement — the "Best sellers" rail. */
+  topSellers!: AdDto[];
 }

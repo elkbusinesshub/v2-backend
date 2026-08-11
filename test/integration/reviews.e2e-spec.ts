@@ -86,7 +86,7 @@ describe('Reviews (integration)', () => {
     const create = await request(http())
       .post('/api/v1/bookings')
       .set('Authorization', bearer(userToken))
-      .send({ serviceId, day, time, address: 'Tower 3, Apt 1204, Al Reem Island' })
+      .send({ serviceId, day, time, address: 'Tower 3, Apt 1204, Koramangala' })
       .expect(201);
 
     const reference = create.body.data.bookingReference;

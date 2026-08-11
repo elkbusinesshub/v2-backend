@@ -4,7 +4,7 @@ import { StayCategoryType } from '@prisma/client';
 export const STAY_SERVICE_FEE = 499;
 
 /** Timezone used for user-facing date labels on booking cards. */
-export const STAY_DISPLAY_TIMEZONE = 'Asia/Dubai';
+export const STAY_DISPLAY_TIMEZONE = 'Asia/Kolkata';
 
 /** Booking reference alphabet/length — success ticket shows ELK-XXXXX. */
 export const BOOKING_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

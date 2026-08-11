@@ -143,7 +143,7 @@ describe('ElkClean (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         label: 'Home',
-        formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+        formattedAddress: 'Tower 3, Apt 1204, Koramangala',
         lat: 24.494,
         lng: 54.407,
         isDefault: true,
@@ -183,7 +183,7 @@ describe('ElkClean (integration)', () => {
     const booking = res.body.data;
     expect(booking.code).toMatch(/^ELC-\d{4}$/);
     expect(booking.status).toBe('confirmed');
-    expect(booking.address.line).toBe('Tower 3, Apt 1204, Al Reem Island');
+    expect(booking.address.line).toBe('Tower 3, Apt 1204, Koramangala');
     expect(booking.breakdown.totalAmount).toBe(150); // 4×35 + 10, server-priced
     expect(booking.paidAt).not.toBeNull();
   });

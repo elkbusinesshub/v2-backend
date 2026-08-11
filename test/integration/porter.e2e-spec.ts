@@ -119,7 +119,7 @@ describe('Porter (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         label: 'Home',
-        formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+        formattedAddress: 'Tower 3, Apt 1204, Koramangala',
         lat: 24.494,
         lng: 54.407,
         isDefault: true,
@@ -132,12 +132,12 @@ describe('Porter (integration)', () => {
       .send({
         vehicleId: 'bike',
         pickupAddressId: addr.body.data.id,
-        dropAddress: 'Downtown Dubai, Tower 4',
+        dropAddress: 'MG Road, Tower 4',
         paymentMethod: 'wallet',
       })
       .expect(201);
 
-    expect(res.body.data.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+    expect(res.body.data.pickupAddress).toBe('Tower 3, Apt 1204, Koramangala');
   });
 
   it("404s a pickupAddressId that isn't the caller's", async () => {
@@ -147,7 +147,7 @@ describe('Porter (integration)', () => {
       .send({
         vehicleId: 'bike',
         pickupAddressId: '00000000-0000-7000-8000-000000000000',
-        dropAddress: 'Downtown Dubai, Tower 4',
+        dropAddress: 'MG Road, Tower 4',
         paymentMethod: 'wallet',
       })
       .expect(404);
@@ -157,7 +157,7 @@ describe('Porter (integration)', () => {
     await request(http())
       .post('/api/v1/porter/bookings')
       .set('Authorization', bearer(userToken))
-      .send({ vehicleId: 'bike', dropAddress: 'Downtown Dubai, Tower 4', paymentMethod: 'wallet' })
+      .send({ vehicleId: 'bike', dropAddress: 'MG Road, Tower 4', paymentMethod: 'wallet' })
       .expect(400);
   });
 
@@ -167,8 +167,8 @@ describe('Porter (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         vehicleId: 'bike',
-        pickupAddress: 'Dubai Marina, Block C',
-        dropAddress: 'Downtown Dubai, Tower 4',
+        pickupAddress: 'Indiranagar, Block C',
+        dropAddress: 'MG Road, Tower 4',
         packageType: 'Electronics',
         weightLabel: '2.5 kg',
         paymentMethod: 'wallet',
@@ -197,7 +197,7 @@ describe('Porter (integration)', () => {
         vehicleId: 'car',
         addons: ['insure'],
         pickupAddress: 'JLT Cluster D',
-        dropAddress: 'Business Bay, Bay Square',
+        dropAddress: 'Whitefield, Prestige Tech Park',
         scheduledDate,
         pickupWindow: '9:00 – 10:00',
         paymentMethod: 'card',
@@ -245,8 +245,8 @@ describe('Porter (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         vehicleId: 'bike',
-        pickupAddress: 'Al Barsha, Mall of the Emirates',
-        dropAddress: 'Dubai Internet City',
+        pickupAddress: 'Whitefield, Phoenix Mall',
+        dropAddress: 'Bengaluru Internet City',
         paymentMethod: 'cash',
       })
       .expect(201);

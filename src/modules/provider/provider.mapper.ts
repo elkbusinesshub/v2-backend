@@ -7,9 +7,9 @@ import {
   SCHEDULE_SLOTS,
 } from './provider.constants';
 
-/** AED with thousands separators, e.g. "AED 2,840". */
+/** Rupees with Indian thousands separators, e.g. "₹2,840". */
 function aed(value: number): string {
-  return `AED ${Math.round(value).toLocaleString('en-US')}`;
+  return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
 export function toRequestJson(request: ProviderRequest): Record<string, unknown> {

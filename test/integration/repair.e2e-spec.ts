@@ -135,7 +135,7 @@ describe('ElkRep (integration)', () => {
       .set('Authorization', bearer(userToken))
       .send({
         label: 'Home',
-        formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+        formattedAddress: 'Tower 3, Apt 1204, Koramangala',
         lat: 24.494,
         lng: 54.407,
         isDefault: true,
@@ -175,7 +175,7 @@ describe('ElkRep (integration)', () => {
     const booking = res.body.data;
     expect(booking.code).toMatch(/^ELK-\d{4}$/);
     expect(booking.status).toBe('confirmed');
-    expect(booking.address.line).toBe('Tower 3, Apt 1204, Al Reem Island');
+    expect(booking.address.line).toBe('Tower 3, Apt 1204, Koramangala');
     expect(booking.breakdown.totalAmount).toBe(84); // 69 + 15, server-priced
     expect(booking.paidAt).not.toBeNull();
   });

@@ -1,9 +1,9 @@
 import { RentalCarCategory, RentalType } from '@prisma/client';
 
-/** Flat delivery fee when the car is delivered to the customer (AED). */
+/** Flat delivery fee when the car is delivered to the customer (INR). */
 export const RENTAL_DELIVERY_FEE = 25;
 
-/** UAE VAT applied on (subtotal − discount). */
+/** GST applied on (subtotal − discount). Rate carried over from UAE VAT — see PORTER_VAT_RATE. */
 export const RENTAL_VAT_RATE = 0.05;
 
 /**

@@ -29,7 +29,7 @@ import { PorterCatalogRepository } from './porter-catalog.repository';
 const OFFSET_MS = -new Date(`1970-01-01T00:00:00${PORTER_UTC_OFFSET}`).getTime();
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-/** AED → fils. All money math runs on integers to avoid float drift. */
+/** ₹ → paise. All money math runs on integers to avoid float drift. */
 const fils = (aed: number): number => Math.round(aed * 100);
 
 /** Fully resolved and validated quote — the single pricing source of truth. */
@@ -85,7 +85,7 @@ export class PorterService {
 
   /**
    * Validates vehicle + add-ons against the catalog and applies the booking
-   * flow's formula: fare = base + Σaddons; VAT = 5% of (fare + service fee).
+   * flow's formula: fare = base + Σaddons; GST = 5% of (fare + service fee).
    */
   private async resolveQuote(dto: PorterQuoteDto): Promise<ResolvedQuote> {
     const vehicle = await this.catalog.findActiveVehicleBySlug(dto.vehicleId);

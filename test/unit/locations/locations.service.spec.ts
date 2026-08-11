@@ -9,7 +9,7 @@ function makeAddress(overrides: Partial<Address> = {}): Address {
     id: 'addr-1',
     userId: 'user-1',
     label: 'Home',
-    formattedAddress: 'Tower 3, Marina Bay, Al Reem Island',
+    formattedAddress: 'Tower 3, Sony World Junction, Koramangala',
     lat: 24.4539,
     lng: 54.3773,
     isDefault: false,
@@ -58,7 +58,7 @@ describe('LocationsService', () => {
 
   describe('create', () => {
     it('delegates straight to the repository', async () => {
-      const dto = { label: 'Home', formattedAddress: 'Al Reem Island', lat: 24.45, lng: 54.37 };
+      const dto = { label: 'Home', formattedAddress: 'Koramangala', lat: 24.45, lng: 54.37 };
       repo.create.mockResolvedValue(makeAddress());
 
       await service.create('user-1', dto);

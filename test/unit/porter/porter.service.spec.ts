@@ -61,7 +61,7 @@ const savedAddress = {
   id: 'addr-1',
   userId: 'u-1',
   label: 'Home',
-  formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+  formattedAddress: 'Tower 3, Apt 1204, Koramangala',
   lat: 24.5,
   lng: 54.4,
   isDefault: true,
@@ -169,8 +169,8 @@ describe('PorterService', () => {
   describe('createBooking', () => {
     const base = {
       vehicleId: 'bike',
-      pickupAddress: 'Dubai Marina, Block C',
-      dropAddress: 'Downtown Dubai, Tower 4',
+      pickupAddress: 'Indiranagar, Block C',
+      dropAddress: 'MG Road, Tower 4',
       paymentMethod: 'wallet',
     };
 
@@ -216,10 +216,10 @@ describe('PorterService', () => {
       const booking = await service.createBooking(user, {
         vehicleId: 'bike',
         pickupAddressId: 'addr-1',
-        dropAddress: 'Downtown Dubai, Tower 4',
+        dropAddress: 'MG Road, Tower 4',
         paymentMethod: 'wallet',
       });
-      expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+      expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Koramangala');
       expect(locations.findByIdForUser).toHaveBeenCalledWith('addr-1', user.id);
     });
 
@@ -229,7 +229,7 @@ describe('PorterService', () => {
         service.createBooking(user, {
           vehicleId: 'bike',
           pickupAddressId: 'addr-x',
-          dropAddress: 'Downtown Dubai, Tower 4',
+          dropAddress: 'MG Road, Tower 4',
           paymentMethod: 'wallet',
         }),
       ).rejects.toBeInstanceOf(ResourceNotFoundException);

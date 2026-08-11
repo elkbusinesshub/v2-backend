@@ -1,7 +1,13 @@
-/** Flat service fee on every porter delivery (AED). */
+/** Flat service fee on every porter delivery (INR). */
 export const PORTER_SERVICE_FEE = 3.5;
 
-/** UAE VAT applied on (fare + service fee). */
+/**
+ * GST applied on (fare + service fee).
+ *
+ * Carried over from the UAE 5% VAT this was built against. The rate is a tax
+ * decision, not an engineering one — confirm the correct Indian GST slab for
+ * goods transport before launch.
+ */
 export const PORTER_VAT_RATE = 0.05;
 
 /**
@@ -18,8 +24,8 @@ export const PORTER_PICKUP_WINDOWS: readonly { label: string; start: string }[] 
 /** "Schedule for later" horizon (the app's date picker allows 30 days). */
 export const PORTER_SCHEDULE_MAX_DAYS = 30;
 
-/** Same fixed regional offset as the other verticals. */
-export const PORTER_UTC_OFFSET = '+04:00';
+/** Same fixed regional offset as the other verticals — IST, see CLEAN_UTC_OFFSET. */
+export const PORTER_UTC_OFFSET = '+05:30';
 
 /** Payment sheet options (all mock/internal charges until payments exist). */
 export const PORTER_PAYMENT_METHODS = ['wallet', 'card', 'apple', 'cash'] as const;
@@ -33,9 +39,9 @@ export const PORTER_DEFAULT_DISTANCE_KM = 4.2;
 /** Legacy /porter/options route card (display fixture, matches dummy data). */
 export const PORTER_DEFAULT_ROUTE = {
   pickupLabel: 'Pickup Location',
-  pickupAddress: 'Dubai Marina, Block C',
+  pickupAddress: 'Indiranagar, Block C',
   dropLabel: 'Drop Location',
-  dropAddress: 'Downtown Dubai, Tower 4',
+  dropAddress: 'MG Road, Tower 4',
   packageType: 'Electronics',
   weight: '2.5 kg',
 } as const;

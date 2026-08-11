@@ -42,6 +42,8 @@ export function toBranchJson(branch: RentalBranch): Record<string, unknown> {
     name: branch.name,
     address: branch.address,
     distance: branch.distanceLabel,
+    lat: branch.lat,
+    lng: branch.lng,
   };
 }
 

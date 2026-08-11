@@ -31,7 +31,7 @@ export class WalletService {
         id,
         icon: entry.icon,
         label: entry.label,
-        subLabel: id === 'wallet' ? `Balance: AED ${balance.toFixed(0)}` : entry.subLabel,
+        subLabel: id === 'wallet' ? `Balance: ₹${balance.toFixed(0)}` : entry.subLabel,
         colorHex: entry.colorHex,
       };
     });

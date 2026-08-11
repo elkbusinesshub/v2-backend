@@ -8,32 +8,47 @@ import {
   TooManyRequestsException,
   UnauthenticatedException,
 } from '@/common/errors/domain.exceptions';
+import { SmsService } from './sms.service';
 
-const CODE_LENGTH = 4;
+const CODE_LENGTH = 6;
 const MAX_ATTEMPTS = 5;
 
 /**
  * One-time passcodes for phone login, stored only in Redis (never in the
  * relational DB). Brute force is bounded by a per-code attempt cap, not by
- * hashing — a 4-digit code has just 10,000 possibilities, so the cap and TTL
+ * hashing — a 6-digit code has a million possibilities, so the cap and TTL
  * are the actual defense.
  *
- * No SMS provider is wired yet: `issue` logs the code so the login flow is
- * testable end-to-end. Swap the logger call for a real provider (Twilio,
- * MSG91, SNS, ...) when one is chosen.
+ * Delivery goes through {@link SmsService}. With SMS disabled — the local
+ * default — the code is logged instead so the login flow stays testable
+ * end-to-end without an SMS account.
+ *
+ * `OTP_TEST_PHONES` ports the legacy backend's fixed-code numbers
+ * (`backend-elk` hardcoded `9999999999` → `123456`). A listed phone always
+ * gets `OTP_TEST_CODE` and never reaches the gateway, so QA can sign in on a
+ * real handset without an SMS or access to the server log. Unlike the legacy
+ * version the list is configuration, not source, and it is refused outright in
+ * production — see env.validation.ts.
  */
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
   private readonly ttlSeconds: number;
   private readonly resendCooldownSeconds: number;
+  private readonly isProduction: boolean;
+  private readonly testPhones: string[];
+  private readonly testCode: string;
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly sms: SmsService,
     config: ConfigService<AppConfig, true>,
   ) {
     this.ttlSeconds = config.get('otp.ttlSeconds', { infer: true });
     this.resendCooldownSeconds = config.get('otp.resendCooldownSeconds', { infer: true });
+    this.isProduction = config.get('app.isProduction', { infer: true });
+    this.testPhones = config.get('otp.testPhones', { infer: true });
+    this.testCode = config.get('otp.testCode', { infer: true });
   }
 
   /** Generates and stores a fresh code for [phone]. Returns the resend cooldown in seconds. */
@@ -44,16 +59,42 @@ export class OtpService {
       throw new TooManyRequestsException(`Please wait ${ttl}s before requesting another code`);
     }
 
-    const code = randomInt(0, 10 ** CODE_LENGTH)
-      .toString()
-      .padStart(CODE_LENGTH, '0');
+    const isTestPhone = this.testPhones.includes(phone);
+    const code = isTestPhone
+      ? this.testCode
+      : randomInt(0, 10 ** CODE_LENGTH)
+          .toString()
+          .padStart(CODE_LENGTH, '0');
     await Promise.all([
       this.redis.set(this.codeKey(phone), code, 'EX', this.ttlSeconds),
       this.redis.set(cooldownKey, '1', 'EX', this.resendCooldownSeconds),
       this.redis.del(this.attemptsKey(phone)),
     ]);
 
-    this.logger.log(`OTP for ${phone}: ${code}`);
+    // Never log a live code in production — with SMS off it is the only way
+    // to complete a login, which is exactly what local development needs.
+    if (!this.isProduction) {
+      this.logger.log(`OTP for ${phone}: ${code}`);
+    }
+
+    // A test phone never reaches the gateway — that is the whole point of it.
+    if (isTestPhone) {
+      this.logger.log(`test phone ${phone} — fixed OTP, no SMS sent`);
+      return this.resendCooldownSeconds;
+    }
+
+    try {
+      await this.sms.send(
+        phone,
+        `Your OTP for ELK is: ${code}. Do not share this OTP with anyone.`,
+      );
+    } catch (err) {
+      // Undo the write so the cooldown does not lock the user out of retrying
+      // a code they never received.
+      await this.redis.del(this.codeKey(phone), cooldownKey);
+      throw err;
+    }
+
     return this.resendCooldownSeconds;
   }
 

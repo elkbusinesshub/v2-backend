@@ -54,7 +54,7 @@ const address = {
   id: 'addr-1',
   userId: 'u-1',
   label: 'Home',
-  formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+  formattedAddress: 'Tower 3, Apt 1204, Koramangala',
   lat: 24.5,
   lng: 54.4,
   isDefault: true,
@@ -218,7 +218,7 @@ describe('ElkRepService', () => {
       expect(booking.status).toBe('confirmed');
       expect(booking.address).toEqual({
         label: 'Home',
-        line: 'Tower 3, Apt 1204, Al Reem Island',
+        line: 'Tower 3, Apt 1204, Koramangala',
       });
       const breakdown = booking.breakdown as Record<string, number | null>;
       expect(breakdown.totalAmount).toBe(242);

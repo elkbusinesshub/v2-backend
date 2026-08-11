@@ -8,6 +8,10 @@ coverage/
 .env.local
 .env.*.local
 
+# service-account keys
+secrets/
+*serviceAccountKey*.json
+
 # logs & misc
 *.log
 .DS_Store

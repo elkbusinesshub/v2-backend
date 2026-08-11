@@ -12,7 +12,7 @@ export class VerifyOtpDto {
   @Matches(E164_PHONE, { message: 'phone must be in E.164 format, e.g. +14155552671' })
   phone!: string;
 
-  @Matches(/^\d{4}$/, { message: 'otp must be a 4-digit code' })
+  @Matches(/^\d{6}$/, { message: 'otp must be a 6-digit code' })
   otp!: string;
 }
 

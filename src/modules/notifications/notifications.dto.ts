@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { DevicePlatform } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 /** Internal/ops creation — not called by the app; other modules or admins raise notifications this way. */
 export class CreateNotificationDto {
@@ -28,4 +29,28 @@ export class CreateNotificationDto {
   @IsNotEmpty()
   @MaxLength(300)
   message!: string;
+}
+
+/** Registers this install's FCM token so the user's notifications reach the device. */
+export class RegisterDeviceDto {
+  /**
+   * FCM registration token. 255 is the column width — real tokens are ~160
+   * characters, so this rejects junk without ever truncating a valid one.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  token!: string;
+
+  @ApiProperty({ enum: DevicePlatform })
+  @IsEnum(DevicePlatform)
+  platform!: DevicePlatform;
+}
+
+/** Releases a token on sign-out, so the next user of the phone gets no stale pushes. */
+export class UnregisterDeviceDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  token!: string;
 }

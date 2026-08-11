@@ -1,12 +1,13 @@
 {
   "info": {
     "name": "ELK Backend",
-    "description": "Phone/OTP auth + health checks. Import the companion 'ELK Backend — Local' environment alongside this collection.",
+    "description": "Every HTTP endpoint in the ELK backend, grouped by module.\n\nSetup:\n1. Import the companion \"ELK Backend — Local\" environment and select it.\n2. `docker compose up -d && npx prisma migrate deploy && npx prisma db seed && npm run start:dev`.\n3. Run Auth → \"1. Request OTP\", read the 4-digit code from the API server console, put it in the {{otp}} variable, then run \"2. Verify OTP\" — the access token is saved automatically.\n\nAll routes are versioned under /api/v1 except the health probes. Requests marked [ADMIN] / [PROVIDER] need that role on your user.\nList requests store the first row id into an environment variable, so folders can be run top to bottom.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
       "name": "Health",
+      "description": "Public, unversioned, outside the /api prefix and outside the response envelope.",
       "item": [
         {
           "name": "Liveness",
@@ -29,46 +30,36 @@
               "raw": "{{baseUrl}}/health/ready",
               "host": ["{{baseUrl}}"],
               "path": ["health", "ready"]
-            }
+            },
+            "description": "Pings MySQL and Redis. 503 when a dependency is down."
           }
         }
       ]
     },
     {
       "name": "Auth",
+      "description": "Phone/OTP login. Run 1 → 2 in order; the token is stored automatically.",
       "item": [
         {
           "name": "1. Request OTP",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test('returns resendInSeconds', () => pm.expect(body.data.resendInSeconds).to.be.a('number'));",
-                  "console.log('OTP was NOT returned in the response — check the API server console/log output for a line like \"OTP for +919876543210: 1234\", then set the {{otp}} environment variable to that code before running the next request.');"
-                ]
-              }
-            }
-          ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\"\n}"
-            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/otp/request",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "auth", "otp", "request"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\"\n}"
             }
-          }
-        },
-        {
-          "name": "2. Verify OTP",
+          },
           "event": [
             {
               "listen": "test",
@@ -76,35 +67,59 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "if (pm.response.code === 200) {",
-                  "  pm.environment.set('accessToken', body.data.accessToken);",
-                  "  pm.environment.set('refreshToken', body.data.refreshToken);",
-                  "  pm.test('token type is Bearer', () => pm.expect(body.data.tokenType).to.eql('Bearer'));",
-                  "}"
+                  "console.log('No SMS provider is wired: the 4-digit code is printed in the API server console as \"OTP for <phone>: 1234\". Copy it into the {{otp}} environment variable, then run \"2. Verify OTP\".');"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "2. Verify OTP (login)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"otp\": \"{{otp}}\"\n}"
-            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/otp/verify",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "auth", "otp", "verify"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"otp\": \"{{otp}}\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const d = pm.response.json().data;",
+                  "  pm.environment.set('accessToken', d.accessToken);",
+                  "  pm.environment.set('refreshToken', d.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "3. Get Me",
+          "name": "3. Me (token check)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/me",
               "host": ["{{baseUrl}}"],
@@ -113,53 +128,63 @@
           }
         },
         {
-          "name": "4. Refresh Token",
+          "name": "4. Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
                   "if (pm.response.code === 200) {",
-                  "  pm.environment.set('accessToken', body.data.accessToken);",
-                  "  pm.environment.set('refreshToken', body.data.refreshToken);",
+                  "  const d = pm.response.json().data;",
+                  "  pm.environment.set('accessToken', d.accessToken);",
+                  "  pm.environment.set('refreshToken', d.refreshToken);",
                   "}"
                 ]
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "refresh"]
-            }
-          }
+          ]
         },
         {
           "name": "5. Logout",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/logout",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "auth", "logout"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
             }
           }
         }
@@ -169,33 +194,104 @@
       "name": "Users",
       "item": [
         {
-          "name": "Get My Profile",
+          "name": "Get my profile",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "users", "me"]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('userId', v); }"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "Update My Profile",
+          "name": "Update my profile",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Ahmed Al-Rashid\",\n  \"language\": \"en\"\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed Al-Rashid\",\n  \"email\": \"ahmed@example.com\",\n  \"language\": \"en\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Set language",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/language",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "language"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"language\": \"ar\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Config",
+      "item": [
+        {
+          "name": "Supported languages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/languages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "languages"]
             }
           }
         }
@@ -203,149 +299,115 @@
     },
     {
       "name": "Locations",
+      "description": "Saved addresses. Several modules take an addressId from here.",
       "item": [
         {
-          "name": "List Addresses",
+          "name": "List addresses",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/locations",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "locations"]
             }
-          }
-        },
-        {
-          "name": "Save Address",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200 || pm.response.code === 201) {",
-                  "  pm.environment.set('addressId', pm.response.json().data.id);",
-                  "}"
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('addressId', v); }"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Save address",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"label\": \"Home\",\n  \"formattedAddress\": \"Tower 3, Apt 1204, Marina Bay, Al Reem Island\",\n  \"lat\": 24.4539,\n  \"lng\": 54.3773,\n  \"isDefault\": true\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/api/v1/locations",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "locations"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Home\",\n  \"formattedAddress\": \"Tower 3, Apt 1204, Marina Bay, Al Reem Island\",\n  \"lat\": 24.4539,\n  \"lng\": 54.3773,\n  \"isDefault\": true\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('addressId', v); }"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "Update Address",
+          "name": "Update address",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations/{{addressId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations", "{{addressId}}"]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"label\": \"Office\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/locations/{{addressId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "locations", "{{addressId}}"]
+              "raw": "{\n  \"label\": \"Office\",\n  \"isDefault\": false\n}"
             }
           }
         },
         {
-          "name": "Delete Address",
+          "name": "Delete address",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/locations/{{addressId}}",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "locations", "{{addressId}}"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Services",
-      "item": [
-        {
-          "name": "List Catalog (grouped)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (pm.response.code === 200 && body.data.length > 0) {",
-                  "  pm.environment.set('serviceId', body.data[0].items[0].id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/services",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "services"]
-            }
-          }
-        },
-        {
-          "name": "Service Detail",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "services", "{{serviceId}}"]
-            }
-          }
-        },
-        {
-          "name": "Booking Options",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (pm.response.code === 200) {",
-                  "  pm.environment.set('bookingDay', body.data.dates[0].day);",
-                  "  pm.environment.set('bookingTime', body.data.timeSlots[1].time);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}/booking-options",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "services", "{{serviceId}}", "booking-options"]
             }
           }
         }
@@ -355,10 +417,15 @@
       "name": "Home",
       "item": [
         {
-          "name": "Home Feed",
+          "name": "Home feed",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/home/feed",
               "host": ["{{baseUrl}}"],
@@ -369,41 +436,24 @@
       ]
     },
     {
-      "name": "Bookings",
+      "name": "Services (core catalog)",
       "item": [
         {
-          "name": "1. Create Booking",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "console.log('Booking reference:', pm.response.json().data.bookingReference);"
-                ]
-              }
-            }
-          ],
+          "name": "List catalog (grouped)",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"day\": {{bookingDay}},\n  \"time\": \"{{bookingTime}}\",\n  \"address\": \"Tower 3, Apt 1204, Marina Bay, Al Reem Island\"\n}"
-            },
             "url": {
-              "raw": "{{baseUrl}}/api/v1/bookings",
+              "raw": "{{baseUrl}}/api/v1/services",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "bookings"]
+              "path": ["api", "v1", "services"]
             }
-          }
-        },
-        {
-          "name": "2. My Bookings",
+          },
           "event": [
             {
               "listen": "test",
@@ -411,32 +461,2514 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "if (pm.response.code === 200 && body.data.length > 0) {",
-                  "  pm.environment.set('bookingId', body.data[0].id);",
-                  "}"
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length && d[0].items.length ? d[0].items[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('serviceId', v); }"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Service detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "services", "{{serviceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Booking options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}/booking-options",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "services", "{{serviceId}}", "booking-options"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.dates && d.dates.length ? d.dates[0].day : undefined; if (v !== undefined && v !== null) pm.environment.set('bookingDay', v); }",
+                  "if (pm.response.code < 300) { const v = d.timeSlots && d.timeSlots.length ? d.timeSlots[1].time : undefined; if (v !== undefined && v !== null) pm.environment.set('bookingTime', v); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookings (core)",
+      "description": "Run Services → Booking options first: it fills {{bookingDay}} / {{bookingTime}}.",
+      "item": [
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "bookings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"day\": \"{{bookingDay}}\",\n  \"time\": \"{{bookingTime}}\",\n  \"address\": \"Tower 3, Apt 1204, Marina Bay, Al Reem Island\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) console.log('Reference:', pm.response.json().data.bookingReference);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/bookings",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "bookings"]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('bookingId', v); }"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "3. Cancel Booking",
+          "name": "Cancel booking",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/cancel",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "bookings", "{{bookingId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Complete booking [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "bookings", "{{bookingId}}", "complete"]
+            },
+            "description": "Requires the ADMIN role."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "description": "Mounted on /bookings — only for COMPLETED bookings.",
+      "item": [
+        {
+          "name": "Review target (rating screen)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/review-target",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "bookings", "{{bookingId}}", "review-target"]
+            }
+          }
+        },
+        {
+          "name": "Submit review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/reviews",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "bookings", "{{bookingId}}", "reviews"]
+            },
+            "description": "tags must come from: On Time, Professional, Thorough Job, Friendly, Great Value.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"tags\": [\n    \"On Time\",\n    \"Professional\"\n  ],\n  \"comment\": \"Great job, very professional!\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ELK Stay",
+      "description": "Long-stay listings: PG stays, hostels, homestays.",
+      "item": [
+        {
+          "name": "Home feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/home",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "home"]
+            }
+          }
+        },
+        {
+          "name": "List / search stays",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stays?page=1&limit=20&category=pg_stay&verified=true&maxPrice=12000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stays"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "category",
+                  "value": "pg_stay"
+                },
+                {
+                  "key": "verified",
+                  "value": "true"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "12000"
+                }
+              ]
+            },
+            "description": "category: pg_stay | mens_hostel | womens_hostel | homestay. Also: roomType, meals, search."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('stayId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stay detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stay/{{stayId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stay", "{{stayId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.roomOptions && d.roomOptions.length ? d.roomOptions[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('roomOptionId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save stay (favorite)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stay/{{stayId}}/favorite",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stay", "{{stayId}}", "favorite"]
+            }
+          }
+        },
+        {
+          "name": "Unsave stay",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stay/{{stayId}}/favorite",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stay", "{{stayId}}", "favorite"]
+            }
+          }
+        },
+        {
+          "name": "My favorites",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/favorites",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "favorites"]
+            }
+          }
+        },
+        {
+          "name": "Create stay booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "bookings"]
+            },
+            "description": "paymentMethod: upi | card | wallet | bank. moveInDate must not be in the past.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stayId\": \"{{stayId}}\",\n  \"roomOptionId\": \"{{roomOptionId}}\",\n  \"moveInDate\": \"2026-09-01\",\n  \"durationMonths\": 6,\n  \"couponCode\": null,\n  \"paymentMethod\": \"upi\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('stayBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Schedule a visit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/visits",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "visits"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stayId\": \"{{stayId}}\",\n  \"visitAt\": \"2026-09-10T17:00:00+04:00\"\n}"
+            }
+          }
+        },
+        {
+          "name": "My bookings & visits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('stayBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel booking / visit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/bookings/{{stayBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "bookings", "{{stayBookingId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Create listing [PROVIDER]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stays",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stays"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Green Nest PG\",\n  \"categoryType\": \"pg_stay\",\n  \"badge\": \"Verified\",\n  \"roomType\": \"single\",\n  \"location\": \"Koramangala, Bangalore\",\n  \"fullAddress\": \"12th Main, 5th Block, Koramangala, Bangalore 560095\",\n  \"distanceKm\": 2.4,\n  \"latitude\": 12.9352,\n  \"longitude\": 77.6245,\n  \"description\": \"Furnished single rooms with meals, Wi-Fi and daily housekeeping.\",\n  \"gradientStart\": 4280046660,\n  \"gradientEnd\": 4283215696,\n  \"amenities\": [\n    {\n      \"iconKey\": \"wifi\",\n      \"label\": \"High-speed Wi-Fi\"\n    },\n    {\n      \"iconKey\": \"meals\",\n      \"label\": \"Breakfast & dinner\"\n    }\n  ],\n  \"roomOptions\": [\n    {\n      \"kind\": \"Single\",\n      \"subtitle\": \"Private room, attached bath\",\n      \"pricePerMonth\": 11000\n    },\n    {\n      \"kind\": \"Double sharing\",\n      \"subtitle\": \"Shared room, attached bath\",\n      \"pricePerMonth\": 7500\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('stayId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update listing [PROVIDER/ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stays/{{stayId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stays", "{{stayId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"badge\": \"Popular\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete listing [PROVIDER/ADMIN]",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stays/{{stayId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stays", "{{stayId}}"]
+            }
+          }
+        },
+        {
+          "name": "Verify listing [ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkstay/stays/{{stayId}}/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkstay", "stays", "{{stayId}}", "verify"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isVerified\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rentals (cars)",
+      "description": "Quote → book → pickup → return.",
+      "item": [
+        {
+          "name": "List cars",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/cars?page=1&limit=20&category=suv&period=daily&sort=price",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "cars"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "category",
+                  "value": "suv"
+                },
+                {
+                  "key": "period",
+                  "value": "daily"
+                },
+                {
+                  "key": "sort",
+                  "value": "price"
+                }
+              ]
+            },
+            "description": "category: all | sedan | suv | luxury. period: daily | weekly | monthly."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('carId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check availability",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/cars/{{carId}}/availability?from=2026-08-01T10:00:00%2B04:00&to=2026-08-04T10:00:00%2B04:00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "cars", "{{carId}}", "availability"],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01T10:00:00%2B04:00"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-04T10:00:00%2B04:00"
+                }
+              ]
+            },
+            "description": "ISO 8601. \"+\" must be percent-encoded as %2B in a query string."
+          }
+        },
+        {
+          "name": "Pickup branches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "branches"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('branchId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extras & protection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/extras",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "extras"]
+            }
+          }
+        },
+        {
+          "name": "Quote a rental",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "quote"]
+            },
+            "description": "fulfilment=pickup needs branchId; fulfilment=delivery needs deliveryAddress instead.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carId\": \"{{carId}}\",\n  \"rentalType\": \"daily\",\n  \"pickupAt\": \"2026-08-01T10:00:00+04:00\",\n  \"returnAt\": \"2026-08-04T10:00:00+04:00\",\n  \"fulfilment\": \"pickup\",\n  \"branchId\": \"{{branchId}}\",\n  \"extras\": [\n    \"protection\"\n  ],\n  \"promoCode\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "Create rental booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings"]
+            },
+            "description": "agreedToTerms must be true. paymentMethod: card | wallet | cash.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carId\": \"{{carId}}\",\n  \"rentalType\": \"daily\",\n  \"pickupAt\": \"2026-08-01T10:00:00+04:00\",\n  \"returnAt\": \"2026-08-04T10:00:00+04:00\",\n  \"fulfilment\": \"pickup\",\n  \"branchId\": \"{{branchId}}\",\n  \"extras\": [\n    \"protection\"\n  ],\n  \"paymentMethod\": \"card\",\n  \"agreedToTerms\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('rentalBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My rentals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('rentalBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rental detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings/{{rentalBookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings", "{{rentalBookingId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel rental",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings/{{rentalBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings", "{{rentalBookingId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Confirm pickup [PROVIDER/ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings/{{rentalBookingId}}/pickup",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings", "{{rentalBookingId}}", "pickup"]
+            }
+          }
+        },
+        {
+          "name": "Confirm return [PROVIDER/ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/bookings/{{rentalBookingId}}/return",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "bookings", "{{rentalBookingId}}", "return"]
+            }
+          }
+        },
+        {
+          "name": "Add car [PROVIDER]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/cars",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "cars"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Toyota Land Cruiser\",\n  \"category\": \"suv\",\n  \"iconKey\": \"rental_suv\",\n  \"seats\": 7,\n  \"transmission\": \"Automatic\",\n  \"fuel\": \"Petrol\",\n  \"pricePerDay\": 450,\n  \"badge\": \"Popular\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('carId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update car [PROVIDER/ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/cars/{{carId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "cars", "{{carId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerDay\": 420\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete car [PROVIDER/ADMIN]",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rentals/cars/{{carId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rentals", "cars", "{{carId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ELK Clean",
+      "description": "Cart-based cleaning module (/elkclean).",
+      "item": [
+        {
+          "name": "Home feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/home",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "home"]
+            }
+          }
+        },
+        {
+          "name": "Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Services in a category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/categories/tnk/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "categories", "tnk", "services"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('elkcleanServiceId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Service detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/services/{{elkcleanServiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "services", "{{elkcleanServiceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Booking options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/booking-options",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "booking-options"]
+            },
+            "description": "Date strip (6 days), arrival windows, fees and your saved addresses."
+          }
+        },
+        {
+          "name": "Quote a cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "quote"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"serviceId\": \"{{elkcleanServiceId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"promoCode\": \"TANK60\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "bookings"]
+            },
+            "description": "timeSlot: 08:00 | 10:00 | 12:00 | 14:00 | 16:00 | 18:00. paymentMethod: card | apple | wallet. addressId comes from Locations.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"serviceId\": \"{{elkcleanServiceId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"scheduledDate\": \"2026-08-05\",\n  \"timeSlot\": \"10:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"card\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('elkcleanBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('elkcleanBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Booking detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/bookings/{{elkcleanBookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "bookings", "{{elkcleanBookingId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/bookings/{{elkcleanBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "bookings", "{{elkcleanBookingId}}", "cancel"]
+            },
+            "description": "Free up to 2 hours before the window."
+          }
+        },
+        {
+          "name": "Complete booking [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/bookings/{{elkcleanBookingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "bookings", "{{elkcleanBookingId}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Add service [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "services"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categorySlug\": \"tnk\",\n  \"name\": \"Water Tank Deep Clean\",\n  \"description\": \"Drain, scrub, disinfect and refill a residential water tank.\",\n  \"price\": 180,\n  \"durationLabel\": \"2-3 hrs\",\n  \"tag\": \"Popular\",\n  \"checklist\": [\n    \"Drain the tank\",\n    \"Scrub walls & floor\",\n    \"Disinfect\",\n    \"Refill & test\"\n  ],\n  \"steps\": [\n    \"Inspect\",\n    \"Drain\",\n    \"Clean\",\n    \"Refill\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('elkcleanServiceId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update service [ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkclean/services/{{elkcleanServiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkclean", "services", "{{elkcleanServiceId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 200,\n  \"isActive\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ELK Rep (repair)",
+      "description": "Cart-based repair module (/elkrep).",
+      "item": [
+        {
+          "name": "Home feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/home",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "home"]
+            }
+          }
+        },
+        {
+          "name": "Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Services in a category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/categories/ac/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "categories", "ac", "services"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('elkrepServiceId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Service detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/services/{{elkrepServiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "services", "{{elkrepServiceId}}"]
+            }
+          }
+        },
+        {
+          "name": "Booking options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/booking-options",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "booking-options"]
+            },
+            "description": "Date strip (6 days), arrival windows, fees and your saved addresses."
+          }
+        },
+        {
+          "name": "Quote a cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "quote"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"serviceId\": \"{{elkrepServiceId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"promoCode\": \"AC60\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "bookings"]
+            },
+            "description": "timeSlot: 08:00 | 10:00 | 12:00 | 14:00 | 16:00 | 18:00. paymentMethod: card | apple | wallet. addressId comes from Locations.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"serviceId\": \"{{elkrepServiceId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"scheduledDate\": \"2026-08-05\",\n  \"timeSlot\": \"10:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"card\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('elkrepBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('elkrepBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Booking detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/bookings/{{elkrepBookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "bookings", "{{elkrepBookingId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/bookings/{{elkrepBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "bookings", "{{elkrepBookingId}}", "cancel"]
+            },
+            "description": "Free up to 2 hours before the window."
+          }
+        },
+        {
+          "name": "Complete booking [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/bookings/{{elkrepBookingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "bookings", "{{elkrepBookingId}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Add service [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "services"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categorySlug\": \"ac\",\n  \"name\": \"AC Servicing\",\n  \"description\": \"Filter clean, gas check and full performance test for one split unit.\",\n  \"price\": 120,\n  \"durationLabel\": \"1-2 hrs\",\n  \"tag\": \"Popular\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('elkrepServiceId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update service [ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/elkrep/services/{{elkrepServiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "elkrep", "services", "{{elkrepServiceId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 135,\n  \"isActive\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Porter (delivery)",
+      "item": [
+        {
+          "name": "Options (vehicles, add-ons, windows)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/options",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "options"]
+            }
+          }
+        },
+        {
+          "name": "Quote a delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "quote"]
+            },
+            "description": "vehicleId: bike | car | truck.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"bike\",\n  \"addons\": [\n    \"helper\"\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Create delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings"]
+            },
+            "description": "Omit scheduledDate + pickupWindow for \"pick up now\". Windows: 9:00 – 10:00 | 11:00 – 12:00 | 2:00 – 3:00 pm | 4:00 – 5:00 pm. paymentMethod: wallet | card | apple | cash.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"bike\",\n  \"addons\": [\n    \"helper\"\n  ],\n  \"pickupAddressId\": \"{{addressId}}\",\n  \"dropAddress\": \"Downtown Dubai, Tower 4\",\n  \"packageType\": \"Electronics\",\n  \"weightLabel\": \"2.5 kg\",\n  \"scheduledDate\": \"2026-08-05\",\n  \"pickupWindow\": \"9:00 – 10:00\",\n  \"paymentMethod\": \"wallet\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('porterBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('porterBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delivery detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings/{{porterBookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings", "{{porterBookingId}}"]
+            }
+          }
+        },
+        {
+          "name": "Cancel delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings/{{porterBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings", "{{porterBookingId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Confirm pickup [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings/{{porterBookingId}}/pickup",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings", "{{porterBookingId}}", "pickup"]
+            }
+          }
+        },
+        {
+          "name": "Confirm delivery [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/porter/bookings/{{porterBookingId}}/deliver",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "porter", "bookings", "{{porterBookingId}}", "deliver"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rides",
+      "description": "Book → start with the OTP → complete → rate.",
+      "item": [
+        {
+          "name": "Ride types",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/types",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "types"]
+            }
+          }
+        },
+        {
+          "name": "Current estimate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/current-estimate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "current-estimate"]
+            }
+          }
+        },
+        {
+          "name": "Driver-match preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/request",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "request"]
+            },
+            "description": "Preview only — no booking is created.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rideTypeId\": \"auto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Book a ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings"]
+            },
+            "description": "rideTypeId: auto | economy | premium | xl. paymentMethod: cash | card | wallet | applepay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rideTypeId\": \"auto\",\n  \"pickupAddressId\": \"{{addressId}}\",\n  \"dropAddress\": \"Downtown Dubai, Burj Khalifa\",\n  \"paymentMethod\": \"cash\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.id; if (v !== undefined && v !== null) pm.environment.set('rideBookingId', v); }",
+                  "if (pm.response.code < 300) { const v = d.otpCode; if (v !== undefined && v !== null) pm.environment.set('rideOtp', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My rides",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = Array.isArray(d) && d.length ? d[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('rideBookingId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ride detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings/{{rideBookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings", "{{rideBookingId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.otpCode; if (v !== undefined && v !== null) pm.environment.set('rideOtp', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start trip (OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings/{{rideBookingId}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings", "{{rideBookingId}}", "start"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otpCode\": \"{{rideOtp}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Complete trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings/{{rideBookingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings", "{{rideBookingId}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Cancel ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings/{{rideBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings", "{{rideBookingId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Rate the driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/bookings/{{rideBookingId}}/rate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "bookings", "{{rideBookingId}}", "rate"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stars\": 5,\n  \"tip\": 10\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders (chat & tracking)",
+      "description": "Cross-module order view. {{orderId}} is any booking id you own.",
+      "item": [
+        {
+          "name": "Chat thread",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders", "{{orderId}}", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Send message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders", "{{orderId}}", "chat"]
+            },
+            "description": "Persisted and broadcast over the /chat Socket.IO namespace.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"On my way, will arrive in 10 minutes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Tracking timeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/tracking",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders", "{{orderId}}", "tracking"]
+            }
+          }
+        },
+        {
+          "name": "Cancel order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders", "{{orderId}}", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "My notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"]
+            }
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/mark-all-read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "mark-all-read"]
+            }
+          }
+        },
+        {
+          "name": "Raise a notification [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"]
+            },
+            "description": "colorHex is an ARGB integer (0xFFE0F7F5 = 4292935157).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"icon\": \"🔔\",\n  \"colorHex\": 4292933621,\n  \"title\": \"Booking confirmed\",\n  \"message\": \"Your AC servicing is scheduled for tomorrow at 10:00.\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Offers",
+      "item": [
+        {
+          "name": "Points + offer banners",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/offers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "offers"]
+            }
+          }
+        },
+        {
+          "name": "Add offer banner [ADMIN]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/offers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "offers"]
+            },
+            "description": "gradient*Hex are ARGB integers (0xFF0D3D35 = 4279057717).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tagLabel\": \"Limited\",\n  \"title\": \"Flat 20% off cleaning\",\n  \"description\": \"Use code CLEAN20 on any ELK Clean booking above AED 150.\",\n  \"code\": \"CLEAN20\",\n  \"expiryLabel\": \"Ends 31 Aug\",\n  \"discountLabel\": \"20%\",\n  \"discountSubLabel\": \"OFF\",\n  \"gradientStartHex\": 4279057717,\n  \"gradientEndHex\": 4283154352\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "Balance + transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Top up",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/top-up",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallet", "top-up"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500\n}"
+            }
+          }
+        },
+        {
+          "name": "Withdraw",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/withdraw",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallet", "withdraw"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payment methods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "methods"]
+            }
+          }
+        },
+        {
+          "name": "Charge a method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/charge",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "charge"]
+            },
+            "description": "methodId: wallet | card | upi | cash. Wallet debits for real; the others are mocked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodId\": \"wallet\",\n  \"amount\": 150,\n  \"promoCode\": null\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Provider",
+      "item": [
+        {
+          "name": "Submit application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/registration",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "registration"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Rashid Home Services\",\n  \"serviceCategory\": \"cleaning\",\n  \"contactNumber\": \"+971501234567\",\n  \"serviceArea\": \"Abu Dhabi — Al Reem, Yas Island\",\n  \"tradeLicenseUploaded\": true,\n  \"idDocumentUploaded\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "dashboard"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data !== undefined ? body.data : body;",
+                  "if (pm.response.code < 300) { const v = d.requests && d.requests.length ? d.requests[0].id : undefined; if (v !== undefined && v !== null) pm.environment.set('providerRequestId', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Schedule",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "schedule"]
+            }
+          }
+        },
+        {
+          "name": "Earnings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/earnings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "earnings"]
+            }
+          }
+        },
+        {
+          "name": "Toggle availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "availability"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isAvailable\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Respond to a request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/requests/{{providerRequestId}}/respond",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "requests", "{{providerRequestId}}", "respond"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify a provider [ADMIN]",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/provider/{{userId}}/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "provider", "{{userId}}", "verify"]
+            },
+            "description": "decision: verified | rejected. Verifying grants the PROVIDER role.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"verified\"\n}"
             }
           }
         }

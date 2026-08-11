@@ -30,8 +30,8 @@ const car = {
 const branch = {
   id: 'branch-1',
   slug: 'corniche',
-  name: 'Abu Dhabi Corniche Branch',
-  address: 'Corniche Road, Abu Dhabi',
+  name: 'MG Road Branch',
+  address: 'Corniche Road, Bengaluru',
   distanceLabel: '1.2 km',
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -147,7 +147,7 @@ describe('RentalsService', () => {
         rentalType: 'weekly',
         ...range(3),
         fulfilment: 'delivery',
-        deliveryAddress: 'Al Reem Island, Abu Dhabi',
+        deliveryAddress: 'Koramangala, Bengaluru',
         extras: ['protection', 'wifi'],
         promoCode: 'elk10',
       });

@@ -137,7 +137,7 @@ describe('ServicesService', () => {
         id: 'addr-1',
         userId: 'u-1',
         label: 'Home',
-        formattedAddress: 'Tower 3, Marina Bay',
+        formattedAddress: 'Tower 3, Koramangala',
         lat: 24.45,
         lng: 54.37,
         isDefault: true,
@@ -148,7 +148,7 @@ describe('ServicesService', () => {
 
       const options = await service.getBookingOptions('svc-1', 'u-1');
 
-      expect(options.address).toBe('Tower 3, Marina Bay');
+      expect(options.address).toBe('Tower 3, Koramangala');
       expect(options.pricing).toEqual({
         serviceFee: 149,
         promoCode: null,

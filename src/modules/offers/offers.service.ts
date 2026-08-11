@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { UsersRepository } from '@/modules/users/users.repository';
-import { REWARD_POINTS_PER_AED } from './offers.constants';
+import { REWARD_POINTS_PER_RUPEE } from './offers.constants';
 import type { CreateOfferDto } from './offers.dto';
 import { toOfferJson } from './offers.mapper';
 import { OffersRepository } from './offers.repository';
@@ -20,11 +20,11 @@ export class OffersService {
       throw new ResourceNotFoundException('User');
     }
     const offers = await this.offers.listActive();
-    const aed = Math.floor(account.rewardPoints / REWARD_POINTS_PER_AED);
+    const rupees = Math.floor(account.rewardPoints / REWARD_POINTS_PER_RUPEE);
 
     return {
       rewardPoints: account.rewardPoints,
-      rewardDiscountLabel: `≈ AED ${aed} discount available`,
+      rewardDiscountLabel: `≈ ₹${rupees} discount available`,
       offers: offers.map(toOfferJson),
     };
   }

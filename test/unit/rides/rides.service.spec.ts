@@ -34,7 +34,7 @@ const savedAddress = {
   id: 'addr-1',
   userId: 'u-1',
   label: 'Home',
-  formattedAddress: 'Tower 3, Apt 1204, Al Reem Island',
+  formattedAddress: 'Tower 3, Apt 1204, Koramangala',
   lat: 24.5,
   lng: 54.4,
   isDefault: true,
@@ -128,8 +128,8 @@ describe('RidesService', () => {
   describe('createBooking', () => {
     const dto = {
       rideTypeId: 'auto',
-      pickupAddress: 'Dubai Marina · Gate 3',
-      dropAddress: 'Downtown Dubai · Burj Khalifa',
+      pickupAddress: 'Indiranagar · Gate 3',
+      dropAddress: 'MG Road · Brigade Towers',
       paymentMethod: 'cash',
     };
 
@@ -156,10 +156,10 @@ describe('RidesService', () => {
       const booking = await service.createBooking(user, {
         rideTypeId: 'auto',
         pickupAddressId: 'addr-1',
-        dropAddress: 'Downtown Dubai · Burj Khalifa',
+        dropAddress: 'MG Road · Brigade Towers',
         paymentMethod: 'cash',
       });
-      expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Al Reem Island');
+      expect(booking.pickupAddress).toBe('Tower 3, Apt 1204, Koramangala');
     });
 
     it("404s when the saved address isn't the caller's", async () => {
@@ -168,7 +168,7 @@ describe('RidesService', () => {
         service.createBooking(user, {
           rideTypeId: 'auto',
           pickupAddressId: 'addr-x',
-          dropAddress: 'Downtown Dubai · Burj Khalifa',
+          dropAddress: 'MG Road · Brigade Towers',
           paymentMethod: 'cash',
         }),
       ).rejects.toBeInstanceOf(ResourceNotFoundException);
@@ -191,8 +191,8 @@ describe('RidesService', () => {
       driverName: 'Farhan Ahmed',
       vehicleLabel: 'Toyota Corolla · White',
       plateNumber: 'DXB · B 22417',
-      pickupAddress: 'Dubai Marina · Gate 3',
-      dropAddress: 'Downtown Dubai · Burj Khalifa',
+      pickupAddress: 'Indiranagar · Gate 3',
+      dropAddress: 'MG Road · Brigade Towers',
       paymentMethod: 'cash',
       paymentRef: 'PAY-ELK-ABC1234',
       paidAt: new Date(),

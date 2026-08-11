@@ -56,3 +56,10 @@ export class TooManyRequestsException extends DomainException {
     super(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY_REQUESTS', message);
   }
 }
+
+/** A third-party dependency (SMS gateway, payment processor, ...) failed or timed out. */
+export class UpstreamServiceException extends DomainException {
+  constructor(message = 'An upstream service is unavailable') {
+    super(HttpStatus.BAD_GATEWAY, 'UPSTREAM_UNAVAILABLE', message);
+  }
+}

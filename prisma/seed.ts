@@ -3,9 +3,6 @@ import {
   PrismaClient,
   RentalCarCategory,
   RepairPromoKind,
-  Role,
-  StayBookingStatus,
-  StayBookingType,
   StayCategoryType,
 } from '@prisma/client';
 
@@ -280,7 +277,7 @@ const STAYS: StaySeed[] = [
   },
 ];
 
-async function seedStays(providerId: string): Promise<void> {
+async function seedStays(providerId: string | null): Promise<void> {
   for (const s of STAYS) {
     const { amenities, ...stay } = s;
     await prisma.stay.upsert({
@@ -306,54 +303,6 @@ async function seedStayCoupon(): Promise<void> {
     where: { code: 'ELKNEW' },
     update: {},
     create: { code: 'ELKNEW', discountAmount: 500, isActive: true },
-  });
-}
-
-async function seedStayBookings(userId: string): Promise<void> {
-  // mirror the two fixture bookings: one confirmed stay + one visit request
-  const maple = await prisma.stay.findUnique({
-    where: { slug: 'maple-nest' },
-    include: { roomOptions: { orderBy: { sortOrder: 'asc' } } },
-  });
-  const cedar = await prisma.stay.findUnique({ where: { slug: 'cedar-house' } });
-  if (!maple || !cedar) return;
-
-  const single = maple.roomOptions[0];
-  await prisma.stayBooking.upsert({
-    where: { code: 'ELK-SEED1' },
-    update: {},
-    create: {
-      code: 'ELK-SEED1',
-      userId,
-      stayId: maple.id,
-      roomOptionId: single?.id,
-      type: StayBookingType.STAY,
-      status: StayBookingStatus.CONFIRMED,
-      moveInDate: new Date('2026-06-12'),
-      durationMonths: 6,
-      rentPerMonth: 11500,
-      depositAmount: 11500,
-      serviceFee: 499,
-      discountAmount: 0,
-      totalPaid: 23499,
-      paymentMethod: 'upi',
-      paymentRef: 'PAY-SEED1',
-      paidAt: new Date('2026-06-01T10:00:00Z'),
-      nextDueDate: new Date('2026-07-01'),
-    },
-  });
-
-  await prisma.stayBooking.upsert({
-    where: { code: 'ELK-SEED2' },
-    update: {},
-    create: {
-      code: 'ELK-SEED2',
-      userId,
-      stayId: cedar.id,
-      type: StayBookingType.VISIT,
-      status: StayBookingStatus.VISIT_BOOKED,
-      visitAt: new Date('2026-06-10T17:00:00+04:00'),
-    },
   });
 }
 
@@ -387,15 +336,17 @@ const RENTAL_CARS: {
 
 const RENTAL_BRANCHES = [
   // prettier-ignore
-  { slug: 'corniche', name: 'Abu Dhabi Corniche Branch', address: 'Corniche Road, Abu Dhabi', distanceLabel: '1.2 km' },
+  { slug: 'corniche', name: 'MG Road Branch', address: 'MG Road, Bengaluru', distanceLabel: '1.2 km', lat: 12.9756, lng: 77.6068 },
   {
     slug: 'yas',
-    name: 'Yas Island Branch',
-    address: 'Yas Mall, Abu Dhabi',
+    name: 'Whitefield Branch',
+    address: 'Phoenix Mall, Whitefield',
     distanceLabel: '18 km',
+    lat: 12.9962,
+    lng: 77.6968,
   },
   // prettier-ignore
-  { slug: 'airport', name: 'Abu Dhabi Airport Branch', address: 'Terminal A Arrivals', distanceLabel: '27 km' },
+  { slug: 'airport', name: 'Kempegowda Airport Branch', address: 'Terminal 1 Arrivals', distanceLabel: '27 km', lat: 13.1986, lng: 77.7066 },
 ];
 
 const RENTAL_EXTRAS = [
@@ -412,7 +363,7 @@ const RENTAL_EXTRAS = [
   },
 ];
 
-async function seedRentals(providerId: string): Promise<void> {
+async function seedRentals(providerId: string | null): Promise<void> {
   for (const car of RENTAL_CARS) {
     await prisma.rentalCar.upsert({
       where: { slug: car.slug },
@@ -423,7 +374,7 @@ async function seedRentals(providerId: string): Promise<void> {
   for (const branch of RENTAL_BRANCHES) {
     await prisma.rentalBranch.upsert({
       where: { slug: branch.slug },
-      update: {},
+      update: branch,
       create: branch,
     });
   }
@@ -724,7 +675,7 @@ const CLEAN_OFFERS = [
   // prettier-ignore
   { title: 'Sofa & Carpet Revival', discountLabel: 'Flat 50% off', promoCode: 'SOFA50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Upholstery', iconKey: 'ic_sofa' },
   // prettier-ignore
-  { title: 'Sparkling Deep Clean', discountLabel: 'AED 70 off', promoCode: 'DEEP70', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Deep Clean', iconKey: 'ic_deep_clean' },
+  { title: 'Sparkling Deep Clean', discountLabel: '₹70 off', promoCode: 'DEEP70', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Deep Clean', iconKey: 'ic_deep_clean' },
 ];
 
 const CLEAN_PROMOS = [
@@ -755,8 +706,15 @@ async function seedClean(): Promise<void> {
     }
   }
   for (const [i, offer] of CLEAN_OFFERS.entries()) {
+    // Refresh in place rather than skipping: the seed is the source of truth
+    // for display copy, so re-running it must pick up changed labels.
     const existing = await prisma.cleanOffer.findFirst({ where: { promoCode: offer.promoCode } });
-    if (!existing) {
+    if (existing) {
+      await prisma.cleanOffer.update({
+        where: { id: existing.id },
+        data: { ...offer, sortOrder: i },
+      });
+    } else {
       await prisma.cleanOffer.create({ data: { ...offer, sortOrder: i } });
     }
   }
@@ -1012,7 +970,7 @@ const REPAIR_OFFERS = [
   // prettier-ignore
   { title: 'Leak Fix Express', discountLabel: 'Flat 50% off', promoCode: 'LEAK50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Plumbing', iconKey: 'ic_plumb' },
   // prettier-ignore
-  { title: 'Full Home Repaint', discountLabel: 'AED 120 off', promoCode: 'PAINT120', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Painting', iconKey: 'ic_paint' },
+  { title: 'Full Home Repaint', discountLabel: '₹120 off', promoCode: 'PAINT120', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Painting', iconKey: 'ic_paint' },
 ];
 
 const REPAIR_PROMOS = [
@@ -1037,8 +995,15 @@ async function seedRepair(): Promise<void> {
     }
   }
   for (const [i, offer] of REPAIR_OFFERS.entries()) {
+    // Refresh in place rather than skipping: the seed is the source of truth
+    // for display copy, so re-running it must pick up changed labels.
     const existing = await prisma.repairOffer.findFirst({ where: { promoCode: offer.promoCode } });
-    if (!existing) {
+    if (existing) {
+      await prisma.repairOffer.update({
+        where: { id: existing.id },
+        data: { ...offer, sortOrder: i },
+      });
+    } else {
       await prisma.repairOffer.create({ data: { ...offer, sortOrder: i } });
     }
   }
@@ -1052,69 +1017,6 @@ async function seedRepair(): Promise<void> {
 }
 
 // ─── Notifications fixtures (mirror dummyNotificationsJson) ─────────────────
-
-const MINUTE = 60_000;
-const NOTIFICATIONS = [
-  {
-    icon: '🧹',
-    colorHex: 0xffe0f7f5,
-    title: 'Provider On The Way',
-    message: 'Royal Shine is heading to your location. ETA: 12 mins',
-    ageMinutes: 2,
-    isRead: false,
-  },
-  {
-    icon: '🎉',
-    colorHex: 0xfffef3c7,
-    title: 'Special Weekend Offer!',
-    message: 'Get AED 30 off on cleaning services this weekend. Use CLEAN30',
-    ageMinutes: 60,
-    isRead: false,
-  },
-  {
-    icon: '✅',
-    colorHex: 0xffd1fae5,
-    title: 'Booking Confirmed',
-    message: 'Your Deep Cleaning booking #ELK-04921 is confirmed for 19 May',
-    ageMinutes: 3 * 60,
-    isRead: true,
-  },
-  {
-    icon: '💳',
-    colorHex: 0xffdbeafe,
-    title: 'Payment Successful',
-    message: 'AED 119 paid for Deep Home Cleaning. Receipt sent to email',
-    ageMinutes: 24 * 60,
-    isRead: true,
-  },
-  {
-    icon: '⭐',
-    colorHex: 0xffede9fe,
-    title: 'You Earned 15 Points!',
-    message: 'Thanks for rating your last service. Points added to wallet',
-    ageMinutes: 2 * 24 * 60,
-    isRead: true,
-  },
-];
-
-async function seedNotifications(userId: string): Promise<void> {
-  const existing = await prisma.notification.count({ where: { userId } });
-  if (existing > 0) return;
-  const now = Date.now();
-  for (const n of NOTIFICATIONS) {
-    await prisma.notification.create({
-      data: {
-        userId,
-        icon: n.icon,
-        colorHex: n.colorHex,
-        title: n.title,
-        message: n.message,
-        isRead: n.isRead,
-        createdAt: new Date(now - n.ageMinutes * MINUTE),
-      },
-    });
-  }
-}
 
 // ─── Offers fixtures (mirror dummyOffersJson) ────────────────────────────────
 
@@ -1132,11 +1034,11 @@ const OFFERS = [
   },
   {
     tagLabel: 'CLEANING SPECIAL',
-    title: 'Flat AED 30 Off',
+    title: 'Flat ₹30 Off',
     description: 'On deep cleaning or AC services booked this weekend',
     code: 'CLEAN30',
     expiryLabel: 'Valid: Fri-Sun only',
-    discountLabel: 'AED',
+    discountLabel: '₹',
     discountSubLabel: '30',
     gradientStartHex: 0xff1a2e3d,
     gradientEndHex: 0xff4f46e5,
@@ -1147,232 +1049,182 @@ async function seedOffers(): Promise<void> {
   for (const [i, offer] of OFFERS.entries()) {
     await prisma.offer.upsert({
       where: { code: offer.code },
-      update: {},
+      update: { ...offer, sortOrder: i },
       create: { ...offer, sortOrder: i },
     });
   }
 }
 
-// ─── Wallet fixtures (mirror dummyWalletSummaryJson) ─────────────────────────
-
-const WALLET_TRANSACTIONS = [
-  {
-    icon: '🧹',
-    title: 'Deep Home Cleaning',
-    date: '2026-05-19',
-    amount: 119,
-    isCredit: false,
-    colorHex: 0xffe0f7f5,
-  },
-  {
-    icon: '💳',
-    title: 'Wallet Top-up',
-    date: '2026-05-17',
-    amount: 200,
-    isCredit: true,
-    colorHex: 0xffd1fae5,
-  },
-  {
-    icon: '🚕',
-    title: 'Taxi Ride · Economy',
-    date: '2026-05-16',
-    amount: 15,
-    isCredit: false,
-    colorHex: 0xffdbeafe,
-  },
-  {
-    icon: '🎁',
-    title: 'Referral Bonus',
-    date: '2026-05-14',
-    amount: 25,
-    isCredit: true,
-    colorHex: 0xfffef3c7,
-  },
-  {
-    icon: '🚗',
-    title: 'Car Rental · 3 Days',
-    date: '2026-05-10',
-    amount: 450,
-    isCredit: false,
-    colorHex: 0xffede9fe,
-  },
-];
-
-async function seedWallet(userId: string): Promise<void> {
-  const existing = await prisma.walletTransaction.count({ where: { userId } });
-  if (existing > 0) return;
-  for (const t of WALLET_TRANSACTIONS) {
-    await prisma.walletTransaction.create({
-      data: {
-        userId,
-        icon: t.icon,
-        title: t.title,
-        amount: t.amount,
-        isCredit: t.isCredit,
-        colorHex: t.colorHex,
-        createdAt: new Date(`${t.date}T12:00:00.000Z`),
-      },
-    });
-  }
-  await prisma.user.update({ where: { id: userId }, data: { walletBalance: 240.5 } });
-}
-
-// ─── Order chat fixtures (mirror dummyChatThreadJson) ────────────────────────
-
-const CHAT_MESSAGES = [
-  {
-    fromProvider: true,
-    text: "Hello! I have confirmed your booking for today at 12:00 PM. I'll be there soon!",
-    ageMinutes: 45,
-  },
-  {
-    fromProvider: false,
-    text: 'Great! Please ring the doorbell when you arrive. The entrance is at Block B.',
-    ageMinutes: 43,
-  },
-  {
-    fromProvider: true,
-    text: "Noted! I'm currently on my way. Will arrive in about 12 minutes. 🚐",
-    ageMinutes: 20,
-  },
-];
-
-/** Creates one demo home-services booking with a seeded provider chat thread. */
-async function seedOrderChat(userId: string): Promise<string | null> {
-  const service = await prisma.service.findUnique({ where: { slug: 'deep_cleaning' } });
-  if (!service) return null;
-
-  const existing = await prisma.booking.findUnique({ where: { reference: 'ELK-2026-04921' } });
-  const booking =
-    existing ??
-    (await prisma.booking.create({
-      data: {
-        reference: 'ELK-2026-04921',
-        userId,
-        serviceId: service.id,
-        scheduledAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
-        addressText: 'Tower 3, Apt 1204, Al Reem Island',
-        serviceFee: service.price,
-        total: service.price,
-      },
-    }));
-
-  const messageCount = await prisma.chatMessage.count({ where: { bookingId: booking.id } });
-  if (messageCount === 0) {
-    const now = Date.now();
-    for (const m of CHAT_MESSAGES) {
-      await prisma.chatMessage.create({
-        data: {
-          bookingId: booking.id,
-          fromProvider: m.fromProvider,
-          text: m.text,
-          createdAt: new Date(now - m.ageMinutes * 60_000),
-        },
-      });
-    }
-  }
-  return booking.id;
-}
-
 // ─── Provider fixtures (mirror dummyProviderProfileJson / earnings / requests) ─
 
-const PROVIDER_REQUESTS = [
-  // prettier-ignore
-  { serviceName: 'Deep Home Cleaning', customerName: 'Ahmed Al-Rashid', location: 'Dubai Marina', timeLabel: 'Today 12:00 PM', amount: 149, status: 'PENDING' as const, icon: '🧹', colorHex: 0xffe0f7f5 },
-  // prettier-ignore
-  { serviceName: 'Kitchen Cleaning', customerName: 'Sara Mohammed', location: 'JBR', timeLabel: 'Today 4:00 PM', amount: 99, status: 'ACCEPTED' as const, icon: '💳', colorHex: 0xffd1fae5 },
+// ─── Marketplace ads ────────────────────────────────────────────────────────
+
+/// Seed ads with *no* engagement: view and wishlist counts must be earned by
+/// real users, or the "best sellers" ranking would be showing invented
+/// popularity. The catalogue is real; the rankings start at zero.
+const ADS = [
+  {
+    slug: 'ad-deep-clean',
+    title: 'Deep Home Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🧹',
+    price: 180,
+    priceUnit: '/ visit',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Full-home deep clean by a vetted team. Kitchen degreasing, bathroom descaling, floor scrubbing and balcony wash included. Materials and equipment provided.',
+  },
+  {
+    slug: 'ad-sofa-shampoo',
+    title: 'Sofa & Carpet Shampoo',
+    categorySlug: 'cleaning',
+    icon: '🛋️',
+    price: 120,
+    priceUnit: '/ set',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Wet shampoo and extraction for upholstery and rugs. Removes stains and odour; fabric-safe solutions only. Dries in 4-6 hours.',
+  },
+  {
+    slug: 'ad-ac-service',
+    title: 'AC Service & Gas Refill',
+    categorySlug: 'ac_service',
+    icon: '❄️',
+    price: 90,
+    priceUnit: 'starting',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'Split and window AC servicing, coil cleaning, gas top-up and leak check. Certified technicians, 30-day service warranty.',
+  },
+  {
+    slug: 'ad-electrical',
+    title: 'Electrical Repairs',
+    categorySlug: 'repairing',
+    icon: '⚡',
+    price: 89,
+    priceUnit: '/ visit',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Wiring faults, switchboard replacement, fan and light installation. Licensed electricians with their own tools.',
+  },
+  {
+    slug: 'ad-plumbing',
+    title: 'Plumbing & Leak Fix',
+    categorySlug: 'repairing',
+    icon: '🚿',
+    price: 95,
+    priceUnit: '/ visit',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Tap and mixer replacement, blocked drains, concealed leak detection and pipe repair. Same-day slots available.',
+  },
+  {
+    slug: 'ad-wash-fold',
+    title: 'Wash & Fold Laundry',
+    categorySlug: 'laundry',
+    icon: '🧺',
+    price: 45,
+    priceUnit: '/ kg',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Pickup, machine wash, tumble dry and fold. Separate wash for whites and colours. Returned within 24 hours.',
+  },
+  {
+    slug: 'ad-dry-clean',
+    title: 'Dry Cleaning',
+    categorySlug: 'laundry',
+    icon: '👔',
+    price: 60,
+    priceUnit: '/ piece',
+    locality: 'MG Road',
+    city: 'Bengaluru',
+    description:
+      'Suits, sarees, curtains and delicate fabrics. Solvent cleaning with pressing and garment covers.',
+  },
+  {
+    slug: 'ad-handyman',
+    title: 'Handyman & Assembly',
+    categorySlug: 'repairing',
+    icon: '🛠️',
+    price: 75,
+    priceUnit: '/ hour',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Furniture assembly, wall mounting, curtain rods, door alignment and general odd jobs around the house.',
+  },
 ];
 
-async function seedProvider(userId: string): Promise<void> {
-  const profile = await prisma.providerProfile.upsert({
-    where: { userId },
-    update: {},
-    create: {
-      userId,
-      businessName: 'Royal Shine Co.',
-      serviceCategory: 'Cleaning',
-      contactNumber: '+971500000002',
-      serviceArea: 'Dubai Marina',
-      tradeLicenseUploaded: true,
-      idDocumentUploaded: true,
-      status: 'VERIFIED',
-      isAvailable: true,
-      rating: 4.9,
-      reviewCount: 284,
-      totalEarnings: 2840,
-      completedJobs: 38,
-      avgPerJob: 74,
-      scheduleDays: [true, true, false, true, true, false, false],
-    },
-  });
+/// Centre of each seeded locality, so the ad detail screen can draw a real
+/// coverage map. Localities repeat across ads, hence a lookup rather than a
+/// coordinate pair on every row.
+const LOCALITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  Koramangala: { lat: 12.9352, lng: 77.6245 },
+  'HSR Layout': { lat: 12.9116, lng: 77.6474 },
+  Indiranagar: { lat: 12.9784, lng: 77.6408 },
+  Whitefield: { lat: 12.9698, lng: 77.75 },
+  Jayanagar: { lat: 12.925, lng: 77.5938 },
+  'MG Road': { lat: 12.9756, lng: 77.6068 },
+};
 
-  const existing = await prisma.providerRequest.count({ where: { providerId: profile.id } });
-  if (existing === 0) {
-    for (const r of PROVIDER_REQUESTS) {
-      await prisma.providerRequest.create({ data: { ...r, providerId: profile.id } });
+async function seedAds(sellerId: string | null): Promise<number> {
+  if (!sellerId) return 0;
+  let count = 0;
+  for (const ad of ADS) {
+    const { slug: _slug, ...rest } = ad;
+    const coords = LOCALITY_COORDS[rest.locality];
+    const data = { ...rest, lat: coords?.lat ?? null, lng: coords?.lng ?? null };
+    const existing = await prisma.ad.findFirst({ where: { title: data.title, sellerId } });
+    if (existing) {
+      // Refresh the copy, but never the counters — those belong to real users.
+      await prisma.ad.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.ad.create({ data: { ...data, sellerId } });
     }
+    count += 1;
   }
+  return count;
+}
+
+/// Ads need an owner. Rather than reintroduce a demo account, they hang off the
+/// oldest real user — replace `sellerId` once sellers can register properly.
+async function firstUserId(): Promise<string | null> {
+  const user = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+  return user?.id ?? null;
 }
 
 async function main(): Promise<void> {
-  const demoUser = await prisma.user.upsert({
-    where: { phone: '+971500000001' },
-    update: {},
-    create: {
-      phone: '+971500000001',
-      name: 'Demo User',
-      roles: [Role.USER],
-      rewardPoints: 150,
-    },
-  });
-
-  const admin = await prisma.user.upsert({
-    where: { phone: '+971500000000' },
-    update: {},
-    create: {
-      phone: '+971500000000',
-      name: 'Demo Admin',
-      roles: [Role.USER, Role.ADMIN],
-    },
-  });
-
-  const provider = await prisma.user.upsert({
-    where: { phone: '+971500000002' },
-    update: {},
-    create: {
-      phone: '+971500000002',
-      name: 'Demo Provider',
-      roles: [Role.USER, Role.PROVIDER],
-    },
-  });
-
   const serviceCount = await seedCatalog();
 
-  await seedStays(provider.id);
+  await seedStays(null);
   await seedStayCoupon();
-  await seedStayBookings(demoUser.id);
-  await seedRentals(provider.id);
+  await seedRentals(null);
   await seedClean();
   await seedPorter();
   await seedRides();
   await seedRepair();
-  await seedNotifications(demoUser.id);
   await seedOffers();
-  await seedWallet(demoUser.id);
-  await seedOrderChat(demoUser.id);
-  await seedProvider(provider.id);
+  const adCount = await seedAds(await firstUserId());
+  console.log(
+    adCount > 0
+      ? `Seeded marketplace: ${adCount} ads (zero engagement — counts are earned)`
+      : 'Skipped marketplace ads: no user to own them yet',
+  );
 
   const stays = await prisma.stay.count();
-  const stayBookings = await prisma.stayBooking.count();
   const cars = await prisma.rentalCar.count();
   const cleanServices = await prisma.cleanService.count();
   const repairServices = await prisma.repairService.count();
 
-  console.log(`Seeded users: ${demoUser.name} (${demoUser.id}), ${admin.name} (${admin.id})`);
+  console.log(`Seeded offers: ${OFFERS.length} banners`);
   console.log(`Seeded catalog: ${catalog.length} categories, ${serviceCount} services`);
-  console.log(
-    `Seeded: ${stays} stays, ${stayBookings} stay bookings, ${cars} rental cars, coupons ELKNEW/ELK10`,
-  );
+  console.log(`Seeded: ${stays} stays, ${cars} rental cars, coupons ELKNEW/ELK10`);
   console.log(
     `Seeded clean: ${CLEAN_CATEGORIES.length} categories, ${cleanServices} services, promos TANK60/SOFA50/DEEP70`,
   );
@@ -1380,15 +1232,6 @@ async function main(): Promise<void> {
   console.log(`Seeded rides: ${RIDE_TYPES.length} ride types`);
   console.log(
     `Seeded repair: ${REPAIR_CATEGORIES.length} categories, ${repairServices} services, promos AC60/LEAK50/PAINT120`,
-  );
-  console.log(`Seeded notifications: ${NOTIFICATIONS.length} for ${demoUser.name}`);
-  console.log(
-    `Seeded offers: ${OFFERS.length} banners, ${demoUser.name} has ${demoUser.rewardPoints} reward points`,
-  );
-  console.log(`Seeded wallet: ${WALLET_TRANSACTIONS.length} transactions, balance AED 240.50`);
-  console.log(`Seeded order chat: booking ELK-2026-04921 with ${CHAT_MESSAGES.length} messages`);
-  console.log(
-    `Seeded provider: ${provider.name} (VERIFIED) with ${PROVIDER_REQUESTS.length} requests`,
   );
 }
 

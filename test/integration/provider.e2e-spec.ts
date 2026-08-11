@@ -84,7 +84,7 @@ describe('Provider (integration)', () => {
       isAvailable: true,
     });
     expect(data.stats).toHaveLength(3);
-    expect(data.stats[1]).toMatchObject({ label: 'This Month', value: 'AED 2,840' });
+    expect(data.stats[1]).toMatchObject({ label: 'This Month', value: '₹2,840' });
     expect(data.requests).toHaveLength(2);
     pendingRequestId = data.requests.find((r: { status: string }) => r.status === 'pending').id;
   });

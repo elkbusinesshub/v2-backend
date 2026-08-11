@@ -53,7 +53,7 @@ describe('WalletService', () => {
       const methods = await service.listPaymentMethods(user);
       expect(methods).toHaveLength(4);
       const walletMethod = methods.find((m) => m.id === 'wallet');
-      expect(walletMethod).toMatchObject({ label: 'ELK Wallet', subLabel: 'Balance: AED 241' });
+      expect(walletMethod).toMatchObject({ label: 'ELK Wallet', subLabel: 'Balance: ₹241' });
       const cardMethod = methods.find((m) => m.id === 'card');
       expect(cardMethod).toMatchObject({ subLabel: 'Visa, Mastercard, Amex' });
     });

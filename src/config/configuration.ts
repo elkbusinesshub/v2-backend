@@ -32,6 +32,30 @@ export function configuration() {
     otp: {
       ttlSeconds: env.OTP_TTL_SECONDS,
       resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+      testPhones: env.OTP_TEST_PHONES.split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0),
+      testCode: env.OTP_TEST_CODE,
+    },
+    sms: {
+      enabled: env.SMS_ENABLED,
+      accessToken: env.SMS_ACCESS_TOKEN,
+      accessTokenKey: env.SMS_ACCESS_TOKEN_KEY,
+      senderId: env.SMS_SENDER_ID,
+      countryCode: env.SMS_COUNTRY_CODE,
+    },
+    admin: {
+      phones: env.ADMIN_PHONES.split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0),
+    },
+    places: {
+      googleMapsApiKey: env.GOOGLE_MAPS_API_KEY,
+      regionCode: env.PLACES_REGION_CODE.toUpperCase(),
+    },
+    push: {
+      enabled: env.PUSH_ENABLED,
+      serviceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     },
     throttle: {
       ttlSeconds: env.THROTTLE_TTL_SECONDS,

@@ -131,7 +131,7 @@ describe('Rentals (integration)', () => {
         rentalType: 'weekly',
         ...range(1, 3),
         fulfilment: 'delivery',
-        deliveryAddress: 'Al Reem Island, Abu Dhabi',
+        deliveryAddress: 'Koramangala, Bengaluru',
         extras: ['protection', 'wifi'],
         promoCode: 'ELK10',
       })

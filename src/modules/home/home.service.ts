@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { initialsOf } from '@/common/utils/initials';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
 import { ServicesRepository } from '@/modules/services/services.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { BestSellerDto, HomeCategoryDto, HomeFeedDto, PromoBannerDto } from './home.dto';
 
 const BEST_SELLER_COUNT = 3;
+
+/** Cards in the home screen's engagement-ranked rail. */
+const TOP_SELLER_COUNT = 10;
 
 /**
  * Navigation tiles for the verticals. Static config, not catalog data — each
@@ -35,21 +39,25 @@ export class HomeService {
     private readonly users: UsersRepository,
     private readonly locations: LocationsRepository,
     private readonly services: ServicesRepository,
+    private readonly marketplace: MarketplaceService,
   ) {}
 
   async getFeed(userId: string): Promise<HomeFeedDto> {
-    const [user, address, topRated] = await Promise.all([
+    const [user, address, topRated, topSellers] = await Promise.all([
       this.users.findById(userId),
       this.locations.findDefaultForUser(userId),
       this.services.findTopRated(BEST_SELLER_COUNT),
+      // Seller ads ranked by engagement. Embedded here so the home screen
+      // still makes one call — the rail is above the fold.
+      this.marketplace.topSellers(userId, TOP_SELLER_COUNT),
     ]);
 
     const bestSellers = topRated.map((s): BestSellerDto => ({
       id: s.id,
       name: s.providerName,
       initials: initialsOf(s.providerName),
-      category: `${s.category.name} · AED ${s.price.toNumber()}`,
-      priceLabel: `AED ${s.price.toNumber()}`,
+      category: `${s.category.name} · ₹${s.price.toNumber()}`,
+      priceLabel: `₹${s.price.toNumber()}`,
       rating: s.rating,
       colorHex: s.category.colorHex,
       verified: true,
@@ -58,9 +66,11 @@ export class HomeService {
     return {
       userName: user?.name ?? '',
       location: address?.label ?? '',
+      locationAddress: address?.formattedAddress ?? '',
       promo: PROMO,
       categories: HOME_CATEGORIES,
       bestSellers,
+      topSellers,
     };
   }
 }

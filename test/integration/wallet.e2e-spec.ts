@@ -84,7 +84,7 @@ describe('Wallet & Payments (integration)', () => {
 
     expect(res.body.data).toHaveLength(4);
     const wallet = res.body.data.find((m: { id: string }) => m.id === 'wallet');
-    expect(wallet).toMatchObject({ label: 'ELK Wallet', subLabel: 'Balance: AED 241' });
+    expect(wallet).toMatchObject({ label: 'ELK Wallet', subLabel: 'Balance: ₹241' });
     const card = res.body.data.find((m: { id: string }) => m.id === 'card');
     expect(card).toMatchObject({ subLabel: 'Visa, Mastercard, Amex' });
   });

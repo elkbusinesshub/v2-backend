@@ -9,7 +9,8 @@ import {
 import { resolveSlot } from '@/modules/services/booking-window';
 import { ServicesRepository } from '@/modules/services/services.repository';
 import { BookingConfirmationDto, BookingListItemDto, CreateBookingDto } from './bookings.dto';
-import { BookingsRepository, BookingWithService } from './bookings.repository';
+import { BookingsRepository } from './bookings.repository';
+import { UnifiedBookingsRepository } from './unified-bookings.repository';
 
 const REFERENCE_ATTEMPTS = 3;
 
@@ -18,6 +19,7 @@ export class BookingsService {
   constructor(
     private readonly bookings: BookingsRepository,
     private readonly services: ServicesRepository,
+    private readonly unified: UnifiedBookingsRepository,
   ) {}
 
   async create(userId: string, dto: CreateBookingDto): Promise<BookingConfirmationDto> {
@@ -41,6 +43,8 @@ export class BookingsService {
       serviceId: service.id,
       scheduledAt: slot.scheduledAt,
       addressText: dto.address,
+      lat: dto.lat ?? null,
+      lng: dto.lng ?? null,
       serviceFee: price,
       total: price,
     });
@@ -54,9 +58,21 @@ export class BookingsService {
     };
   }
 
+  /** Every vertical's bookings in one list, newest first. */
   async list(userId: string): Promise<BookingListItemDto[]> {
-    const bookings = await this.bookings.findAllByUser(userId);
-    return bookings.map(toListItem);
+    const bookings = await this.unified.findAllByUser(userId);
+    return bookings.map((b) => ({
+      id: b.id,
+      vertical: b.vertical,
+      reference: b.reference,
+      serviceName: b.serviceName,
+      serviceIcon: b.serviceIcon,
+      providerName: b.providerName,
+      status: b.status,
+      scheduledAt: b.scheduledAt?.toISOString() ?? null,
+      addressText: b.addressText,
+      total: b.total,
+    }));
   }
 
   async cancel(userId: string, id: string): Promise<void> {
@@ -105,18 +121,4 @@ export class BookingsService {
 /** e.g. ELK-2026-48213 */
 function generateReference(): string {
   return `ELK-${new Date().getFullYear()}-${randomInt(0, 100000).toString().padStart(5, '0')}`;
-}
-
-function toListItem(booking: BookingWithService): BookingListItemDto {
-  return {
-    id: booking.id,
-    reference: booking.reference,
-    serviceName: booking.service.name,
-    serviceIcon: booking.service.icon,
-    providerName: booking.service.providerName,
-    status: booking.status,
-    scheduledAt: booking.scheduledAt.toISOString(),
-    addressText: booking.addressText,
-    total: booking.total.toNumber(),
-  };
 }

@@ -66,6 +66,11 @@ export function toTrackingJson(booking: Booking & { service: Service }): Record<
     serviceIcon: booking.service.icon,
     providerName: booking.service.providerName,
     statusLabel: TRACKING_STATUS_LABEL[booking.status],
+    addressText: booking.addressText,
+    // Null for bookings taken before coordinates were captured, and for
+    // hand-typed addresses; the tracking screen then omits the map.
+    lat: booking.lat,
+    lng: booking.lng,
     steps: TRACKING_STEP_NAMES.map((name, i) => ({
       name,
       time: stepTime(booking, i, states[i]!),
