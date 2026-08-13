@@ -47,6 +47,8 @@ model User {
 
   sessions           RefreshSession[]
   addresses          Address[]
+  adOrdersPlaced     AdOrder[]           @relation("AdOrdersPlaced")
+  adOrdersReceived   AdOrder[]           @relation("AdOrdersReceived")
   bookings           Booking[]
   stays              Stay[]              @relation("ProviderStays")
   stayBookings       StayBooking[]
@@ -1344,6 +1346,57 @@ enum AdStatus {
   PAUSED
 }
 
+/// An order a buyer places against a seller's listing.
+///
+/// Deliberately separate from `Booking`, which belongs to the catalogue
+/// services and has no seller: an ad is owned by a user, priced by them, and
+/// fulfilled by them.
+model AdOrder {
+  id      String @id @default(uuid(7)) @db.Char(36)
+  /// Human-facing reference shown to both sides, e.g. ELK-A-4T29K
+  code    String @unique
+  adId    String @db.Char(36)
+  ad      Ad     @relation(fields: [adId], references: [id], onDelete: Restrict)
+  buyerId String @db.Char(36)
+  buyer   User   @relation("AdOrdersPlaced", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  /// Copied from the ad at order time rather than joined through it, so a
+  /// listing that changes hands does not rewrite who was owed for past work.
+  sellerId String @db.Char(36)
+  seller   User   @relation("AdOrdersReceived", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  status AdOrderStatus @default(NEW)
+
+  /// Snapshot of the ad's price when ordered — the seller may reprice later.
+  amount      Decimal @db.Decimal(10, 2)
+  serviceName String
+
+  scheduledAt  DateTime?
+  addressText  String
+  contactPhone String
+  note         String?   @db.Text
+
+  acceptedAt  DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sellerId, status])
+  @@index([buyerId])
+  @@index([adId])
+  @@map("ad_orders")
+}
+
+/// Lifecycle of an order a buyer places against a seller's ad.
+enum AdOrderStatus {
+  NEW
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 /// A seller's listing. "Best sellers" is these ads ranked by engagement, so
 /// `viewCount` and `wishlistCount` are denormalised onto the row: the ranking
 /// query has to sort on them, and counting AdView/AdWishlist rows per ad on
@@ -1383,6 +1436,7 @@ model Ad {
   images    AdImage[]
   views     AdView[]
   wishlists AdWishlist[]
+  orders    AdOrder[]
 
   @@index([sellerId])
   @@index([status])

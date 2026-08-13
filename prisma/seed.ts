@@ -1199,7 +1199,297 @@ async function firstUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+/**
+ * Demo accounts, created **only** when SEED_DEMO_USERS is set.
+ *
+ * Production seeds must not invent users — that decision stands, and is why
+ * `firstUserId()` below hangs ads off a real account instead. But the
+ * integration suite runs against an empty container and needs a signed-in
+ * caller to test anything at all, so it opts in via the env var. The three
+ * roles mirror what those specs expect.
+ */
+async function seedDemoUsers(): Promise<number> {
+  if (process.env.SEED_DEMO_USERS !== 'true') return 0;
+
+  const demo = [
+    // First names matter: the home feeds greet the user by theirs, and the
+    // specs assert on the greeting.
+    { phone: '+971500000000', name: 'Demo Admin', roles: ['ADMIN'] },
+    { phone: '+971500000001', name: 'Demo User', roles: ['USER'] },
+    { phone: '+971500000002', name: 'Demo Provider', roles: ['PROVIDER'] },
+  ];
+  for (const user of demo) {
+    await prisma.user.upsert({
+      where: { phone: user.phone },
+      update: {},
+      create: { phone: user.phone, name: user.name, roles: user.roles },
+    });
+  }
+  return demo.length;
+}
+
+/**
+ * Records the integration specs read back: one home-services order with its
+ * chat thread, and one stay booking. Same opt-in as the demo users — they are
+ * owned by those accounts and meaningless without them.
+ */
+async function seedDemoRecords(): Promise<void> {
+  if (process.env.SEED_DEMO_USERS !== 'true') return;
+
+  const user = await prisma.user.findUnique({ where: { phone: '+971500000001' } });
+  const service = await prisma.service.findFirst({ where: { slug: 'deep_cleaning' } });
+  if (!user || !service) return;
+
+  // Home-services order + chat. CONFIRMED is what makes the tracking timeline
+  // read "Arriving soon" with the third step active.
+  const booking = await prisma.booking.upsert({
+    where: { reference: 'ELK-2026-04921' },
+    update: {},
+    create: {
+      reference: 'ELK-2026-04921',
+      userId: user.id,
+      serviceId: service.id,
+      status: 'CONFIRMED',
+      scheduledAt: new Date('2026-06-12T09:00:00.000Z'),
+      addressText: '5th Block, Koramangala, Bengaluru',
+      lat: 12.9352,
+      lng: 77.6245,
+      serviceFee: 149,
+      total: 149,
+    },
+  });
+
+  if ((await prisma.chatMessage.count({ where: { bookingId: booking.id } })) === 0) {
+    // Order matters: provider first, so the thread opens with an incoming
+    // message carrying the provider's initials.
+    await prisma.chatMessage.createMany({
+      data: [
+        {
+          bookingId: booking.id,
+          fromProvider: true,
+          text: 'On my way, should reach in 20 minutes.',
+        },
+        { bookingId: booking.id, fromProvider: false, text: 'Great, the gate code is 4471.' },
+        { bookingId: booking.id, fromProvider: true, text: 'Noted, thank you.' },
+      ],
+    });
+  }
+
+  // Wallet: balance and reward points live on the user; the ledger is its own
+  // table. Both are read back by the wallet, payments and offers specs.
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { walletBalance: 240.5, rewardPoints: 150 },
+  });
+
+  if ((await prisma.walletTransaction.count({ where: { userId: user.id } })) === 0) {
+    // Newest first is what the summary returns, so these are created oldest
+    // first and the last one here is the one the spec reads as [0].
+    await prisma.walletTransaction.createMany({
+      data: [
+        {
+          userId: user.id,
+          icon: '🚕',
+          title: 'Airport Ride',
+          amount: 320,
+          isCredit: false,
+          colorHex: 0xfffee2e2,
+          createdAt: new Date('2026-05-02T10:00:00.000Z'),
+        },
+        {
+          userId: user.id,
+          icon: '💰',
+          title: 'Wallet Top-Up',
+          amount: 500,
+          isCredit: true,
+          colorHex: 0xffd1fae5,
+          createdAt: new Date('2026-05-08T10:00:00.000Z'),
+        },
+        {
+          userId: user.id,
+          icon: '🔧',
+          title: 'AC Service',
+          amount: 260,
+          isCredit: false,
+          colorHex: 0xfffee2e2,
+          createdAt: new Date('2026-05-13T10:00:00.000Z'),
+        },
+        {
+          userId: user.id,
+          icon: '🎁',
+          title: 'Referral Bonus',
+          amount: 100,
+          isCredit: true,
+          colorHex: 0xffd1fae5,
+          createdAt: new Date('2026-05-16T10:00:00.000Z'),
+        },
+        {
+          userId: user.id,
+          icon: '🧹',
+          title: 'Deep Home Cleaning',
+          amount: 119,
+          isCredit: false,
+          colorHex: 0xfffee2e2,
+          createdAt: new Date('2026-05-19T10:00:00.000Z'),
+        },
+      ],
+    });
+  }
+
+  // Notifications: two unread, newest first.
+  if ((await prisma.notification.count({ where: { userId: user.id } })) === 0) {
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: user.id,
+          icon: '⭐',
+          colorHex: 0xfffef3c7,
+          title: 'Rate Your Service',
+          message: 'How was your AC service?',
+          isRead: true,
+          createdAt: minutesAgo(60 * 72),
+        },
+        {
+          userId: user.id,
+          icon: '🎉',
+          colorHex: 0xffe0f7f5,
+          title: 'Welcome to ELK',
+          message: 'Your account is ready.',
+          isRead: true,
+          createdAt: minutesAgo(60 * 48),
+        },
+        {
+          userId: user.id,
+          icon: '💰',
+          colorHex: 0xffd1fae5,
+          title: 'Wallet Topped Up',
+          message: '₹500 added to your wallet.',
+          isRead: true,
+          createdAt: minutesAgo(60 * 24),
+        },
+        {
+          userId: user.id,
+          icon: '📦',
+          colorHex: 0xfffee2e2,
+          title: 'Delivery Completed',
+          message: 'Your package was delivered.',
+          isRead: false,
+          createdAt: minutesAgo(90),
+        },
+        {
+          userId: user.id,
+          icon: '🧹',
+          colorHex: 0xffe0f7f5,
+          title: 'Provider On The Way',
+          message: 'Your cleaner will arrive shortly.',
+          isRead: false,
+          createdAt: minutesAgo(2),
+        },
+      ],
+    });
+  }
+
+  // Verified provider profile with two job requests — one already accepted so
+  // the earnings screen has a transaction, one pending so it can be responded
+  // to. Wednesday off is what the schedule spec asserts.
+  const providerUser = await prisma.user.findUnique({ where: { phone: '+971500000002' } });
+  if (providerUser) {
+    // The catalogue seeders run before any user exists, so cars and stays are
+    // created unowned. Provider-only steps (confirm pickup, confirm return,
+    // edit a listing) check ownership, so hand the demo catalogue to the demo
+    // provider once they exist.
+    await prisma.rentalCar.updateMany({
+      where: { providerId: null },
+      data: { providerId: providerUser.id },
+    });
+    await prisma.stay.updateMany({
+      where: { providerId: null },
+      data: { providerId: providerUser.id },
+    });
+
+    const profile = await prisma.providerProfile.upsert({
+      where: { userId: providerUser.id },
+      update: {},
+      create: {
+        userId: providerUser.id,
+        businessName: 'Royal Shine Co.',
+        serviceCategory: 'cleaning',
+        contactNumber: '+971500000002',
+        serviceArea: 'Bengaluru · Within 15 km',
+        tradeLicenseUploaded: true,
+        idDocumentUploaded: true,
+        status: 'VERIFIED',
+        isAvailable: true,
+        rating: 4.8,
+        reviewCount: 126,
+        totalEarnings: 2840,
+        completedJobs: 38,
+        avgPerJob: 74,
+        scheduleDays: [true, true, false, true, true, true, false],
+      },
+    });
+
+    if ((await prisma.providerRequest.count({ where: { providerId: profile.id } })) === 0) {
+      await prisma.providerRequest.createMany({
+        data: [
+          {
+            providerId: profile.id,
+            serviceName: 'Kitchen Cleaning',
+            customerName: 'Sara Mohammed',
+            location: 'HSR Layout',
+            timeLabel: 'Today 12:00 PM',
+            amount: 149,
+            status: 'ACCEPTED',
+            icon: '🧹',
+          },
+          {
+            providerId: profile.id,
+            serviceName: 'Bathroom Deep Clean',
+            customerName: 'Rahul Nair',
+            location: 'Indiranagar',
+            timeLabel: 'Tomorrow 10:00 AM',
+            amount: 199,
+            status: 'PENDING',
+            icon: '🚿',
+          },
+        ],
+      });
+    }
+  }
+
+  // Stay booking, with the dates the ElkStay spec asserts on.
+  const stay = await prisma.stay.findUnique({ where: { slug: 'maple-nest' } });
+  if (stay) {
+    await prisma.stayBooking.upsert({
+      where: { code: 'ELK-SEED1' },
+      update: {},
+      create: {
+        code: 'ELK-SEED1',
+        userId: user.id,
+        stayId: stay.id,
+        type: 'STAY',
+        status: 'CONFIRMED',
+        moveInDate: new Date('2026-06-12T00:00:00.000Z'),
+        durationMonths: 6,
+        rentPerMonth: 11500,
+        depositAmount: 11500,
+        serviceFee: 499,
+        totalPaid: 23499,
+        paymentMethod: 'card',
+        paidAt: new Date('2026-06-01T00:00:00.000Z'),
+        nextDueDate: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    });
+  }
+}
+
 async function main(): Promise<void> {
+  // Before everything else: the catalogue seeders below hang owned records off
+  // whichever user exists first.
+  const demoUsers = await seedDemoUsers();
+  if (demoUsers > 0) console.log(`Seeded ${demoUsers} demo users (SEED_DEMO_USERS=true)`);
+
   const serviceCount = await seedCatalog();
 
   await seedStays(null);
@@ -1211,6 +1501,7 @@ async function main(): Promise<void> {
   await seedRepair();
   await seedOffers();
   const adCount = await seedAds(await firstUserId());
+  await seedDemoRecords();
   console.log(
     adCount > 0
       ? `Seeded marketplace: ${adCount} ads (zero engagement — counts are earned)`

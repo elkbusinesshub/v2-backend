@@ -16,6 +16,9 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
   },
+  // Every spec authenticates as a seeded demo account; the seed only creates
+  // them when asked, so production seeds stay free of invented users.
+  setupFiles: ['<rootDir>/test/integration/setup-env.ts'],
   testTimeout: 180_000,
   maxWorkers: 1,
   clearMocks: true,

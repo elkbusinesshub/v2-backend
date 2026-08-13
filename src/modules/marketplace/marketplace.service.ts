@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
+import { AdStatus, Role } from '@prisma/client';
+import {
+  ForbiddenResourceException,
+  ResourceNotFoundException,
+} from '@/common/errors/domain.exceptions';
+import type { AuthUser } from '@/common/types/auth.types';
 import { ImageService } from '@/storage/image.service';
-import type { AdDto } from './marketplace.dto';
+import type { AdDto, CreateAdDto, UpdateAdDto } from './marketplace.dto';
 import { MarketplaceRepository, type AdWithSeller } from './marketplace.repository';
 
 /** How many cards the home rail asks for when it does not say. */
@@ -78,6 +83,86 @@ export class MarketplaceService {
     };
   }
 
+  // ─── seller-owned listings ────────────────────────────────────────────────
+
+  /**
+   * The caller's own ads, drafts and paused ones included.
+   *
+   * `isWishlisted` is still resolved against the caller, so a seller who saved
+   * their own ad sees it as saved rather than as a blank heart.
+   */
+  async myAds(user: AuthUser, status?: AdStatus): Promise<AdDto[]> {
+    return this.decorate(await this.ads.findBySeller(user.id, status), user.id);
+  }
+
+  async create(user: AuthUser, dto: CreateAdDto): Promise<AdDto> {
+    const ad = await this.ads.create(
+      user.id,
+      {
+        title: dto.title,
+        description: dto.description ?? '',
+        categorySlug: dto.categorySlug,
+        price: dto.price,
+        priceUnit: dto.priceUnit ?? '',
+        ...(dto.icon ? { icon: dto.icon } : {}),
+        locality: dto.locality ?? null,
+        city: dto.city ?? null,
+        lat: dto.lat ?? null,
+        lng: dto.lng ?? null,
+        // "Save draft" and "Publish ad" are the two buttons on the sheet.
+        status: dto.status ?? AdStatus.ACTIVE,
+      },
+      dto.imageKeys ?? [],
+    );
+    const [created] = await this.decorate([ad], user.id);
+    return created!;
+  }
+
+  async update(user: AuthUser, id: string, dto: UpdateAdDto): Promise<AdDto> {
+    await this.assertCanManage(user, id);
+    const ad = await this.ads.update(
+      id,
+      {
+        // Every field is optional, so only send what the seller actually
+        // changed — spreading undefined would blank columns.
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.categorySlug !== undefined ? { categorySlug: dto.categorySlug } : {}),
+        ...(dto.price !== undefined ? { price: dto.price } : {}),
+        ...(dto.priceUnit !== undefined ? { priceUnit: dto.priceUnit } : {}),
+        ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
+        ...(dto.locality !== undefined ? { locality: dto.locality } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.lat !== undefined ? { lat: dto.lat } : {}),
+        ...(dto.lng !== undefined ? { lng: dto.lng } : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+      },
+      dto.imageKeys,
+    );
+    const [updated] = await this.decorate([ad], user.id);
+    return updated!;
+  }
+
+  async remove(user: AuthUser, id: string): Promise<void> {
+    await this.assertCanManage(user, id);
+    await this.ads.softDelete(id);
+  }
+
+  /**
+   * Owner-or-admin, matching how ElkStay guards provider listings. A 404 for a
+   * missing ad, a 403 for someone else's — the ad's existence is not a secret
+   * once it has been published.
+   */
+  private async assertCanManage(user: AuthUser, id: string): Promise<void> {
+    const ad = await this.ads.findOwned(id);
+    if (!ad) {
+      throw new ResourceNotFoundException('Ad');
+    }
+    if (!user.roles.includes(Role.ADMIN) && ad.sellerId !== user.id) {
+      throw new ForbiddenResourceException('You can only manage your own listings');
+    }
+  }
+
   /** Maps rows to cards, resolving image URLs and the caller's wishlist state. */
   private async decorate(rows: AdWithSeller[], userId: string): Promise<AdDto[]> {
     const wishlisted = await this.ads.wishlistedIds(
@@ -105,6 +190,7 @@ export class MarketplaceService {
         viewCount: ad.viewCount,
         wishlistCount: ad.wishlistCount,
         isWishlisted: wishlisted.has(ad.id),
+        status: ad.status,
         imageUrls: await this.imageUrls(ad),
       })),
     );

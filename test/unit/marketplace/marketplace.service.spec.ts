@@ -1,6 +1,10 @@
 import { Test } from '@nestjs/testing';
-import { AdStatus } from '@prisma/client';
-import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
+import { AdStatus, Role } from '@prisma/client';
+import {
+  ForbiddenResourceException,
+  ResourceNotFoundException,
+} from '@/common/errors/domain.exceptions';
+import type { AuthUser } from '@/common/types/auth.types';
 import {
   MarketplaceRepository,
   type AdWithSeller,
@@ -53,6 +57,17 @@ describe('MarketplaceService', () => {
             recordView: jest.fn().mockResolvedValue(true),
             addToWishlist: jest.fn().mockResolvedValue(true),
             removeFromWishlist: jest.fn().mockResolvedValue(true),
+            findBySeller: jest.fn().mockResolvedValue([ad()]),
+            findOwned: jest.fn().mockResolvedValue(ad()),
+            create: jest
+              .fn()
+              .mockImplementation((_sellerId, data) =>
+                Promise.resolve(ad({ ...data, id: 'ad-new' })),
+              ),
+            update: jest
+              .fn()
+              .mockImplementation((id, data) => Promise.resolve(ad({ ...data, id }))),
+            softDelete: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -180,6 +195,120 @@ describe('MarketplaceService', () => {
       repo.findById.mockResolvedValue(null);
 
       await expect(service.setWishlisted('nope', 'u-1', true)).rejects.toBeInstanceOf(
+        ResourceNotFoundException,
+      );
+    });
+  });
+
+  describe('seller-owned listings', () => {
+    const seller: AuthUser = {
+      id: 'u-9',
+      roles: [Role.USER],
+      jti: 'j',
+      exp: 9999999999,
+    };
+
+    it('reports each ad’s status so My Listings can badge it', async () => {
+      // my-ads mixes statuses by design, so the card cannot infer it.
+      repo.findBySeller.mockResolvedValue([ad({ status: AdStatus.PAUSED })]);
+
+      const [listed] = await service.myAds(seller);
+
+      expect(listed!.status).toBe(AdStatus.PAUSED);
+    });
+
+    it('lists the seller their own ads, drafts and paused included', async () => {
+      // findBySeller does not filter to ACTIVE — that is the whole point of
+      // the My Listings screen.
+      await service.myAds(seller);
+
+      expect(repo.findBySeller).toHaveBeenCalledWith('u-9', undefined);
+    });
+
+    it('passes a status filter through for the listing tabs', async () => {
+      await service.myAds(seller, AdStatus.PAUSED);
+
+      expect(repo.findBySeller).toHaveBeenCalledWith('u-9', AdStatus.PAUSED);
+    });
+
+    it('publishes by default and drafts on request', async () => {
+      await service.create(seller, {
+        title: 'Sofa Shampoo',
+        categorySlug: 'cleaning',
+        price: 899,
+      });
+      expect(repo.create.mock.calls[0]![1]).toMatchObject({ status: AdStatus.ACTIVE });
+
+      await service.create(seller, {
+        title: 'Draft ad',
+        categorySlug: 'cleaning',
+        price: 100,
+        status: AdStatus.DRAFT,
+      });
+      expect(repo.create.mock.calls[1]![1]).toMatchObject({ status: AdStatus.DRAFT });
+    });
+
+    it('stores uploaded photo keys against the new ad', async () => {
+      // The only place in the schema an uploaded key can land.
+      await service.create(seller, {
+        title: 'Sofa Shampoo',
+        categorySlug: 'cleaning',
+        price: 899,
+        imageKeys: ['ads/a.jpg', 'ads/b.jpg'],
+      });
+
+      expect(repo.create.mock.calls[0]![2]).toEqual(['ads/a.jpg', 'ads/b.jpg']);
+    });
+
+    it('sends only the fields the seller actually changed', async () => {
+      // Spreading undefined would blank the columns left untouched.
+      await service.update(seller, 'ad-1', { price: 950 });
+
+      expect(repo.update).toHaveBeenCalledWith('ad-1', { price: 950 }, undefined);
+    });
+
+    it('leaves photos alone unless imageKeys is given', async () => {
+      // undefined = keep them, [] = remove them all. Collapsing the two would
+      // make editing a title wipe the images.
+      await service.update(seller, 'ad-1', { title: 'New title' });
+      expect(repo.update.mock.calls[0]![2]).toBeUndefined();
+
+      await service.update(seller, 'ad-1', { imageKeys: [] });
+      expect(repo.update.mock.calls[1]![2]).toEqual([]);
+    });
+
+    it('pauses a listing through the same update path', async () => {
+      await service.update(seller, 'ad-1', { status: AdStatus.PAUSED });
+
+      expect(repo.update).toHaveBeenCalledWith('ad-1', { status: AdStatus.PAUSED }, undefined);
+    });
+
+    it('refuses to edit or delete somebody else’s listing', async () => {
+      repo.findOwned.mockResolvedValue(ad({ sellerId: 'someone-else' }));
+
+      await expect(service.update(seller, 'ad-1', { price: 1 })).rejects.toBeInstanceOf(
+        ForbiddenResourceException,
+      );
+      await expect(service.remove(seller, 'ad-1')).rejects.toBeInstanceOf(
+        ForbiddenResourceException,
+      );
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('lets an admin manage a listing they do not own', async () => {
+      repo.findOwned.mockResolvedValue(ad({ sellerId: 'someone-else' }));
+      const admin: AuthUser = { ...seller, roles: [Role.ADMIN] };
+
+      await service.remove(admin, 'ad-1');
+
+      expect(repo.softDelete).toHaveBeenCalledWith('ad-1');
+    });
+
+    it('404s a listing that does not exist', async () => {
+      repo.findOwned.mockResolvedValue(null);
+
+      await expect(service.remove(seller, 'ad-x')).rejects.toBeInstanceOf(
         ResourceNotFoundException,
       );
     });

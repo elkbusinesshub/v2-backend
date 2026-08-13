@@ -44,7 +44,20 @@ export class MarketplaceRepository {
       where: {
         status: AdStatus.ACTIVE,
         ...(categorySlug ? { categorySlug } : {}),
-        ...(query ? { title: { contains: query } } : {}),
+        // Matches the same fields the best-sellers search box matched
+        // client-side before it was wired here: title, category and the
+        // seller's display name. `sellerName` is the business name falling
+        // back to the user's name, so both have to be searched.
+        ...(query
+          ? {
+              OR: [
+                { title: { contains: query } },
+                { categorySlug: { contains: query } },
+                { seller: { name: { contains: query } } },
+                { seller: { providerProfile: { businessName: { contains: query } } } },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ wishlistCount: 'desc' }, { viewCount: 'desc' }, { createdAt: 'desc' }],
       take: limit,
@@ -56,6 +69,79 @@ export class MarketplaceRepository {
     return this.db.ad.findFirst({
       where: { id, status: AdStatus.ACTIVE },
       include: withSeller,
+    });
+  }
+
+  /**
+   * A seller's own listings, newest first.
+   *
+   * Unlike every other read here this is *not* filtered to ACTIVE: a seller
+   * has to see their own drafts and paused ads, which is the whole point of
+   * the My Listings screen.
+   */
+  async findBySeller(sellerId: string, status?: AdStatus): Promise<AdWithSeller[]> {
+    return this.db.ad.findMany({
+      where: { sellerId, deletedAt: null, ...(status ? { status } : {}) },
+      orderBy: { createdAt: 'desc' },
+      include: withSeller,
+    });
+  }
+
+  /** One ad in any status, for the owner to read, edit or delete. */
+  async findOwned(id: string): Promise<AdWithSeller | null> {
+    return this.db.ad.findFirst({ where: { id, deletedAt: null }, include: withSeller });
+  }
+
+  async create(
+    sellerId: string,
+    data: Omit<Prisma.AdUncheckedCreateInput, 'sellerId'>,
+    imageKeys: string[],
+  ): Promise<AdWithSeller> {
+    return this.db.ad.create({
+      data: {
+        ...data,
+        sellerId,
+        images: {
+          create: imageKeys.map((key, sortOrder) => ({ key, sortOrder })),
+        },
+      },
+      include: withSeller,
+    });
+  }
+
+  /**
+   * Updates an ad, replacing its photos only when [imageKeys] is given.
+   *
+   * Undefined means "leave the photos alone"; an empty array means "remove
+   * them all". Collapsing those two would make it impossible to edit a title
+   * without also wiping the images.
+   */
+  async update(
+    id: string,
+    data: Prisma.AdUncheckedUpdateInput,
+    imageKeys?: string[],
+  ): Promise<AdWithSeller> {
+    return this.db.$transaction(async (tx) => {
+      if (imageKeys) {
+        await tx.adImage.deleteMany({ where: { adId: id } });
+        if (imageKeys.length > 0) {
+          await tx.adImage.createMany({
+            data: imageKeys.map((key, sortOrder) => ({ adId: id, key, sortOrder })),
+          });
+        }
+      }
+      return tx.ad.update({ where: { id }, data, include: withSeller });
+    });
+  }
+
+  /**
+   * Soft delete. The row stays so the wishlists and views pointing at it keep
+   * their referential integrity, and so a seller's history survives.
+   */
+  async softDelete(id: string): Promise<void> {
+    await this.db.ad.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: AdStatus.PAUSED },
     });
   }
 
