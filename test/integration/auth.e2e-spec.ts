@@ -82,7 +82,9 @@ describe('Auth (integration)', () => {
     expect(requestRes.body.data.resendInSeconds).toBeGreaterThan(0);
 
     const code = await redisClient.get(`auth:otp:${phone}`);
-    expect(code).toMatch(/^\d{4}$/);
+    // The app issues 6 digits (otp.service.ts CODE_LENGTH) and VerifyOtpDto
+    // rejects anything else; this spec had drifted to the old 4-digit code.
+    expect(code).toMatch(/^\d{6}$/);
 
     const verifyRes = await request(http())
       .post('/api/v1/auth/otp/verify')
@@ -100,7 +102,7 @@ describe('Auth (integration)', () => {
 
     const res = await request(http())
       .post('/api/v1/auth/otp/verify')
-      .send({ phone, otp: '0000' })
+      .send({ phone, otp: '000000' })
       .expect(401);
     expect(res.body).toMatchObject({ success: false, error: 'UNAUTHENTICATED' });
   });
