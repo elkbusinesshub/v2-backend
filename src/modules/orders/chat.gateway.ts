@@ -10,6 +10,7 @@ import {
 import type { Namespace, Socket } from 'socket.io';
 import type { AuthUser } from '@/common/types/auth.types';
 import { createWsAuthMiddleware } from '@/sockets/ws-auth.middleware';
+import { ChatRepository } from './chat.repository';
 import { CHAT_NAMESPACE } from './orders.constants';
 
 /** Room a booking's chat participants share, so a message reaches every device. */
@@ -29,7 +30,10 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
 
   @WebSocketServer() private server!: Namespace;
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly chat: ChatRepository,
+  ) {}
 
   afterInit(server: Namespace): void {
     server.use(createWsAuthMiddleware(this.jwtService));
@@ -44,12 +48,31 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
     void client.join(`user:${user.id}`);
   }
 
-  /** Client subscribes to a specific order thread. */
+  /**
+   * Client subscribes to a specific order thread.
+   *
+   * The room carries another user's private conversation, so joining is scoped
+   * to the booking's owner with the same lookup `GET /orders/:id/chat` uses —
+   * a valid token for *some* account is not permission to read *this* order.
+   */
   @SubscribeMessage('order:join')
-  joinOrder(client: Socket, bookingId: unknown): void {
-    if (typeof bookingId === 'string' && bookingId) {
-      void client.join(orderRoom(bookingId));
+  async joinOrder(client: Socket, bookingId: unknown): Promise<void> {
+    const user = (client.data as { user?: AuthUser }).user;
+    if (!user || typeof bookingId !== 'string' || !bookingId) {
+      client.emit('order:join:denied', { bookingId });
+      return;
     }
+
+    const booking = await this.chat.findBookingForUser(bookingId, user.id);
+    if (!booking) {
+      // Same shape as the HTTP 404: never reveal whether the order exists.
+      this.logger.warn(`chat join refused: user=${user.id} order=${bookingId}`);
+      client.emit('order:join:denied', { bookingId });
+      return;
+    }
+
+    await client.join(orderRoom(bookingId));
+    client.emit('order:joined', { bookingId });
   }
 
   @SubscribeMessage('order:leave')
