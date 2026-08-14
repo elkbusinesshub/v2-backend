@@ -15,6 +15,13 @@ export const BOOKING_VERTICALS = [
   'porter',
   'rides',
   'elkstay',
+  /**
+   * An order placed against a seller's listing. Cleaning, repair, rental and
+   * stay bookings are all this now — the vertical screens still look
+   * different, but every one of them writes an `ad_order`. Its cancel lives
+   * on the marketplace endpoint rather than a per-vertical one.
+   */
+  'marketplace',
 ] as const;
 export type BookingVertical = (typeof BOOKING_VERTICALS)[number];
 
@@ -49,15 +56,23 @@ export class UnifiedBookingsRepository {
   async findAllByUser(userId: string): Promise<UnifiedBooking[]> {
     const where = { userId };
 
-    const [services, cleans, repairs, rentals, porters, rides, stays] = await Promise.all([
-      this.db.booking.findMany({ where, include: { service: true } }),
-      this.db.cleanBooking.findMany({ where, include: { items: true } }),
-      this.db.repairBooking.findMany({ where, include: { items: true } }),
-      this.db.rentalBooking.findMany({ where, include: { car: true, branch: true } }),
-      this.db.porterBooking.findMany({ where, include: { vehicle: true } }),
-      this.db.rideBooking.findMany({ where, include: { rideType: true } }),
-      this.db.stayBooking.findMany({ where, include: { stay: true } }),
-    ]);
+    const [services, cleans, repairs, rentals, porters, rides, stays, adOrders] = await Promise.all(
+      [
+        this.db.booking.findMany({ where, include: { service: true } }),
+        this.db.cleanBooking.findMany({ where, include: { items: true } }),
+        this.db.repairBooking.findMany({ where, include: { items: true } }),
+        this.db.rentalBooking.findMany({ where, include: { car: true, branch: true } }),
+        this.db.porterBooking.findMany({ where, include: { vehicle: true } }),
+        this.db.rideBooking.findMany({ where, include: { rideType: true } }),
+        this.db.stayBooking.findMany({ where, include: { stay: true } }),
+        // Scoped to the buyer: a seller's own listings appear in their Orders
+        // tab, not in the list of things they have booked.
+        this.db.adOrder.findMany({
+          where: { buyerId: userId },
+          include: { ad: { select: { icon: true } }, seller: { select: { name: true } } },
+        }),
+      ],
+    );
 
     const rows: UnifiedBooking[] = [
       ...services.map((b) => ({
@@ -151,6 +166,20 @@ export class UnifiedBookingsRepository {
         addressText: b.stay.fullAddress,
         total: b.totalPaid ?? 0,
         createdAt: b.createdAt,
+      })),
+      ...adOrders.map((o) => ({
+        id: o.id,
+        vertical: 'marketplace' as const,
+        reference: o.code,
+        serviceName: o.serviceName,
+        serviceIcon: o.ad.icon,
+        // The person who will actually do the work, rather than a house brand.
+        providerName: o.seller.name ?? 'ELK Seller',
+        status: o.status,
+        scheduledAt: o.scheduledAt,
+        addressText: o.addressText,
+        total: Number(o.amount),
+        createdAt: o.createdAt,
       })),
     ];
 
