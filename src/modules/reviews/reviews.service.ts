@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { AdOrderStatus, BookingStatus } from '@prisma/client';
 import { DomainException, ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import { initialsOf } from '@/common/utils/initials';
 import type { AuthUser } from '@/common/types/auth.types';
@@ -19,9 +19,23 @@ export class ReviewsService {
     private readonly users: UsersRepository,
   ) {}
 
-  /** The rating screen's payload — provider/service context plus the tag vocabulary. */
-  async getReviewTarget(user: AuthUser, bookingId: string): Promise<Record<string, unknown>> {
-    const { service } = await this.assertReviewable(user, bookingId);
+  /** The rating screen's payload — who and what is being rated, plus the tags. */
+  async getReviewTarget(user: AuthUser, id: string): Promise<Record<string, unknown>> {
+    const order = await this.reviews.findAdOrderForBuyer(id, user.id);
+    if (order) {
+      await this.assertAdOrderReviewable(order);
+      return {
+        providerName: order.seller.name ?? 'ELK Seller',
+        providerInitials: initialsOf(order.seller.name ?? 'ELK Seller'),
+        serviceName: order.serviceName,
+        // A listing carries no duration of its own on the order.
+        durationLabel: '',
+        quickTags: [...REVIEW_QUICK_TAGS],
+        rewardPoints: REVIEW_REWARD_POINTS,
+      };
+    }
+
+    const { service } = await this.assertReviewable(user, id);
     return {
       providerName: service.providerName,
       providerInitials: initialsOf(service.providerName),
@@ -34,10 +48,27 @@ export class ReviewsService {
 
   async submitReview(
     user: AuthUser,
-    bookingId: string,
+    id: string,
     dto: SubmitReviewDto,
   ): Promise<Record<string, unknown>> {
-    const { booking, service } = await this.assertReviewable(user, bookingId);
+    const order = await this.reviews.findAdOrderForBuyer(id, user.id);
+    if (order) {
+      await this.assertAdOrderReviewable(order);
+      await this.reviews.create({
+        adOrderId: order.id,
+        userId: user.id,
+        rating: dto.rating,
+        tags: dto.tags,
+        comment: dto.comment,
+      });
+      // No aggregate is updated: a listing has no rating column, so the
+      // review is recorded without a score to roll it into. Adding one is a
+      // separate piece of work from letting people leave the review at all.
+      await this.users.incrementRewardPoints(user.id, REVIEW_REWARD_POINTS);
+      return { rewardPoints: REVIEW_REWARD_POINTS };
+    }
+
+    const { booking, service } = await this.assertReviewable(user, id);
 
     await this.reviews.create({
       bookingId: booking.id,
@@ -52,6 +83,24 @@ export class ReviewsService {
     await this.users.incrementRewardPoints(user.id, REVIEW_REWARD_POINTS);
 
     return { rewardPoints: REVIEW_REWARD_POINTS };
+  }
+
+  /** Completed + not-already-reviewed, for an order against a listing. */
+  private async assertAdOrderReviewable(order: { id: string; status: AdOrderStatus }) {
+    if (order.status !== AdOrderStatus.COMPLETED) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'ORDER_NOT_COMPLETED',
+        'Only completed orders can be reviewed',
+      );
+    }
+    if (await this.reviews.findByAdOrderId(order.id)) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'ALREADY_REVIEWED',
+        'This order has already been reviewed',
+      );
+    }
   }
 
   /** Ownership + completed + not-already-reviewed, all in one guard. */

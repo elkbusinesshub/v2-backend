@@ -18,27 +18,41 @@ export class OrdersService {
 
   // ─── chat ────────────────────────────────────────────────────────────────
 
-  async getThread(user: AuthUser, bookingId: string): Promise<Record<string, unknown>> {
-    const booking = await this.assertOrder(user, bookingId);
-    const messages = await this.chat.listMessages(bookingId);
-    return toThreadJson(booking, messages);
+  async getThread(user: AuthUser, orderId: string): Promise<Record<string, unknown>> {
+    const owner = await this.assertThread(user, orderId);
+    return toThreadJson(owner, await this.chat.listMessages(owner));
   }
 
   /** Persists a customer message, then fans it out over the /chat gateway. */
   async sendMessage(
     user: AuthUser,
-    bookingId: string,
+    orderId: string,
     dto: SendMessageDto,
   ): Promise<Record<string, unknown>> {
-    const booking = await this.assertOrder(user, bookingId);
+    const owner = await this.assertThread(user, orderId);
     const message = await this.chat.create({
-      bookingId,
+      // Exactly one parent is set; the other column stays null.
+      ...(owner.parent === 'booking' ? { bookingId: owner.id } : { adOrderId: owner.id }),
       fromProvider: false,
       text: dto.text,
     });
-    const json = toMessageJson(message, initialsOf(booking.service.providerName));
-    this.gateway.emitMessage(bookingId, json);
+    const json = toMessageJson(message, initialsOf(owner.contactName));
+    this.gateway.emitMessage(orderId, json);
     return json;
+  }
+
+  /**
+   * The thread [orderId] names, or a 404 when the caller does not own it.
+   *
+   * A thread now hangs off either a catalogue booking or an order placed
+   * against a listing, so this resolves both rather than assuming the former.
+   */
+  private async assertThread(user: AuthUser, orderId: string) {
+    const owner = await this.chat.findThreadOwner(orderId, user.id);
+    if (!owner) {
+      throw new ResourceNotFoundException('Order');
+    }
+    return owner;
   }
 
   // ─── tracking ──────────────────────────────────────────────────────────────

@@ -1111,15 +1111,21 @@ model RepairBookingItem {
 /// service's `rating`/`reviewCount` aggregate — the seeded display values
 /// on `Service` become real once reviews start arriving.
 model Review {
-  id        String  @id @default(uuid(7)) @db.Char(36)
-  bookingId String  @unique @db.Char(36)
-  booking   Booking @relation(fields: [bookingId], references: [id])
-  userId    String  @db.Char(36)
-  user      User    @relation(fields: [userId], references: [id])
-  rating    Int
+  id String @id @default(uuid(7)) @db.Char(36)
+
+  /// One review per job, whichever kind of job it was. Both are nullable and
+  /// both unique: exactly one is set, and neither can be reviewed twice.
+  bookingId String?  @unique @db.Char(36)
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+  adOrderId String?  @unique @db.Char(36)
+  adOrder   AdOrder? @relation(fields: [adOrderId], references: [id])
+
+  userId  String @db.Char(36)
+  user    User   @relation(fields: [userId], references: [id])
+  rating  Int
   /// JSON array of quick-tag strings, e.g. ["On Time", "Professional"]
-  tags      Json
-  comment   String  @db.Text
+  tags    Json
+  comment String @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1246,9 +1252,17 @@ model WalletTransaction {
 /// booking's seeded `service.providerName`. Delivered in realtime via the
 /// /chat Socket.IO gateway and persisted here for history.
 model ChatMessage {
-  id           String  @id @default(uuid(7)) @db.Char(36)
-  bookingId    String  @db.Char(36)
-  booking      Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid(7)) @db.Char(36)
+
+  /// A thread hangs off exactly one of these. Both are nullable because a
+  /// message belongs either to a catalogue booking or to an order placed
+  /// against a listing — never both, and never neither. MySQL cannot express
+  /// that as a constraint, so the service is what enforces it.
+  bookingId String?  @db.Char(36)
+  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  adOrderId String?  @db.Char(36)
+  adOrder   AdOrder? @relation(fields: [adOrderId], references: [id], onDelete: Cascade)
+
   fromProvider Boolean
   text         String  @db.Text
 
@@ -1256,6 +1270,7 @@ model ChatMessage {
   updatedAt DateTime @updatedAt
 
   @@index([bookingId])
+  @@index([adOrderId])
   @@map("chat_messages")
 }
 
@@ -1402,6 +1417,9 @@ model AdOrder {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  chatMessages ChatMessage[]
+  review       Review?
 
   @@index([sellerId, status])
   @@index([buyerId])

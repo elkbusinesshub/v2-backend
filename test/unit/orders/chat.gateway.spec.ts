@@ -24,7 +24,7 @@ const booking = {
   createdAt: new Date('2026-05-19T05:15:00.000Z'),
   updatedAt: new Date('2026-05-19T05:15:00.000Z'),
   service: { id: 'svc-1', providerName: 'Royal Shine Cleaning Co.' },
-} as unknown as Awaited<ReturnType<ChatRepository['findBookingForUser']>>;
+} as unknown as Awaited<ReturnType<ChatRepository['findThreadOwner']>>;
 
 /** A socket that has already cleared the JWT handshake middleware. */
 function socketFor(principal: AuthUser | undefined) {
@@ -47,7 +47,7 @@ describe('ChatGateway', () => {
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
         {
           provide: ChatRepository,
-          useValue: { findBookingForUser: jest.fn().mockResolvedValue(booking) },
+          useValue: { findThreadOwner: jest.fn().mockResolvedValue(booking) },
         },
       ],
     }).compile();
@@ -62,7 +62,7 @@ describe('ChatGateway', () => {
 
       await gateway.joinOrder(client, 'b-1');
 
-      expect(chat.findBookingForUser).toHaveBeenCalledWith('b-1', 'u-1');
+      expect(chat.findThreadOwner).toHaveBeenCalledWith('b-1', 'u-1');
       expect(client.join).toHaveBeenCalledWith(orderRoom('b-1'));
       expect(client.emit).toHaveBeenCalledWith('order:joined', { bookingId: 'b-1' });
     });
@@ -70,7 +70,7 @@ describe('ChatGateway', () => {
     it('refuses an order belonging to someone else', async () => {
       // The whole point of the check: a valid token is not permission to read
       // another customer's conversation.
-      chat.findBookingForUser.mockResolvedValue(null);
+      chat.findThreadOwner.mockResolvedValue(null);
       const client = socketFor(user);
 
       await gateway.joinOrder(client, 'b-someone-elses');
@@ -86,7 +86,7 @@ describe('ChatGateway', () => {
 
       await gateway.joinOrder(client, 'b-1');
 
-      expect(chat.findBookingForUser).not.toHaveBeenCalled();
+      expect(chat.findThreadOwner).not.toHaveBeenCalled();
       expect(client.join).not.toHaveBeenCalled();
     });
 
@@ -95,7 +95,7 @@ describe('ChatGateway', () => {
 
       await gateway.joinOrder(client, 42);
 
-      expect(chat.findBookingForUser).not.toHaveBeenCalled();
+      expect(chat.findThreadOwner).not.toHaveBeenCalled();
       expect(client.join).not.toHaveBeenCalled();
     });
   });
@@ -108,7 +108,7 @@ describe('ChatGateway', () => {
       gateway.leaveOrder(client, 'b-1');
 
       expect(client.leave).toHaveBeenCalledWith(orderRoom('b-1'));
-      expect(chat.findBookingForUser).not.toHaveBeenCalled();
+      expect(chat.findThreadOwner).not.toHaveBeenCalled();
     });
   });
 });

@@ -3,7 +3,6 @@ import { Prisma, Role } from '@prisma/client';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { HomeService } from '@/modules/home/home.service';
 import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
-import { ServicesRepository, ServiceWithCategory } from '@/modules/services/services.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
 
 const user = {
@@ -20,47 +19,10 @@ const user = {
   deletedAt: null,
 };
 
-const category = {
-  id: 'cat-1',
-  slug: 'cleaning',
-  name: 'Cleaning',
-  icon: '🧹',
-  colorHex: 0xfffef3c7,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
-
-function makeService(overrides: Partial<ServiceWithCategory> = {}): ServiceWithCategory {
-  return {
-    id: 'svc-1',
-    categoryId: category.id,
-    slug: 'deep_cleaning',
-    name: 'Deep Cleaning',
-    icon: '✨',
-    badge: null,
-    description: 'desc',
-    price: new Prisma.Decimal(85),
-    priceUnit: '/ session',
-    durationLabel: '2-3 hrs',
-    teamSizeLabel: '2 People',
-    included: [],
-    providerName: 'Royal Shine Cleaning Co.',
-    providerExperience: '12 years experience',
-    rating: 4.9,
-    reviewCount: 100,
-    bookingsLabel: '1k+',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    category,
-    ...overrides,
-  };
-}
-
 describe('HomeService', () => {
   let service: HomeService;
   let users: jest.Mocked<UsersRepository>;
   let locations: jest.Mocked<LocationsRepository>;
-  let services: jest.Mocked<ServicesRepository>;
   let marketplace: jest.Mocked<MarketplaceService>;
 
   beforeEach(async () => {
@@ -73,12 +35,17 @@ describe('HomeService', () => {
           useValue: { findDefaultForUser: jest.fn().mockResolvedValue(null) },
         },
         {
-          provide: ServicesRepository,
-          useValue: { findTopRated: jest.fn().mockResolvedValue([makeService()]) },
-        },
-        {
           provide: MarketplaceService,
-          useValue: { topSellers: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            topSellers: jest.fn().mockResolvedValue([
+              {
+                id: 'ad-1',
+                sellerName: 'Royal Shine Cleaning Co.',
+                categorySlug: 'cleaning',
+                price: 85,
+              },
+            ]),
+          },
         },
       ],
     }).compile();
@@ -86,7 +53,6 @@ describe('HomeService', () => {
     service = moduleRef.get(HomeService);
     users = moduleRef.get(UsersRepository);
     locations = moduleRef.get(LocationsRepository);
-    services = moduleRef.get(ServicesRepository);
     marketplace = moduleRef.get(MarketplaceService);
   });
 
@@ -121,23 +87,26 @@ describe('HomeService', () => {
       'repair',
       'porter',
     ]);
+    // Both rails read the same ranking now. They used to disagree — this one
+    // read the seeded catalogue while the rail below it read seller listings.
     expect(feed.bestSellers).toEqual([
       {
-        id: 'svc-1',
+        id: 'ad-1',
         name: 'Royal Shine Cleaning Co.',
         initials: 'RS',
-        category: 'Cleaning · ₹85',
+        category: 'cleaning · ₹85',
         priceLabel: '₹85',
-        rating: 4.9,
-        colorHex: category.colorHex,
-        verified: true,
+        // Nothing rates or verifies a listing yet, so nothing claims either.
+        rating: 0,
+        colorHex: 0xfffef3c7,
+        verified: false,
       },
     ]);
   });
 
   it('falls back to empty strings for a fresh user with no name or address', async () => {
     users.findById.mockResolvedValue({ ...user, name: null });
-    services.findTopRated.mockResolvedValue([]);
+    marketplace.topSellers.mockResolvedValue([]);
 
     const feed = await service.getFeed('u-1');
 
@@ -149,7 +118,15 @@ describe('HomeService', () => {
 
   it('embeds the engagement-ranked seller ads in the feed', async () => {
     marketplace.topSellers.mockResolvedValue([
-      { id: 'ad-1', title: 'Deep Home Cleaning', wishlistCount: 4, viewCount: 30 } as never,
+      {
+        id: 'ad-1',
+        title: 'Deep Home Cleaning',
+        sellerName: 'Bright Spark',
+        categorySlug: 'cleaning',
+        price: 85,
+        wishlistCount: 4,
+        viewCount: 30,
+      } as never,
     ]);
 
     const feed = await service.getFeed('u-1');

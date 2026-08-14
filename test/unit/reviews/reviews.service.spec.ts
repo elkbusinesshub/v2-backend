@@ -74,6 +74,8 @@ describe('ReviewsService', () => {
         {
           provide: ReviewsRepository,
           useValue: {
+            findAdOrderForBuyer: jest.fn().mockResolvedValue(null),
+            findByAdOrderId: jest.fn().mockResolvedValue(null),
             findByBookingId: jest.fn().mockResolvedValue(null),
             create: jest.fn(),
             aggregateForService: jest.fn().mockResolvedValue({ average: 4.8, count: 3 }),
@@ -144,6 +146,7 @@ describe('ReviewsService', () => {
       reviews.findByBookingId.mockResolvedValue({
         id: 'r-1',
         bookingId: 'b-1',
+        adOrderId: null,
         userId: 'u-1',
         rating: 5,
         tags: [],
@@ -178,6 +181,7 @@ describe('ReviewsService', () => {
       reviews.findByBookingId.mockResolvedValue({
         id: 'r-1',
         bookingId: 'b-1',
+        adOrderId: null,
         userId: 'u-1',
         rating: 5,
         tags: [],

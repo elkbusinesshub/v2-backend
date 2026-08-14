@@ -11,6 +11,22 @@ export class ReviewsRepository {
     return this.db.review.findUnique({ where: { bookingId } });
   }
 
+  async findByAdOrderId(adOrderId: string): Promise<Review | null> {
+    return this.db.review.findUnique({ where: { adOrderId } });
+  }
+
+  /**
+   * A completed order the buyer placed, with the seller and listing needed to
+   * label the rating screen. Scoped to the buyer: the person who paid is the
+   * one who gets to rate it.
+   */
+  async findAdOrderForBuyer(id: string, buyerId: string) {
+    return this.db.adOrder.findFirst({
+      where: { id, buyerId },
+      include: { seller: { select: { name: true } }, ad: { select: { title: true } } },
+    });
+  }
+
   async create(data: Prisma.ReviewUncheckedCreateInput): Promise<Review> {
     return this.db.review.create({ data });
   }

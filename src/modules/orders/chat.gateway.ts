@@ -63,8 +63,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
       return;
     }
 
-    const booking = await this.chat.findBookingForUser(bookingId, user.id);
-    if (!booking) {
+    const owner = await this.chat.findThreadOwner(bookingId, user.id);
+    if (!owner) {
       // Same shape as the HTTP 404: never reveal whether the order exists.
       this.logger.warn(`chat join refused: user=${user.id} order=${bookingId}`);
       client.emit('order:join:denied', { bookingId });

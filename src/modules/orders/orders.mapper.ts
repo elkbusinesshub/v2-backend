@@ -1,5 +1,6 @@
 import type { Booking, ChatMessage, Service } from '@prisma/client';
 import { initialsOf } from '@/common/utils/initials';
+import type { ChatThreadOwner } from './chat.repository';
 import {
   CHAT_CONTACT_STATUS,
   ORDERS_DISPLAY_TIMEZONE,
@@ -45,16 +46,16 @@ export function toMessageJson(
 }
 
 export function toThreadJson(
-  booking: Booking & { service: Service },
+  owner: ChatThreadOwner,
   messages: ChatMessage[],
 ): Record<string, unknown> {
-  const providerInitials = initialsOf(booking.service.providerName);
+  const contactInitials = initialsOf(owner.contactName);
   return {
-    contactName: booking.service.providerName,
-    contactInitials: providerInitials,
+    contactName: owner.contactName,
+    contactInitials,
     contactStatus: CHAT_CONTACT_STATUS,
-    dateLabel: dateHeader(messages[0]?.createdAt ?? booking.createdAt),
-    messages: messages.map((m) => toMessageJson(m, providerInitials)),
+    dateLabel: dateHeader(messages[0]?.createdAt ?? owner.createdAt),
+    messages: messages.map((m) => toMessageJson(m, contactInitials)),
   };
 }
 

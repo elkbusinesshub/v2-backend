@@ -57,6 +57,12 @@ describe('OrdersService', () => {
           provide: ChatRepository,
           useValue: {
             findBookingForUser: jest.fn().mockResolvedValue(booking),
+            findThreadOwner: jest.fn().mockResolvedValue({
+              id: booking.id,
+              parent: 'booking',
+              contactName: booking.service.providerName,
+              createdAt: booking.createdAt,
+            }),
             listMessages: jest.fn().mockResolvedValue([providerMessage]),
             create: jest.fn().mockImplementation((data) =>
               Promise.resolve({
@@ -98,8 +104,27 @@ describe('OrdersService', () => {
       expect(messages[0]).toMatchObject({ isOutgoing: false, senderInitials: 'RS' });
     });
 
+    it('reads a thread that hangs off an order against a listing', async () => {
+      // Four verticals write ad orders now, so a thread has two possible
+      // parents and the message must be filed under the right one.
+      chat.findThreadOwner.mockResolvedValue({
+        id: 'ao-1',
+        parent: 'adOrder',
+        contactName: 'Bright Spark',
+        createdAt: new Date('2026-06-12T09:00:00.000Z'),
+      });
+
+      const thread = await orders.getThread(user, 'ao-1');
+
+      expect(chat.listMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ parent: 'adOrder', id: 'ao-1' }),
+      );
+      expect(thread.contactName).toBe('Bright Spark');
+      expect(thread.contactInitials).toBe('BS');
+    });
+
     it('404s an order that is not the caller’s', async () => {
-      chat.findBookingForUser.mockResolvedValue(null);
+      chat.findThreadOwner.mockResolvedValue(null);
       await expect(orders.getThread(user, 'b-x')).rejects.toBeInstanceOf(ResourceNotFoundException);
     });
   });

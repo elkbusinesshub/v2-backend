@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { initialsOf } from '@/common/utils/initials';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
-import { ServicesRepository } from '@/modules/services/services.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { BestSellerDto, HomeCategoryDto, HomeFeedDto, PromoBannerDto } from './home.dto';
 
@@ -38,29 +37,38 @@ export class HomeService {
   constructor(
     private readonly users: UsersRepository,
     private readonly locations: LocationsRepository,
-    private readonly services: ServicesRepository,
     private readonly marketplace: MarketplaceService,
   ) {}
 
   async getFeed(userId: string): Promise<HomeFeedDto> {
-    const [user, address, topRated, topSellers] = await Promise.all([
+    const [user, address, topSellers] = await Promise.all([
       this.users.findById(userId),
       this.locations.findDefaultForUser(userId),
-      this.services.findTopRated(BEST_SELLER_COUNT),
       // Seller ads ranked by engagement. Embedded here so the home screen
       // still makes one call — the rail is above the fold.
       this.marketplace.topSellers(userId, TOP_SELLER_COUNT),
     ]);
 
-    const bestSellers = topRated.map((s): BestSellerDto => ({
-      id: s.id,
-      name: s.providerName,
-      initials: initialsOf(s.providerName),
-      category: `${s.category.name} · ₹${s.price.toNumber()}`,
-      priceLabel: `₹${s.price.toNumber()}`,
-      rating: s.rating,
-      colorHex: s.category.colorHex,
-      verified: true,
+    // Both rails now come from the same ranking. They used to disagree: this
+    // one read the seeded `services` catalogue while the rail below it read
+    // seller listings, so the home screen recommended two different things
+    // under two headings. Same listings, two projections.
+    const bestSellers = topSellers.slice(0, BEST_SELLER_COUNT).map((ad): BestSellerDto => ({
+      id: ad.id,
+      name: ad.sellerName,
+      initials: initialsOf(ad.sellerName),
+      category: `${ad.categorySlug} · ₹${ad.price}`,
+      priceLabel: `₹${ad.price}`,
+      // No listing carries a rating yet — no reviews reach one.
+      rating: 0,
+      // The tile colour of the category the listing sits in, so the card
+      // matches the grid above it.
+      colorHex:
+        HOME_CATEGORIES.find((c) => c.id === ad.categorySlug)?.colorHex ??
+        HOME_CATEGORIES[0]!.colorHex,
+      // Verification was an admin flag on the seeded catalogue; nothing
+      // grants it to a seller, so nothing claims it.
+      verified: false,
     }));
 
     return {
