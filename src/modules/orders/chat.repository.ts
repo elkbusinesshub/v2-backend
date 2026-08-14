@@ -76,6 +76,19 @@ export class ChatRepository {
     });
   }
 
+  /**
+   * An order against a listing, for the tracking screen.
+   *
+   * Visible to both sides: the buyer watching progress, and the seller
+   * checking what they agreed to.
+   */
+  async findTrackableAdOrder(id: string, userId: string) {
+    return this.db.adOrder.findFirst({
+      where: { id, OR: [{ buyerId: userId }, { sellerId: userId }] },
+      include: { ad: { select: { icon: true } }, seller: { select: { name: true } } },
+    });
+  }
+
   async create(data: Prisma.ChatMessageUncheckedCreateInput): Promise<ChatMessage> {
     return this.db.chatMessage.create({ data });
   }

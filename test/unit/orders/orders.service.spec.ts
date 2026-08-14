@@ -57,6 +57,9 @@ describe('OrdersService', () => {
           provide: ChatRepository,
           useValue: {
             findBookingForUser: jest.fn().mockResolvedValue(booking),
+            // Null by default: these specs describe the booking path, and an
+            // id that is not an ad order falls through to it.
+            findTrackableAdOrder: jest.fn().mockResolvedValue(null),
             findThreadOwner: jest.fn().mockResolvedValue({
               id: booking.id,
               parent: 'booking',
@@ -159,6 +162,104 @@ describe('OrdersService', () => {
       const tracking = await orders.getTracking(user, 'b-1');
       const steps = tracking.steps as { status: string }[];
       expect(steps.every((s) => s.status === 'done')).toBe(true);
+    });
+  });
+
+  describe('tracking an order against a listing', () => {
+    const adOrder = (overrides: Record<string, unknown> = {}) => ({
+      id: 'ao-1',
+      code: 'ELK-A-4T29K',
+      status: 'NEW',
+      serviceName: 'Sofa Shampoo',
+      addressText: '12, 5th Block',
+      createdAt: new Date('2026-06-12T09:00:00.000Z'),
+      acceptedAt: null,
+      completedAt: null,
+      ad: { icon: '🛋️' },
+      seller: { name: 'Bright Spark' },
+      ...overrides,
+    });
+
+    it('shows four steps, not the booking flow’s five', async () => {
+      // An ad order has no dispatch, so there is no moment at which someone
+      // is "on the way".
+      chat.findTrackableAdOrder.mockResolvedValue(adOrder() as never);
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      const steps = tracking.steps as Record<string, unknown>[];
+      expect(steps).toHaveLength(4);
+      expect(steps.map((s) => s.name)).toEqual([
+        'Order Placed',
+        'Seller Accepted',
+        'Work In Progress',
+        'Completed',
+      ]);
+    });
+
+    it('a new order is waiting on the seller', async () => {
+      chat.findTrackableAdOrder.mockResolvedValue(adOrder() as never);
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      expect(tracking.statusLabel).toBe('Waiting for the seller');
+      expect((tracking.steps as Record<string, unknown>[]).map((s) => s.status)).toEqual([
+        'done',
+        'active',
+        'pending',
+        'pending',
+      ]);
+    });
+
+    it('an accepted order shows the accept time rather than a placeholder', async () => {
+      chat.findTrackableAdOrder.mockResolvedValue(
+        adOrder({
+          status: 'IN_PROGRESS',
+          acceptedAt: new Date('2026-06-12T10:30:00.000Z'),
+        }) as never,
+      );
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      const steps = tracking.steps as Record<string, unknown>[];
+      expect(steps[1]!.status).toBe('done');
+      expect(steps[1]!.time).not.toBe('—');
+      expect(steps[2]!.status).toBe('active');
+    });
+
+    it('a cancelled order freezes where it stopped', async () => {
+      // The label says it was cancelled; no step pretends to be complete.
+      chat.findTrackableAdOrder.mockResolvedValue(adOrder({ status: 'CANCELLED' }) as never);
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      expect(tracking.statusLabel).toBe('Order cancelled');
+      expect((tracking.steps as Record<string, unknown>[]).map((s) => s.status)).toEqual([
+        'done',
+        'pending',
+        'pending',
+        'pending',
+      ]);
+    });
+
+    it('omits the map, since an order carries no pin', async () => {
+      chat.findTrackableAdOrder.mockResolvedValue(adOrder() as never);
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      expect(tracking.lat).toBeNull();
+      expect(tracking.lng).toBeNull();
+      expect(tracking.addressText).toBe('12, 5th Block');
+    });
+
+    it('labels it with the seller and the listing', async () => {
+      chat.findTrackableAdOrder.mockResolvedValue(adOrder() as never);
+
+      const tracking = await orders.getTracking(user, 'ao-1');
+
+      expect(tracking.orderId).toBe('ELK-A-4T29K');
+      expect(tracking.providerName).toBe('Bright Spark');
+      expect(tracking.serviceIcon).toBe('🛋️');
     });
   });
 

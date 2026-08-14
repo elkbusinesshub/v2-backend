@@ -6,7 +6,12 @@ import { BookingsRepository } from '@/modules/bookings/bookings.repository';
 import { ChatGateway } from './chat.gateway';
 import { ChatRepository } from './chat.repository';
 import type { SendMessageDto } from './orders.dto';
-import { toMessageJson, toThreadJson, toTrackingJson } from './orders.mapper';
+import {
+  toAdOrderTrackingJson,
+  toMessageJson,
+  toThreadJson,
+  toTrackingJson,
+} from './orders.mapper';
 
 @Injectable()
 export class OrdersService {
@@ -57,9 +62,14 @@ export class OrdersService {
 
   // ─── tracking ──────────────────────────────────────────────────────────────
 
-  async getTracking(user: AuthUser, bookingId: string): Promise<Record<string, unknown>> {
-    const booking = await this.assertOrder(user, bookingId);
-    return toTrackingJson(booking);
+  async getTracking(user: AuthUser, orderId: string): Promise<Record<string, unknown>> {
+    // Most things being tracked are ad orders now; a booking id only resolves
+    // for the catalogue bookings that predate the migration.
+    const order = await this.chat.findTrackableAdOrder(orderId, user.id);
+    if (order) {
+      return toAdOrderTrackingJson(order);
+    }
+    return toTrackingJson(await this.assertOrder(user, orderId));
   }
 
   async cancelOrder(user: AuthUser, bookingId: string): Promise<void> {
