@@ -1,16 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AdStatus, Role } from '@prisma/client';
+import { AdStatus, Prisma, Role } from '@prisma/client';
 import {
   ForbiddenResourceException,
   ResourceNotFoundException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { ImageService } from '@/storage/image.service';
+import { validateAdAttributes } from './ad-attributes';
 import type { AdDto, CreateAdDto, UpdateAdDto } from './marketplace.dto';
 import { MarketplaceRepository, type AdWithSeller } from './marketplace.repository';
 
 /** How many cards the home rail asks for when it does not say. */
 export const DEFAULT_TOP_SELLERS = 10;
+
+/**
+ * Shown on a card until the seller uploads a photo.
+ *
+ * Set here rather than left to the column default, which MySQL stores as `?`:
+ * the emoji does not survive the DDL path Prisma writes it through, so an ad
+ * created without an icon rendered a broken glyph. Writing it as data works —
+ * the column is utf8mb4 and the seeded icons come through the same way.
+ */
+const DEFAULT_AD_ICON = '🛍️';
 
 @Injectable()
 export class MarketplaceService {
@@ -96,6 +107,7 @@ export class MarketplaceService {
   }
 
   async create(user: AuthUser, dto: CreateAdDto): Promise<AdDto> {
+    const attributes = validateAdAttributes(dto.categorySlug, dto.attributes);
     const ad = await this.ads.create(
       user.id,
       {
@@ -104,11 +116,12 @@ export class MarketplaceService {
         categorySlug: dto.categorySlug,
         price: dto.price,
         priceUnit: dto.priceUnit ?? '',
-        ...(dto.icon ? { icon: dto.icon } : {}),
+        icon: dto.icon || DEFAULT_AD_ICON,
         locality: dto.locality ?? null,
         city: dto.city ?? null,
         lat: dto.lat ?? null,
         lng: dto.lng ?? null,
+        attributes: attributes ?? Prisma.DbNull,
         // "Save draft" and "Publish ad" are the two buttons on the sheet.
         status: dto.status ?? AdStatus.ACTIVE,
       },
@@ -119,7 +132,23 @@ export class MarketplaceService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateAdDto): Promise<AdDto> {
-    await this.assertCanManage(user, id);
+    const existing = await this.assertCanManage(user, id);
+
+    // Attributes are only meaningful next to a category, so they are validated
+    // against the one the ad will have once this update lands — not the one it
+    // has now.
+    const category = dto.categorySlug ?? existing.categorySlug;
+    const recategorised =
+      dto.categorySlug !== undefined && dto.categorySlug !== existing.categorySlug;
+    const attributes =
+      dto.attributes !== undefined
+        ? validateAdAttributes(category, dto.attributes)
+        : // Details describing a rental make no sense on a cleaning ad, so
+          // moving an ad between categories drops whatever it was carrying.
+          recategorised
+          ? null
+          : undefined;
+
     const ad = await this.ads.update(
       id,
       {
@@ -135,6 +164,7 @@ export class MarketplaceService {
         ...(dto.city !== undefined ? { city: dto.city } : {}),
         ...(dto.lat !== undefined ? { lat: dto.lat } : {}),
         ...(dto.lng !== undefined ? { lng: dto.lng } : {}),
+        ...(attributes !== undefined ? { attributes: attributes ?? Prisma.DbNull } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
       dto.imageKeys,
@@ -153,7 +183,7 @@ export class MarketplaceService {
    * missing ad, a 403 for someone else's — the ad's existence is not a secret
    * once it has been published.
    */
-  private async assertCanManage(user: AuthUser, id: string): Promise<void> {
+  private async assertCanManage(user: AuthUser, id: string): Promise<AdWithSeller> {
     const ad = await this.ads.findOwned(id);
     if (!ad) {
       throw new ResourceNotFoundException('Ad');
@@ -161,6 +191,9 @@ export class MarketplaceService {
     if (!user.roles.includes(Role.ADMIN) && ad.sellerId !== user.id) {
       throw new ForbiddenResourceException('You can only manage your own listings');
     }
+    // Returned so an update can read the ad's current category without a
+    // second round trip.
+    return ad;
   }
 
   /** Maps rows to cards, resolving image URLs and the caller's wishlist state. */
@@ -192,6 +225,10 @@ export class MarketplaceService {
         isWishlisted: wishlisted.has(ad.id),
         status: ad.status,
         imageUrls: await this.imageUrls(ad),
+        // Prisma types a nullable Json column as JsonValue, which includes the
+        // literal null the column never holds — everything written here is
+        // either an object or SQL NULL.
+        attributes: (ad.attributes as Record<string, unknown> | null) ?? null,
       })),
     );
   }

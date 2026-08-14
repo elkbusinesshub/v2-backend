@@ -66,6 +66,7 @@ export class AdOrdersService {
       );
     }
 
+    const quantity = dto.quantity ?? 1;
     const order = await this.orders.create({
       code: `ELK-A-${this.randomCode()}`,
       adId: ad.id,
@@ -73,11 +74,20 @@ export class AdOrdersService {
       // Snapshotted, not joined: a listing that changes hands or is repriced
       // must not rewrite who was owed what for work already ordered.
       sellerId: ad.sellerId,
-      amount: ad.price,
+      // Computed here, never taken from the client — the buyer's device does
+      // not get to say what it owes. An enquiry costs nothing: asking to view
+      // a room is not the same as taking it for a month.
+      amount: dto.isEnquiry ? 0 : Number(ad.price) * quantity,
+      quantity,
       serviceName: ad.title,
       addressText: dto.addressText,
       contactPhone: dto.contactPhone,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+      endAt: dto.endAt ? new Date(dto.endAt) : null,
+      durationMonths: dto.durationMonths ?? null,
+      depositAmount: dto.depositAmount ?? null,
+      feesAmount: dto.feesAmount ?? 0,
+      taxAmount: dto.taxAmount ?? 0,
       note: dto.note ?? null,
     });
 
@@ -165,6 +175,10 @@ export class AdOrdersService {
       adId: order.adId,
       status: order.status,
       amount: Number(order.amount),
+      quantity: order.quantity,
+      feesAmount: Number(order.feesAmount),
+      taxAmount: Number(order.taxAmount),
+      totalAmount: Number(order.amount) + Number(order.feesAmount) + Number(order.taxAmount),
       serviceName: order.serviceName,
       icon: order.ad.icon,
       customerName: order.buyer.name ?? 'ELK customer',
@@ -175,6 +189,9 @@ export class AdOrdersService {
       // any caller that wants to format it differently.
       whenLabel: order.scheduledAt ? displayDate(order.scheduledAt) : 'As soon as possible',
       scheduledAt: order.scheduledAt?.toISOString() ?? null,
+      endAt: order.endAt?.toISOString() ?? null,
+      durationMonths: order.durationMonths,
+      depositAmount: order.depositAmount === null ? null : Number(order.depositAmount),
       createdAt: order.createdAt.toISOString(),
     };
   }

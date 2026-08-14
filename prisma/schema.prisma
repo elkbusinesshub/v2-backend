@@ -1325,8 +1325,9 @@ model ProviderRequest {
   timeLabel    String
   amount       Decimal               @db.Decimal(10, 2)
   status       ProviderRequestStatus @default(PENDING)
-  /// icon + tile color for the earnings transaction row this becomes
-  icon         String                @default("🧹")
+  /// icon + tile color for the earnings transaction row this becomes.
+  /// No default, for the same reason as `Ad.icon` — every caller supplies one.
+  icon         String
   colorHex     Int                   @default(4285668597) @db.UnsignedInt
 
   createdAt DateTime @default(now())
@@ -1367,14 +1368,33 @@ model AdOrder {
 
   status AdOrderStatus @default(NEW)
 
-  /// Snapshot of the ad's price when ordered — the seller may reprice later.
+  /// What the buyer is charged in total — the listing's price × `quantity`,
+  /// snapshotted because the seller may reprice the listing later.
   amount      Decimal @db.Decimal(10, 2)
+  /// Units ordered — seats shampooed, rooms cleaned. One for a job priced per
+  /// visit, which is most of them.
+  quantity    Int     @default(1)
+  /// Charges on top of `amount` that the buyer was shown: a supply fee, a
+  /// call-out fee, a rental delivery. Without these the screen's total and the
+  /// order's disagreed, and the order was the one that was wrong.
+  feesAmount  Decimal @default(0) @db.Decimal(10, 2)
+  /// Tax on `amount + feesAmount`. Separate from the fees so a receipt can
+  /// show what it always showed.
+  taxAmount   Decimal @default(0) @db.Decimal(10, 2)
   serviceName String
 
-  scheduledAt  DateTime?
+  scheduledAt    DateTime?
+  /// End of a booked period: a rental's return, a stay's move-out. Null for
+  /// one-off jobs, which are fully described by `scheduledAt` alone.
+  endAt          DateTime?
+  /// Stay reservations only — the agreed term, and the deposit taken up front
+  /// on top of `amount`.
+  durationMonths Int?
+  depositAmount  Decimal?  @db.Decimal(10, 2)
+
   addressText  String
   contactPhone String
-  note         String?   @db.Text
+  note         String? @db.Text
 
   acceptedAt  DateTime?
   completedAt DateTime?
@@ -1413,7 +1433,13 @@ model Ad {
   /// Reuses the home catalogue's category slugs (cleaning, laundry, ...).
   categorySlug String
   /// Emoji shown on the card until a seller uploads an image.
-  icon         String   @default("🛍️")
+  ///
+  /// No column default: MySQL stores an emoji default as `?` through the DDL
+  /// Prisma writes, so an ad created without one rendered a broken glyph. The
+  /// fallback lives in the service instead (DEFAULT_AD_ICON), and dropping the
+  /// column default also stops every future migration re-emitting a MODIFY
+  /// that never takes effect.
+  icon         String
   price        Decimal  @db.Decimal(10, 2)
   /// "/ visit", "/ day", "starting" — display only.
   priceUnit    String   @default("")
@@ -1423,6 +1449,16 @@ model Ad {
   /// Nullable: sellers type a locality, they do not drop a pin.
   lat          Float?
   lng          Float?
+  /// Detail that only some categories have — seats/transmission/fuel on a
+  /// rental, room type and monthly rent on a stay, duration on a clean.
+  ///
+  /// JSON rather than columns because the set differs per category and grows
+  /// as categories are added; a column per field would leave the table wide
+  /// and almost entirely null. The shape is validated per category at the API
+  /// boundary, so nothing unvalidated reaches the row. The cost is that these
+  /// fields cannot be filtered or sorted in SQL — if a category ever needs
+  /// that (say "4+ seats"), it earns a real column.
+  attributes   Json?
   status       AdStatus @default(ACTIVE)
 
   /// Maintained by the view/wishlist writes; never trusted from the client.

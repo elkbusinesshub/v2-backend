@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsLatitude,
@@ -9,6 +10,7 @@ import {
   IsDateString,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -75,6 +77,13 @@ export class AdDto {
 
   /** Presigned image URLs, oldest first. Empty until the seller uploads one. */
   imageUrls!: string[];
+
+  /**
+   * Category-specific detail the vertical screens render — seats and gearbox
+   * on a rental card, room type on a stay. Null when the category takes none
+   * or the seller filled none in.
+   */
+  attributes!: Record<string, unknown> | null;
 }
 
 /** Photos a seller may attach, as keys returned by `POST /uploads/image`. */
@@ -145,6 +154,15 @@ export class CreateAdDto {
   @IsString({ each: true })
   @ArrayMaxSize(MAX_AD_IMAGES)
   imageKeys?: string[];
+
+  /**
+   * Category-specific detail — seats and gearbox on a rental, room type on a
+   * stay. Only the shape is checked here; which keys are legal depends on
+   * `categorySlug`, so `validateAdAttributes` does that in the service.
+   */
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, unknown>;
 }
 
 /** Every field optional: the seller panel edits one thing at a time. */
@@ -169,10 +187,76 @@ export class CreateAdOrderDto {
   @MaxLength(30)
   contactPhone!: string;
 
+  /**
+   * Units ordered — seats to shampoo, rooms to clean. Defaults to one, which
+   * is what a job priced per visit means.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  quantity?: number;
+
+  /**
+   * An enquiry rather than a purchase — a property viewing, a quote request.
+   * The order is placed at zero, because asking to see a room is not the same
+   * as taking it for a month.
+   *
+   * Not stored as a column: the amount and the note together already say what
+   * this is, and a flag nothing reads back would only be another thing to
+   * keep in step.
+   */
+  @IsOptional()
+  @IsBoolean()
+  isEnquiry?: boolean;
+
   /** When the buyer wants it. Absent means "as soon as possible". */
   @IsOptional()
   @IsDateString()
   scheduledAt?: string;
+
+  /**
+   * End of a booked period — a rental's return, a stay's move-out. Absent for
+   * one-off jobs, which `scheduledAt` describes on its own.
+   */
+  @IsOptional()
+  @IsDateString()
+  endAt?: string;
+
+  /** Stay reservations only: the agreed term and the deposit taken up front. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  durationMonths?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10_000_000)
+  depositAmount?: number;
+
+  /**
+   * Charges the buyer was shown on top of the listing price — a supply fee, a
+   * call-out fee, a rental delivery — and the tax on the two together.
+   *
+   * Taken from the client because the fee schedule lives in the screen that
+   * quoted it, not in any table. The listing price itself is still computed
+   * server-side, so the most a bad client can do is misreport its own fees.
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000)
+  feesAmount?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000)
+  taxAmount?: number;
 
   @IsOptional()
   @IsString()
@@ -202,7 +286,14 @@ export class AdOrderDto {
   code!: string;
   adId!: string;
   status!: AdOrderStatus;
+  /** The listing's price times [quantity]; zero for an enquiry. */
   amount!: number;
+  quantity!: number;
+  /** Fees and tax the buyer was shown on top of [amount]. */
+  feesAmount!: number;
+  taxAmount!: number;
+  /** What the buyer actually owes: amount + fees + tax. */
+  totalAmount!: number;
   serviceName!: string;
   icon!: string;
   customerName!: string;
@@ -212,5 +303,9 @@ export class AdOrderDto {
   /** "Today 12:00 PM" style label, or "As soon as possible". */
   whenLabel!: string;
   scheduledAt!: string | null;
+  /** End of the booked period; null for one-off jobs. */
+  endAt!: string | null;
+  durationMonths!: number | null;
+  depositAmount!: number | null;
   createdAt!: string;
 }

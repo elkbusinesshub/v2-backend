@@ -1,8 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { AdStatus, Role } from '@prisma/client';
+import { AdStatus, Prisma, Role } from '@prisma/client';
 import {
   ForbiddenResourceException,
   ResourceNotFoundException,
+  ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import {
@@ -26,6 +27,7 @@ function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
     city: 'Bengaluru',
     lat: 12.9352,
     lng: 77.6245,
+    attributes: null,
     status: AdStatus.ACTIVE,
     viewCount: 10,
     wishlistCount: 2,
@@ -311,6 +313,122 @@ describe('MarketplaceService', () => {
       await expect(service.remove(seller, 'ad-x')).rejects.toBeInstanceOf(
         ResourceNotFoundException,
       );
+    });
+  });
+
+  describe('category attributes', () => {
+    const seller: AuthUser = { id: 'u-9', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+
+    it('stores validated attributes on create', async () => {
+      await service.create(seller, {
+        title: 'Swift Dzire',
+        categorySlug: 'car_rental',
+        price: 2400,
+        attributes: { seats: 5, transmission: 'AUTOMATIC' },
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        'u-9',
+        expect.objectContaining({ attributes: { seats: 5, transmission: 'AUTOMATIC' } }),
+        [],
+      );
+    });
+
+    it('rejects attributes the category does not define', async () => {
+      await expect(
+        service.create(seller, {
+          title: 'Deep Clean',
+          categorySlug: 'cleaning',
+          price: 899,
+          attributes: { seats: 5 },
+        }),
+      ).rejects.toBeInstanceOf(ValidationFailedException);
+
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('writes SQL NULL rather than an empty object when none are supplied', async () => {
+      await service.create(seller, { title: 'X', categorySlug: 'cleaning', price: 1 });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        'u-9',
+        expect.objectContaining({ attributes: Prisma.DbNull }),
+        [],
+      );
+    });
+
+    it('returns attributes on the card so the vertical screens can render them', async () => {
+      repo.findTopSellers.mockResolvedValue([ad({ attributes: { seats: 7 } })]);
+
+      const [card] = await service.topSellers('u-1');
+
+      expect(card!.attributes).toEqual({ seats: 7 });
+    });
+
+    it('leaves attributes alone on an update that does not mention them', async () => {
+      await service.update(seller, 'ad-1', { price: 950 });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'ad-1',
+        expect.not.objectContaining({ attributes: expect.anything() }),
+        undefined,
+      );
+    });
+
+    it('validates an update against the category the ad is moving to', async () => {
+      // The stored category is still cleaning; the new one is what counts.
+      repo.findOwned.mockResolvedValue(ad({ categorySlug: 'cleaning' }));
+
+      await service.update(seller, 'ad-1', {
+        categorySlug: 'car_rental',
+        attributes: { seats: 5 },
+      });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'ad-1',
+        expect.objectContaining({ attributes: { seats: 5 } }),
+        undefined,
+      );
+    });
+
+    it('clears stale attributes when an ad is recategorised', async () => {
+      // Seats on a cleaning ad would render as nothing; leaving them would
+      // also mean the row no longer validates against its own category.
+      repo.findOwned.mockResolvedValue(
+        ad({ categorySlug: 'car_rental', attributes: { seats: 5 } }),
+      );
+
+      await service.update(seller, 'ad-1', { categorySlug: 'cleaning' });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'ad-1',
+        expect.objectContaining({ attributes: Prisma.DbNull }),
+        undefined,
+      );
+    });
+  });
+
+  describe('default icon', () => {
+    const seller: AuthUser = { id: 'u-9', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+
+    it('sets the fallback icon itself rather than leaving it to the column', async () => {
+      // The MySQL column default is stored as `?` — the emoji does not survive
+      // the DDL path Prisma writes it through, so an ad created without an
+      // icon rendered a broken glyph on its card.
+      await service.create(seller, { title: 'X', categorySlug: 'cleaning', price: 1 });
+
+      expect(repo.create).toHaveBeenCalledWith('u-9', expect.objectContaining({ icon: '🛍️' }), []);
+    });
+
+    it('keeps an icon the seller chose', async () => {
+      await service.create(seller, {
+        title: 'X',
+        categorySlug: 'cleaning',
+        price: 1,
+        icon: '🧹',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith('u-9', expect.objectContaining({ icon: '🧹' }), []);
     });
   });
 });

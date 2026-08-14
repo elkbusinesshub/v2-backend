@@ -31,6 +31,7 @@ function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
     city: 'Bengaluru',
     lat: null,
     lng: null,
+    attributes: null,
     status: AdStatus.ACTIVE,
     viewCount: 0,
     wishlistCount: 0,
@@ -52,8 +53,14 @@ function order(overrides: Partial<AdOrderRow> = {}): AdOrderRow {
     sellerId: 'u-seller',
     status: AdOrderStatus.NEW,
     amount: 899 as never,
+    quantity: 1,
+    feesAmount: 0 as never,
+    taxAmount: 0 as never,
     serviceName: 'Sofa Shampoo',
     scheduledAt: null,
+    endAt: null,
+    durationMonths: null,
+    depositAmount: null,
     addressText: '12, 5th Block',
     contactPhone: '+919000000001',
     note: null,
@@ -124,6 +131,67 @@ describe('AdOrdersService', () => {
           serviceName: 'Sofa Shampoo',
           buyerId: 'u-buyer',
         }),
+      );
+    });
+
+    it('defaults to a single unit', async () => {
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+      });
+
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ quantity: 1, amount: 899 }),
+      );
+    });
+
+    it('multiplies the listing price by the quantity, server-side', async () => {
+      // The buyer's device sends how many, never what it owes.
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        quantity: 3,
+      });
+
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ quantity: 3, amount: 2697 }),
+      );
+    });
+
+    it('places an enquiry at zero rather than charging the listing price', async () => {
+      // Asking to view a room is not the same as taking it for a month.
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        isEnquiry: true,
+      });
+
+      expect(orders.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 0 }));
+    });
+
+    it('records the fees and tax the buyer was shown', async () => {
+      // Without these the screen's total and the order's disagreed, and the
+      // order was the one that was wrong.
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        feesAmount: 25,
+        taxAmount: 46.2,
+      });
+
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ feesAmount: 25, taxAmount: 46.2 }),
+      );
+    });
+
+    it('defaults fees and tax to nothing', async () => {
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+      });
+
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ feesAmount: 0, taxAmount: 0 }),
       );
     });
 
