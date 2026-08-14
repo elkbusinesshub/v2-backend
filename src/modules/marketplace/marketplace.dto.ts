@@ -65,6 +65,14 @@ export class AdDto {
   viewCount!: number;
   wishlistCount!: number;
 
+  /**
+   * Average of the reviews left on this listing's completed orders, and how
+   * many there are. A count of zero means nobody has rated it yet, which the
+   * app shows as "New" rather than as a zero score.
+   */
+  ratingAverage!: number;
+  ratingCount!: number;
+
   /** Whether the caller has saved this ad. */
   isWishlisted!: boolean;
 
@@ -186,6 +194,19 @@ export class CreateAdOrderDto {
   @IsNotEmpty()
   @MaxLength(30)
   contactPhone!: string;
+
+  /**
+   * Coordinate of `addressText`, when the buyer picked it on the map rather
+   * than typing it. Optional, so a hand-typed address still orders; the
+   * tracking screen then shows the address without a map.
+   */
+  @IsOptional()
+  @IsLatitude()
+  lat?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  lng?: number;
 
   /**
    * Units ordered — seats to shampoo, rooms to clean. Defaults to one, which

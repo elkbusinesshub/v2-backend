@@ -81,6 +81,8 @@ export class AdOrdersService {
       quantity,
       serviceName: ad.title,
       addressText: dto.addressText,
+      lat: dto.lat ?? null,
+      lng: dto.lng ?? null,
       contactPhone: dto.contactPhone,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
       endAt: dto.endAt ? new Date(dto.endAt) : null,

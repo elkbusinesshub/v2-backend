@@ -31,6 +31,8 @@ function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
     status: AdStatus.ACTIVE,
     viewCount: 10,
     wishlistCount: 2,
+    ratingAverage: 0 as never,
+    ratingCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, ProviderRequestStatus, ProviderStatus, Role } from '@prisma/client';
+import { ProviderStatus, Role } from '@prisma/client';
 import {
   DuplicateResourceException,
   ForbiddenResourceException,
@@ -23,46 +23,36 @@ const profile = {
   idDocumentUploaded: true,
   status: ProviderStatus.VERIFIED,
   isAvailable: true,
-  rating: new Prisma.Decimal(4.9),
-  reviewCount: 284,
-  totalEarnings: new Prisma.Decimal(2840),
-  completedJobs: 38,
-  avgPerJob: new Prisma.Decimal(74),
   scheduleDays: [true, true, false, true, true, false, false],
   createdAt: new Date(),
   updatedAt: new Date(),
 };
 
-const requests = [
-  {
-    id: 'r-1',
-    providerId: 'pp-1',
-    serviceName: 'Deep Home Cleaning',
-    customerName: 'Ahmed Al-Rashid',
-    location: 'Indiranagar',
-    timeLabel: 'Today 12:00 PM',
-    amount: new Prisma.Decimal(149),
-    status: ProviderRequestStatus.PENDING,
-    icon: '🧹',
-    colorHex: 0xffe0f7f5,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: 'r-2',
-    providerId: 'pp-1',
-    serviceName: 'Kitchen Cleaning',
-    customerName: 'Sara Mohammed',
-    location: 'JBR',
-    timeLabel: 'Today 4:00 PM',
-    amount: new Prisma.Decimal(99),
-    status: ProviderRequestStatus.ACCEPTED,
-    icon: '💳',
-    colorHex: 0xffd1fae5,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-];
+/**
+ * What the seller's orders add up to.
+ *
+ * The panel's numbers used to come from `provider_requests` and from counters
+ * on the profile row, neither of which anything ever wrote — so every seller
+ * saw zeros. They are derived from real orders now.
+ */
+const activity = {
+  activeOrders: 1,
+  completedJobs: 38,
+  totalEarnings: 2840,
+  monthEarnings: 640,
+  rating: 4.9,
+  reviewCount: 284,
+  todaysBookings: 2,
+  transactions: [
+    {
+      icon: '🧹',
+      serviceName: 'Kitchen Cleaning',
+      customerName: 'Sara Mohammed',
+      at: new Date('2026-08-01T09:00:00.000Z'),
+      amount: 99,
+    },
+  ],
+};
 
 describe('ProviderService', () => {
   let service: ProviderService;
@@ -85,9 +75,7 @@ describe('ProviderService', () => {
             setStatusAndRole: jest
               .fn()
               .mockResolvedValue({ ...profile, status: ProviderStatus.VERIFIED }),
-            listRequests: jest.fn().mockResolvedValue(requests),
-            findRequestForProvider: jest.fn().mockResolvedValue(requests[0]),
-            respondToRequest: jest.fn().mockResolvedValue(true),
+            sellerActivity: jest.fn().mockResolvedValue(activity),
           },
         },
         {
@@ -128,14 +116,25 @@ describe('ProviderService', () => {
   });
 
   describe('dashboard', () => {
-    it('maps stats + requests, counting accepted as active orders', async () => {
+    it('builds every stat from the seller’s own orders', async () => {
       const dashboard = await service.getDashboard(user);
+
       expect(dashboard).toMatchObject({ businessName: 'Royal Shine Co.', modeLabel: '✓ VERIFIED' });
       const stats = dashboard.stats as { label: string; value: string }[];
       expect(stats[0]).toMatchObject({ label: 'Active Orders', value: '1' });
-      expect(stats[1]).toMatchObject({ label: 'This Month', value: '₹2,840' });
+      // This month, not all time — the card says "This Month".
+      expect(stats[1]).toMatchObject({ label: 'This Month', value: '₹640' });
       expect(stats[2]).toMatchObject({ label: 'Rating', value: '4.9★', trend: '284 reviews' });
-      expect(dashboard.requests).toHaveLength(2);
+    });
+
+    it('shows an unrated seller as New rather than 0★', async () => {
+      // A bare 0★ reads as a bad score rather than an absent one.
+      providers.sellerActivity.mockResolvedValue({ ...activity, rating: 0, reviewCount: 0 });
+
+      const dashboard = await service.getDashboard(user);
+
+      const stats = dashboard.stats as { label: string; value: string }[];
+      expect(stats[2]).toMatchObject({ value: 'New', trend: '0 reviews' });
     });
 
     it('403s a user without a provider profile', async () => {
@@ -147,45 +146,41 @@ describe('ProviderService', () => {
   describe('schedule & earnings', () => {
     it('renders the weekly availability from the stored scheduleDays', async () => {
       const schedule = await service.getSchedule(user);
+
       const days = schedule.days as { label: string; available: boolean }[];
       expect(days).toHaveLength(7);
       expect(days[2]!.available).toBe(false); // Wednesday off
-      expect(schedule.todaysBookingsCount).toBe(2); // 1 accepted + 1 pending
+      expect(schedule.todaysBookingsCount).toBe(2);
     });
 
-    it('builds earnings transactions from accepted requests only', async () => {
+    it('builds earnings from completed orders, averaging per job', async () => {
       const earnings = await service.getEarnings(user);
-      expect(earnings).toMatchObject({ totalEarnings: 2840, completedJobs: 38, avgPerJob: 74 });
+
+      // 2840 across 38 jobs — derived, not read from a column nothing wrote.
+      expect(earnings).toMatchObject({ totalEarnings: 2840, completedJobs: 38, avgPerJob: 74.74 });
       const txns = earnings.transactions as { title: string }[];
       expect(txns).toHaveLength(1);
       expect(txns[0]!.title).toBe('Kitchen Cleaning · Sara Mohammed');
     });
+
+    it('does not divide by zero for a seller with no completed jobs', async () => {
+      providers.sellerActivity.mockResolvedValue({
+        ...activity,
+        completedJobs: 0,
+        totalEarnings: 0,
+        transactions: [],
+      });
+
+      const earnings = await service.getEarnings(user);
+
+      expect(earnings.avgPerJob).toBe(0);
+    });
   });
 
-  describe('availability & requests', () => {
+  describe('availability', () => {
     it('toggles availability', async () => {
       const result = await service.setAvailability(user, { isAvailable: false });
       expect(result).toEqual({ isAvailable: false });
-    });
-
-    it('accepts a pending request', async () => {
-      const result = await service.respondToRequest(user, 'r-1', { accept: true });
-      expect(providers.respondToRequest).toHaveBeenCalledWith('r-1', true);
-      expect(result.id).toBe('r-1');
-    });
-
-    it('409s an already-handled request', async () => {
-      providers.respondToRequest.mockResolvedValue(false);
-      await expect(service.respondToRequest(user, 'r-1', { accept: true })).rejects.toMatchObject({
-        code: 'REQUEST_ALREADY_HANDLED',
-      });
-    });
-
-    it('404s a request not belonging to the provider', async () => {
-      providers.findRequestForProvider.mockResolvedValue(null);
-      await expect(service.respondToRequest(user, 'r-x', { accept: false })).rejects.toBeInstanceOf(
-        ResourceNotFoundException,
-      );
     });
   });
 

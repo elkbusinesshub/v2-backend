@@ -1,6 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { BookingStatus, Prisma, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import type { Socket } from 'socket.io';
 import type { AuthUser } from '@/common/types/auth.types';
 import { ChatGateway, orderRoom } from '@/modules/orders/chat.gateway';
@@ -8,22 +8,10 @@ import { ChatRepository } from '@/modules/orders/chat.repository';
 
 const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
 
-const booking = {
+const threadOwner = {
   id: 'b-1',
-  reference: 'ELK-2026-04921',
-  userId: 'u-1',
-  serviceId: 'svc-1',
-  status: BookingStatus.CONFIRMED,
-  scheduledAt: new Date(),
-  addressText: 'Home',
-  lat: null,
-  lng: null,
-  serviceFee: new Prisma.Decimal(149),
-  total: new Prisma.Decimal(149),
-  cancelledAt: null,
+  contactName: 'Royal Shine Cleaning Co.',
   createdAt: new Date('2026-05-19T05:15:00.000Z'),
-  updatedAt: new Date('2026-05-19T05:15:00.000Z'),
-  service: { id: 'svc-1', providerName: 'Royal Shine Cleaning Co.' },
 } as unknown as Awaited<ReturnType<ChatRepository['findThreadOwner']>>;
 
 /** A socket that has already cleared the JWT handshake middleware. */
@@ -47,7 +35,7 @@ describe('ChatGateway', () => {
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
         {
           provide: ChatRepository,
-          useValue: { findThreadOwner: jest.fn().mockResolvedValue(booking) },
+          useValue: { findThreadOwner: jest.fn().mockResolvedValue(threadOwner) },
         },
       ],
     }).compile();

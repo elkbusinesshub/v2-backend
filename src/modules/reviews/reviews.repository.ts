@@ -7,10 +7,6 @@ import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 export class ReviewsRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
 
-  async findByBookingId(bookingId: string): Promise<Review | null> {
-    return this.db.review.findUnique({ where: { bookingId } });
-  }
-
   async findByAdOrderId(adOrderId: string): Promise<Review | null> {
     return this.db.review.findUnique({ where: { adOrderId } });
   }
@@ -31,10 +27,10 @@ export class ReviewsRepository {
     return this.db.review.create({ data });
   }
 
-  /** Average rating (1 decimal) + count across every review for a service's bookings. */
-  async aggregateForService(serviceId: string): Promise<{ average: number; count: number }> {
+  /** Average rating (1 decimal) + count across every review of a listing's orders. */
+  async aggregateForAd(adId: string): Promise<{ average: number; count: number }> {
     const result = await this.db.review.aggregate({
-      where: { booking: { serviceId } },
+      where: { adOrder: { adId } },
       _avg: { rating: true },
       _count: true,
     });
@@ -42,5 +38,13 @@ export class ReviewsRepository {
       average: Math.round((result._avg.rating ?? 0) * 10) / 10,
       count: result._count,
     };
+  }
+
+  /** Denormalised onto the listing so a card can show a rating without a join. */
+  async updateAdRating(adId: string, average: number, count: number): Promise<void> {
+    await this.db.ad.update({
+      where: { id: adId },
+      data: { ratingAverage: average, ratingCount: count },
+    });
   }
 }

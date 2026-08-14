@@ -1,7 +1,6 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ProviderStatus, Role, type ProviderProfile } from '@prisma/client';
 import {
-  DomainException,
   DuplicateResourceException,
   ForbiddenResourceException,
   ResourceNotFoundException,
@@ -9,19 +8,8 @@ import {
 import { toRoles } from '@/common/utils/roles';
 import type { AuthUser } from '@/common/types/auth.types';
 import { UsersRepository } from '@/modules/users/users.repository';
-import type {
-  RegisterProviderDto,
-  RespondRequestDto,
-  SetAvailabilityDto,
-  VerifyProviderDto,
-} from './provider.dto';
-import {
-  toDashboardJson,
-  toEarningsJson,
-  toProfileJson,
-  toRequestJson,
-  toScheduleJson,
-} from './provider.mapper';
+import type { RegisterProviderDto, SetAvailabilityDto, VerifyProviderDto } from './provider.dto';
+import { toDashboardJson, toEarningsJson, toProfileJson, toScheduleJson } from './provider.mapper';
 import { ProviderRepository } from './provider.repository';
 
 @Injectable()
@@ -58,23 +46,20 @@ export class ProviderService {
 
   async getDashboard(user: AuthUser): Promise<Record<string, unknown>> {
     const profile = await this.assertProfile(user);
-    const requests = await this.providers.listRequests(profile.id);
-    return toDashboardJson(profile, requests);
+    return toDashboardJson(profile, await this.providers.sellerActivity(user.id));
   }
 
   async getSchedule(user: AuthUser): Promise<Record<string, unknown>> {
     const profile = await this.assertProfile(user);
-    const requests = await this.providers.listRequests(profile.id);
-    return toScheduleJson(profile, requests);
+    return toScheduleJson(profile, await this.providers.sellerActivity(user.id));
   }
 
   async getEarnings(user: AuthUser): Promise<Record<string, unknown>> {
     const profile = await this.assertProfile(user);
-    const requests = await this.providers.listRequests(profile.id);
-    return toEarningsJson(profile, requests);
+    return toEarningsJson(profile, await this.providers.sellerActivity(user.id));
   }
 
-  // ─── availability / requests ──────────────────────────────────────────────────
+  // ─── availability ─────────────────────────────────────────────────────────────
 
   async setAvailability(user: AuthUser, dto: SetAvailabilityDto): Promise<Record<string, unknown>> {
     const profile = await this.assertProfile(user);
@@ -82,29 +67,6 @@ export class ProviderService {
       isAvailable: dto.isAvailable,
     });
     return { isAvailable: updated.isAvailable };
-  }
-
-  async respondToRequest(
-    user: AuthUser,
-    requestId: string,
-    dto: RespondRequestDto,
-  ): Promise<Record<string, unknown>> {
-    const profile = await this.assertProfile(user);
-    const request = await this.providers.findRequestForProvider(requestId, profile.id);
-    if (!request) {
-      throw new ResourceNotFoundException('Request');
-    }
-    const ok = await this.providers.respondToRequest(requestId, dto.accept);
-    if (!ok) {
-      throw new DomainException(
-        HttpStatus.CONFLICT,
-        'REQUEST_ALREADY_HANDLED',
-        'This request has already been accepted or declined',
-      );
-    }
-    const updated = await this.providers.findRequestForProvider(requestId, profile.id);
-    this.logger.log(`provider request ${dto.accept ? 'accepted' : 'declined'}: ${requestId}`);
-    return toRequestJson(updated!);
   }
 
   // ─── verification (admin) ─────────────────────────────────────────────────────

@@ -7,9 +7,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 /**
- * Reviews against real MySQL/Redis: the admin-only booking completion
- * step, the rating-screen context, submitting a review (once), and the
- * real rating/reviewCount aggregate replacing the seeded Service values.
+ * Reviews against real MySQL/Redis: an order must be finished before it can be
+ * rated, the rating-screen context, submitting a review (once), and the
+ * aggregate landing on the listing itself.
  */
 describe('Reviews (integration)', () => {
   let mysql: StartedMySqlContainer;
@@ -18,8 +18,11 @@ describe('Reviews (integration)', () => {
 
   let userToken: string;
   let adminToken: string;
-  let bookingId: string;
-  let serviceId: string;
+  /** The seeded COMPLETED order — the one that can be rated. */
+  let orderId: string;
+  /** The seeded IN_PROGRESS order — the one that cannot be, yet. */
+  let liveOrderId: string;
+  let adId: string;
 
   beforeAll(async () => {
     [mysql, redis] = await Promise.all([
@@ -50,12 +53,17 @@ describe('Reviews (integration)', () => {
     const prisma = app.get<import('@/database/prisma.extension').ExtendedPrismaClient>(PRISMA);
     const auth = app.get(AuthService);
 
-    const [user, admin] = await Promise.all([
+    const [user, admin, completed, live] = await Promise.all([
       prisma.user.findFirst({ where: { phone: '+971500000001' } }),
       prisma.user.findFirst({ where: { phone: '+971500000000' } }),
+      prisma.adOrder.findUnique({ where: { code: 'ELK-A-SEED2' } }),
+      prisma.adOrder.findUnique({ where: { code: 'ELK-A-SEED1' } }),
     ]);
     userToken = (await auth.issueTokenPair(user!, {})).accessToken;
     adminToken = (await auth.issueTokenPair(admin!, {})).accessToken;
+    orderId = completed!.id;
+    liveOrderId = live!.id;
+    adId = completed!.adId;
   });
 
   afterAll(async () => {
@@ -66,83 +74,53 @@ describe('Reviews (integration)', () => {
   const http = (): App => app.getHttpServer();
   const bearer = (t: string) => `Bearer ${t}`;
 
-  it('creates a home-services booking to review', async () => {
-    const services = await request(http())
-      .get('/api/v1/services')
-      .set('Authorization', bearer(userToken))
-      .expect(200);
-    const flatServices = services.body.data.flatMap(
-      (group: { items: { id: string }[] }) => group.items,
-    );
-    serviceId = flatServices[0].id;
-
-    const options = await request(http())
-      .get(`/api/v1/services/${serviceId}/booking-options`)
-      .set('Authorization', bearer(userToken))
-      .expect(200);
-    const day = options.body.data.dates[0].day;
-    const time = options.body.data.timeSlots[0].time;
-
-    const create = await request(http())
-      .post('/api/v1/bookings')
-      .set('Authorization', bearer(userToken))
-      .send({ serviceId, day, time, address: 'Tower 3, Apt 1204, Koramangala' })
-      .expect(201);
-
-    const reference = create.body.data.bookingReference;
-    const list = await request(http())
-      .get('/api/v1/bookings')
-      .set('Authorization', bearer(userToken))
-      .expect(200);
-    bookingId = list.body.data.find((b: { reference: string }) => b.reference === reference).id;
-  });
-
-  it('blocks review-target and completion before the booking is COMPLETED', async () => {
+  it('refuses to rate an order that is not finished', async () => {
     await request(http())
-      .get(`/api/v1/bookings/${bookingId}/review-target`)
+      .get(`/api/v1/bookings/${liveOrderId}/review-target`)
       .set('Authorization', bearer(userToken))
       .expect(409);
-
-    // regular users cannot mark a booking complete
-    await request(http())
-      .post(`/api/v1/bookings/${bookingId}/complete`)
-      .set('Authorization', bearer(userToken))
-      .expect(403);
   });
 
-  it('admin completes the booking, then the rating screen serves real context', async () => {
+  it('404s an order the caller did not place', async () => {
+    // Scoped to the buyer: the person who paid is the one who gets to rate it.
     await request(http())
-      .post(`/api/v1/bookings/${bookingId}/complete`)
+      .get(`/api/v1/bookings/${orderId}/review-target`)
       .set('Authorization', bearer(adminToken))
-      .expect(200);
+      .expect(404);
+  });
 
+  it('serves real rating-screen context for a completed order', async () => {
     const target = await request(http())
-      .get(`/api/v1/bookings/${bookingId}/review-target`)
+      .get(`/api/v1/bookings/${orderId}/review-target`)
       .set('Authorization', bearer(userToken))
       .expect(200);
-    expect(target.body.data).toMatchObject({ rewardPoints: 15 });
+
+    expect(target.body.data).toMatchObject({
+      serviceName: 'Deep Home Cleaning',
+      rewardPoints: 15,
+    });
     expect(target.body.data.quickTags).toContain('Professional');
     expect(target.body.data.providerInitials).toHaveLength(2);
   });
 
-  it('submits a review and recomputes the service rating aggregate', async () => {
+  it('submits a review and rolls it into the listing’s rating', async () => {
     await request(http())
-      .post(`/api/v1/bookings/${bookingId}/reviews`)
+      .post(`/api/v1/bookings/${orderId}/reviews`)
       .set('Authorization', bearer(userToken))
       .send({ rating: 5, tags: ['On Time', 'Professional'], comment: 'Excellent!' })
       .expect(201);
 
     const detail = await request(http())
-      .get(`/api/v1/services/${serviceId}`)
+      .get(`/api/v1/marketplace/ads/${adId}`)
       .set('Authorization', bearer(userToken))
       .expect(200);
-    expect(detail.body.data.rating).toBe(5);
-    expect(detail.body.data.reviewCount).toBe(1);
+    expect(detail.body.data.ratingAverage).toBe(5);
+    expect(detail.body.data.ratingCount).toBe(1);
   });
 
-  it('rejects a second review on the same booking', async () => {
+  it('rejects a second review on the same order', async () => {
     await request(http())
-      .post(`/api/v1/bookings/${bookingId}/reviews`)
+      .post(`/api/v1/bookings/${orderId}/reviews`)
       .set('Authorization', bearer(userToken))
       .send({ rating: 3, tags: [], comment: 'again' })
       .expect(409);
@@ -150,14 +128,14 @@ describe('Reviews (integration)', () => {
 
   it('rejects an out-of-vocabulary tag', async () => {
     await request(http())
-      .post(`/api/v1/bookings/${bookingId}/reviews`)
+      .post(`/api/v1/bookings/${orderId}/reviews`)
       .set('Authorization', bearer(userToken))
       .send({ rating: 4, tags: ['Not A Real Tag'], comment: '' })
       .expect(400);
   });
 
   it('requires auth on review routes', async () => {
-    await request(http()).get(`/api/v1/bookings/${bookingId}/review-target`).expect(401);
-    await request(http()).post(`/api/v1/bookings/${bookingId}/reviews`).expect(401);
+    await request(http()).get(`/api/v1/bookings/${orderId}/review-target`).expect(401);
+    await request(http()).post(`/api/v1/bookings/${orderId}/reviews`).expect(401);
   });
 });

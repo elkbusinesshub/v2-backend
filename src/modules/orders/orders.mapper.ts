@@ -1,4 +1,4 @@
-import type { AdOrder, Booking, ChatMessage, Service } from '@prisma/client';
+import type { AdOrder, ChatMessage } from '@prisma/client';
 
 /** An ad order with the two joins the tracking screen labels it by. */
 export type AdOrderTrackable = AdOrder & {
@@ -13,9 +13,6 @@ import {
   AD_ORDER_STEP_STATES,
   CHAT_CONTACT_STATUS,
   ORDERS_DISPLAY_TIMEZONE,
-  TRACKING_STATUS_LABEL,
-  TRACKING_STEP_NAMES,
-  TRACKING_STEP_STATES,
 } from './orders.constants';
 
 /** "9:16 AM" in the display timezone — the chat/tracking time label format. */
@@ -68,36 +65,6 @@ export function toThreadJson(
   };
 }
 
-export function toTrackingJson(booking: Booking & { service: Service }): Record<string, unknown> {
-  const states = TRACKING_STEP_STATES[booking.status];
-  return {
-    orderId: booking.reference,
-    serviceName: booking.service.name,
-    serviceIcon: booking.service.icon,
-    providerName: booking.service.providerName,
-    statusLabel: TRACKING_STATUS_LABEL[booking.status],
-    addressText: booking.addressText,
-    // Null for bookings taken before coordinates were captured, and for
-    // hand-typed addresses; the tracking screen then omits the map.
-    lat: booking.lat,
-    lng: booking.lng,
-    steps: TRACKING_STEP_NAMES.map((name, i) => ({
-      name,
-      time: stepTime(booking, i, states[i]!),
-      status: states[i]!,
-    })),
-  };
-}
-
-/** Concrete times for reached steps; "—" for pending, "ETA: soon" for the active one. */
-function stepTime(booking: Booking, index: number, status: string): string {
-  if (status === 'pending') return '—';
-  if (status === 'active') return 'ETA: soon';
-  // done step 0/1 → booking creation; the completed step → cancelledAt/updatedAt
-  if (index <= 1) return dateHeader(booking.createdAt);
-  return dateHeader(booking.updatedAt);
-}
-
 /** One order against a listing, as the tracking screen's timeline. */
 export function toAdOrderTrackingJson(order: AdOrderTrackable): Record<string, unknown> {
   const states = AD_ORDER_STEP_STATES[order.status];
@@ -112,10 +79,10 @@ export function toAdOrderTrackingJson(order: AdOrderTrackable): Record<string, u
     providerName: order.seller.name ?? 'ELK Seller',
     statusLabel: AD_ORDER_STATUS_LABEL[order.status],
     addressText: order.addressText,
-    // An ad order stores address text only — no pin was ever captured, so the
-    // screen omits the map rather than centring on a guess.
-    lat: null,
-    lng: null,
+    // Null when the buyer typed the address instead of picking it; the screen
+    // then omits the map rather than centring on a guess.
+    lat: order.lat === null ? null : Number(order.lat),
+    lng: order.lng === null ? null : Number(order.lng),
     steps: AD_ORDER_STEP_NAMES.map((name, i) => ({
       name,
       time: adStepTime(stamps[i] ?? null, states[i]!),

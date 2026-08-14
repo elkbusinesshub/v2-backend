@@ -14,12 +14,10 @@ import { Prisma, PrismaClient } from '@prisma/client';
  *    explicit `deletedAt` condition) in `where` — the spread below lets an
  *    explicit condition win.
  */
-const SOFT_DELETE_MODELS: ReadonlySet<Prisma.ModelName> = new Set([
-  'User',
-  'Address',
-  'Stay',
-  'RentalCar',
-]);
+// `Ad` is soft-deletable too but is deliberately absent: the marketplace
+// repository does its own `deletedAt` filtering and pairs the stamp with a
+// status change, which this extension cannot express.
+const SOFT_DELETE_MODELS: ReadonlySet<Prisma.ModelName> = new Set(['User', 'Address']);
 
 function isSoftDeletable(model: string): boolean {
   return SOFT_DELETE_MODELS.has(model as Prisma.ModelName);

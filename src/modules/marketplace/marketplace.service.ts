@@ -222,6 +222,8 @@ export class MarketplaceService {
         lng: ad.lng,
         viewCount: ad.viewCount,
         wishlistCount: ad.wishlistCount,
+        ratingAverage: Number(ad.ratingAverage),
+        ratingCount: ad.ratingCount,
         isWishlisted: wishlisted.has(ad.id),
         status: ad.status,
         imageUrls: await this.imageUrls(ad),

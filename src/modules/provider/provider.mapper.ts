@@ -1,66 +1,58 @@
-import { ProviderRequestStatus, type ProviderProfile, type ProviderRequest } from '@prisma/client';
+import { type ProviderProfile } from '@prisma/client';
+import { displayDate } from '@/common/utils/display-date';
 import {
-  DASHBOARD_TREND,
-  EARNINGS_TREND,
+  EARNINGS_TILE_COLOR,
   PROVIDER_MODE_LABEL,
   SCHEDULE_DAY_LABELS,
   SCHEDULE_SLOTS,
 } from './provider.constants';
+import type { SellerActivity } from './provider.repository';
 
 /** Rupees with Indian thousands separators, e.g. "₹2,840". */
 function aed(value: number): string {
   return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
-export function toRequestJson(request: ProviderRequest): Record<string, unknown> {
-  return {
-    id: request.id,
-    serviceName: request.serviceName,
-    customerName: request.customerName,
-    location: request.location,
-    time: request.timeLabel,
-    amount: Number(request.amount),
-    status: request.status.toLowerCase(),
-  };
-}
-
 export function toDashboardJson(
   profile: ProviderProfile,
-  requests: ProviderRequest[],
+  activity: SellerActivity,
 ): Record<string, unknown> {
-  const activeOrders = requests.filter((r) => r.status === ProviderRequestStatus.ACCEPTED).length;
   return {
     businessName: profile.businessName,
     modeLabel: PROVIDER_MODE_LABEL[profile.status],
     isAvailable: profile.isAvailable,
     stats: [
-      { label: 'Active Orders', value: String(activeOrders), trend: DASHBOARD_TREND.activeOrders },
+      {
+        label: 'Active Orders',
+        value: String(activity.activeOrders),
+        trend:
+          activity.activeOrders === 1 ? '1 in progress' : `${activity.activeOrders} in progress`,
+      },
       {
         label: 'This Month',
-        value: aed(Number(profile.totalEarnings)),
-        trend: DASHBOARD_TREND.thisMonth,
+        value: aed(activity.monthEarnings),
+        trend: `${activity.completedJobs} completed all time`,
       },
       {
         label: 'Rating',
-        value: `${Number(profile.rating)}★`,
-        trend: `${profile.reviewCount} reviews`,
+        // A seller with no ratings yet gets "New" rather than a bare 0★, which
+        // reads as a bad score rather than an absent one.
+        value: activity.reviewCount === 0 ? 'New' : `${activity.rating}★`,
+        trend: activity.reviewCount === 1 ? '1 review' : `${activity.reviewCount} reviews`,
       },
     ],
-    requests: requests.map(toRequestJson),
   };
 }
 
 export function toScheduleJson(
   profile: ProviderProfile,
-  requests: ProviderRequest[],
+  activity: SellerActivity,
 ): Record<string, unknown> {
   const days = normalizeDays(profile.scheduleDays);
   const todayIdx = (new Date().getDay() + 6) % 7; // JS Sun=0 → Mon=0 index
-  const accepted = requests.filter((r) => r.status === ProviderRequestStatus.ACCEPTED).length;
-  const pending = requests.filter((r) => r.status === ProviderRequestStatus.PENDING).length;
 
   return {
-    todaysBookingsCount: accepted + pending,
+    todaysBookingsCount: activity.todaysBookings,
     days: SCHEDULE_DAY_LABELS.map((label, i) => ({
       label,
       available: days[i] ?? false,
@@ -68,38 +60,37 @@ export function toScheduleJson(
     })),
     slots: SCHEDULE_SLOTS.map((timeRange, i) => ({
       timeRange,
-      // first slots fill with accepted load, then pending, rest available
-      status: i < accepted ? 'active' : i < accepted + pending ? 'pending' : 'available',
+      // Slots fill in order with today's load; the rest stay open. There is no
+      // per-slot assignment yet, so this shows how full the day is, not when.
+      status: i < activity.todaysBookings ? 'active' : 'available',
     })),
   };
 }
 
 export function toEarningsJson(
   profile: ProviderProfile,
-  requests: ProviderRequest[],
+  activity: SellerActivity,
 ): Record<string, unknown> {
-  const now = new Date();
-  const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  const transactions = requests
-    .filter((r) => r.status === ProviderRequestStatus.ACCEPTED)
-    .map((r) => ({
-      icon: r.icon,
-      title: `${r.serviceName} · ${r.customerName}`,
-      date: r.timeLabel,
-      amount: Number(r.amount),
-      isCredit: true,
-      colorHex: r.colorHex,
-    }));
+  const monthLabel = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const avgPerJob =
+    activity.completedJobs === 0 ? 0 : activity.totalEarnings / activity.completedJobs;
 
   return {
-    totalEarnings: Number(profile.totalEarnings),
+    totalEarnings: activity.totalEarnings,
     monthLabel,
-    trendLabel: EARNINGS_TREND.month,
-    completedJobs: profile.completedJobs,
-    completedJobsTrend: EARNINGS_TREND.completedJobs,
-    avgPerJob: Number(profile.avgPerJob),
-    avgPerJobTrend: EARNINGS_TREND.avgPerJob,
-    transactions,
+    trendLabel: aed(activity.monthEarnings) + ' this month',
+    completedJobs: activity.completedJobs,
+    completedJobsTrend: activity.completedJobs === 1 ? '1 job' : `${activity.completedJobs} jobs`,
+    avgPerJob: Math.round(avgPerJob * 100) / 100,
+    avgPerJobTrend: activity.completedJobs === 0 ? 'No jobs yet' : 'Across completed jobs',
+    transactions: activity.transactions.map((t) => ({
+      icon: t.icon,
+      title: `${t.serviceName} · ${t.customerName}`,
+      date: displayDate(t.at),
+      amount: t.amount,
+      isCredit: true,
+      colorHex: EARNINGS_TILE_COLOR,
+    })),
   };
 }
 

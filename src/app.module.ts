@@ -31,7 +31,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProviderModule } from '@/modules/provider/provider.module';
 import { RidesModule } from '@/modules/rides/rides.module';
 import { ReviewsModule } from '@/modules/reviews/reviews.module';
-import { ServicesModule } from '@/modules/services/services.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { WalletModule } from '@/modules/wallet/wallet.module';
 import { PushModule } from '@/push/push.module';
@@ -116,7 +115,6 @@ import { StorageModule } from '@/storage/storage.module';
     LocationsModule,
     MarketplaceModule,
     PlacesModule,
-    ServicesModule,
     HomeModule,
     BookingsModule,
     PorterModule,

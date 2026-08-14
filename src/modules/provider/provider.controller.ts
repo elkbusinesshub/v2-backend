@@ -5,12 +5,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
-import {
-  RegisterProviderDto,
-  RespondRequestDto,
-  SetAvailabilityDto,
-  VerifyProviderDto,
-} from './provider.dto';
+import { RegisterProviderDto, SetAvailabilityDto, VerifyProviderDto } from './provider.dto';
 import { ProviderService } from './provider.service';
 
 /** The provider-persona endpoints the app's provider screens call. */
@@ -30,7 +25,7 @@ export class ProviderController {
   }
 
   @Get('dashboard')
-  @ApiOperation({ summary: 'Dashboard: stats + incoming requests' })
+  @ApiOperation({ summary: 'Dashboard: business stats from the seller\u2019s orders' })
   async dashboard(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>> {
     return this.service.getDashboard(user);
   }
@@ -55,18 +50,6 @@ export class ProviderController {
     @Body() dto: SetAvailabilityDto,
   ): Promise<ApiResponse<Record<string, unknown>>> {
     return ApiResponse.of(await this.service.setAvailability(user, dto), 'Availability updated');
-  }
-
-  @Post('requests/:id/respond')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Accept or decline a booking request' })
-  async respond(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: RespondRequestDto,
-  ): Promise<ApiResponse<Record<string, unknown>>> {
-    const result = await this.service.respondToRequest(user, id, dto);
-    return ApiResponse.of(result, dto.accept ? 'Request accepted' : 'Request declined');
   }
 
   @Patch(':userId/verify')

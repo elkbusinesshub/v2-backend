@@ -1,21 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Booking, ChatMessage, Prisma, Service } from '@prisma/client';
+import type { ChatMessage, Prisma } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
-export type BookingWithService = Booking & { service: Service };
-
 /**
- * A chat thread's owner, whichever kind of job it belongs to.
+ * A chat thread's owner — always an order placed against a listing.
  *
- * Chat used to hang off `bookings` alone. Four verticals now write ad orders
- * instead, so a thread has two possible parents and this is the shape both
- * collapse to — enough to render a header and to prove the caller owns it.
+ * This is the shape the thread header renders from, and the proof that the
+ * caller is on it.
  */
 export interface ChatThreadOwner {
   id: string;
-  /** Which column on `chat_messages` points at it. */
-  parent: 'booking' | 'adOrder';
   /** Whoever the customer is talking to. */
   contactName: string;
   createdAt: Date;
@@ -25,29 +20,8 @@ export interface ChatThreadOwner {
 export class ChatRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
 
-  /** Scoped to [userId] so a mismatched owner behaves exactly like "not found". */
-  async findBookingForUser(id: string, userId: string): Promise<BookingWithService | null> {
-    return this.db.booking.findFirst({ where: { id, userId }, include: { service: true } });
-  }
-
-  /**
-   * The thread [id] belongs to, or null when the caller does not own it.
-   *
-   * A booking is looked up first because that is what most existing threads
-   * are; an id that is neither reads as missing, which is what it is as far
-   * as this caller is concerned.
-   */
+  /** The thread [id] belongs to, or null when the caller is not on it. */
   async findThreadOwner(id: string, userId: string): Promise<ChatThreadOwner | null> {
-    const booking = await this.findBookingForUser(id, userId);
-    if (booking) {
-      return {
-        id: booking.id,
-        parent: 'booking',
-        contactName: booking.service.providerName,
-        createdAt: booking.createdAt,
-      };
-    }
-
     // Either side of an order can open its thread — the buyer to ask, the
     // seller to answer — so this is not scoped to the buyer alone.
     const order = await this.db.adOrder.findFirst({
@@ -58,7 +32,6 @@ export class ChatRepository {
 
     return {
       id: order.id,
-      parent: 'adOrder',
       // Each side sees the other, rather than the customer always seeing a
       // "provider" and the seller seeing themselves.
       contactName:
@@ -71,7 +44,7 @@ export class ChatRepository {
 
   async listMessages(owner: ChatThreadOwner): Promise<ChatMessage[]> {
     return this.db.chatMessage.findMany({
-      where: owner.parent === 'booking' ? { bookingId: owner.id } : { adOrderId: owner.id },
+      where: { adOrderId: owner.id },
       orderBy: { createdAt: 'asc' },
     });
   }

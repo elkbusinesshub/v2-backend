@@ -35,12 +35,6 @@ export class SetAvailabilityDto {
   isAvailable!: boolean;
 }
 
-export class RespondRequestDto {
-  @ApiProperty({ example: true, description: 'true = accept, false = decline' })
-  @IsBoolean()
-  accept!: boolean;
-}
-
 export class VerifyProviderDto {
   @ApiProperty({ enum: ['verified', 'rejected'] })
   @IsIn(['verified', 'rejected'])

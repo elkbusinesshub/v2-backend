@@ -1,737 +1,21 @@
-import {
-  CleanPromoKind,
-  PrismaClient,
-  RentalCarCategory,
-  RepairPromoKind,
-  StayCategoryType,
-} from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * Idempotent seed — safe to run repeatedly (uses upsert / unique slugs).
+ * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
  * Run with: npm run db:seed
  *
- * Stay fixtures mirror the Flutter app's elkstay_dummy_data.dart so the
- * mobile app renders identically against the real API.
+ * Everything a seller offers is an ad. There is no separate catalogue of
+ * services, stays, cars, cleans or repairs any more, so this file seeds
+ * listings under the six categories the app groups by, plus the two dispatch
+ * products (porter, rides) that still have their own tables.
  */
 const prisma = new PrismaClient();
 
-/** Home-services catalogue (Services tab). Taxi/Stay/Rental/Porter are separate modules. */
-const catalog = [
-  {
-    slug: 'cleaning',
-    name: 'Cleaning',
-    icon: '🧹',
-    colorHex: 0xfffef3c7,
-    providerName: 'Royal Shine Cleaning Co.',
-    services: [
-      { slug: 'home_cleaning', name: 'Home Cleaning', icon: '🏠', price: 85, duration: '2-3 hrs' },
-      {
-        slug: 'deep_cleaning',
-        name: 'Deep Cleaning',
-        icon: '✨',
-        price: 149,
-        duration: '3-4 hrs',
-        badge: 'BEST DEAL',
-      },
-      {
-        slug: 'furniture_clean',
-        name: 'Furniture Clean',
-        icon: '🛋️',
-        price: 120,
-        duration: '2-3 hrs',
-      },
-    ],
-  },
-  {
-    slug: 'laundry',
-    name: 'Laundry',
-    icon: '👕',
-    colorHex: 0xffe0f7f5,
-    providerName: 'FreshFold Laundry',
-    services: [
-      { slug: 'wash_fold', name: 'Wash & Fold', icon: '🧺', price: 45, duration: '24 hrs' },
-      { slug: 'dry_cleaning', name: 'Dry Cleaning', icon: '👔', price: 60, duration: '48 hrs' },
-      { slug: 'ironing', name: 'Ironing', icon: '🔥', price: 35, duration: '24 hrs' },
-    ],
-  },
-  {
-    slug: 'ac_service',
-    name: 'AC Service',
-    icon: '❄️',
-    colorHex: 0xffede9fe,
-    providerName: 'CoolTech AC Experts',
-    services: [
-      { slug: 'ac_cleaning', name: 'AC Cleaning', icon: '🫧', price: 99, duration: '1-2 hrs' },
-      { slug: 'ac_repair', name: 'AC Repair', icon: '🔧', price: 150, duration: '1-3 hrs' },
-      { slug: 'ac_install', name: 'AC Install', icon: '⚙️', price: 299, duration: '2-4 hrs' },
-    ],
-  },
-  {
-    slug: 'repairing',
-    name: 'Repairing',
-    icon: '🔨',
-    colorHex: 0xfffce7f3,
-    providerName: 'FixPro Home Repairs',
-    services: [
-      { slug: 'electrical', name: 'Electrical', icon: '⚡', price: 89, duration: '1-2 hrs' },
-      { slug: 'plumbing', name: 'Plumbing', icon: '🚿', price: 95, duration: '1-2 hrs' },
-      { slug: 'handyman', name: 'Handyman', icon: '🛠️', price: 75, duration: '1-3 hrs' },
-    ],
-  },
-];
-
-async function seedCatalog(): Promise<number> {
-  let count = 0;
-  for (const cat of catalog) {
-    const category = await prisma.serviceCategory.upsert({
-      where: { slug: cat.slug },
-      update: { name: cat.name, icon: cat.icon, colorHex: cat.colorHex },
-      create: { slug: cat.slug, name: cat.name, icon: cat.icon, colorHex: cat.colorHex },
-    });
-    for (const svc of cat.services) {
-      const data = {
-        categoryId: category.id,
-        name: svc.name,
-        icon: svc.icon,
-        badge: svc.badge ?? null,
-        description: `Professional ${svc.name.toLowerCase()} service by vetted providers, using quality equipment and materials.`,
-        price: svc.price,
-        priceUnit: '/ session',
-        durationLabel: svc.duration,
-        teamSizeLabel: '2 People',
-        included: ['Materials', 'Equipment', 'Service warranty'],
-        providerName: cat.providerName,
-        providerExperience: '12 years experience',
-        rating: 4.8,
-        reviewCount: 150,
-        bookingsLabel: '1k+',
-      };
-      await prisma.service.upsert({
-        where: { slug: svc.slug },
-        update: data,
-        create: { slug: svc.slug, ...data },
-      });
-      count += 1;
-    }
-  }
-  return count;
-}
-
-// ─── ELK Stay fixtures (mirror elkstay_dummy_data.dart) ─────────────────────
-
-const ROOM_OPTIONS = [
-  { kind: 'Single Sharing', subtitle: 'Private room · attached bath', pricePerMonth: 15000 },
-  { kind: 'Double Sharing', subtitle: '2 beds · shared bath', pricePerMonth: 11000 },
-  { kind: 'Triple Sharing', subtitle: '3 beds · economical', pricePerMonth: 8500 },
-];
-
-interface StaySeed {
-  slug: string;
-  name: string;
-  categoryType: StayCategoryType;
-  badge: string;
-  roomType: string;
-  location: string;
-  fullAddress: string;
-  distanceKm: number;
-  pricePerMonth: number;
-  rating: number;
-  gradientStart: bigint;
-  gradientEnd: bigint;
-  amenities: { iconKey: string; label: string }[];
-  description: string;
-}
-
-const STAYS: StaySeed[] = [
-  {
-    slug: 'maple-nest',
-    name: 'Maple Nest Residency',
-    categoryType: StayCategoryType.PG_STAY,
-    badge: "Women's PG",
-    roomType: 'Single room',
-    location: 'Koramangala',
-    fullAddress: '5th Block, Koramangala · 1.2 km away',
-    distanceKm: 1.2,
-    pricePerMonth: 11500,
-    rating: 4.8,
-    gradientStart: 0xff1c5044n,
-    gradientEnd: 0xff3a7261n,
-    amenities: [
-      { iconKey: 'wifi', label: '100 Mbps Wi-Fi' },
-      { iconKey: 'meals', label: '3 meals / day' },
-      { iconKey: 'laundry', label: 'Laundry' },
-      { iconKey: 'ac', label: 'AC rooms' },
-    ],
-    description:
-      'A bright, women-only PG five minutes from the metro. Fully furnished single rooms, home-style meals, biometric entry and a resident warden on site. Refundable deposit of two months.',
-  },
-  {
-    slug: 'cedar-house',
-    name: 'Cedar House',
-    categoryType: StayCategoryType.MENS_HOSTEL,
-    badge: "Men's Hostel",
-    roomType: 'Twin room',
-    location: 'HSR Layout',
-    fullAddress: 'Sector 2, HSR Layout · 2.5 km away',
-    distanceKm: 2.5,
-    pricePerMonth: 8900,
-    rating: 4.6,
-    gradientStart: 0xff2c6e5cn,
-    gradientEnd: 0xff184c40n,
-    amenities: [
-      { iconKey: 'wifi', label: 'Wi-Fi included' },
-      { iconKey: 'meals', label: 'Meals available' },
-      { iconKey: 'ac', label: 'AC rooms' },
-      { iconKey: 'security', label: 'CCTV security' },
-    ],
-    description:
-      "A well-maintained men's hostel with modern facilities in HSR Layout. Twin-sharing rooms with individual lockers, high-speed Wi-Fi and in-house cafeteria. Security guard 24/7.",
-  },
-  {
-    slug: 'willow-court',
-    name: 'Willow Court',
-    categoryType: StayCategoryType.WOMENS_HOSTEL,
-    badge: "Women's Hostel",
-    roomType: 'Twin room',
-    location: 'Ejipura',
-    fullAddress: 'Ejipura Main Road · 2.0 km away',
-    distanceKm: 2.0,
-    pricePerMonth: 9200,
-    rating: 4.7,
-    gradientStart: 0xffc97d2an,
-    gradientEnd: 0xffa85f16n,
-    amenities: [
-      { iconKey: 'wifi', label: 'Wi-Fi' },
-      { iconKey: 'meals', label: 'Meals included' },
-      { iconKey: 'laundry', label: 'Laundry' },
-      { iconKey: 'security', label: 'CCTV security' },
-    ],
-    description:
-      "Safe and comfortable women's hostel in Ejipura with 24/7 security. Twin rooms available with meals included in the rent. Walking distance from multiple IT parks.",
-  },
-  {
-    slug: 'pine-loft',
-    name: 'Pine Loft PG',
-    categoryType: StayCategoryType.MENS_HOSTEL,
-    badge: "Men's PG",
-    roomType: 'Single room',
-    location: 'Indiranagar',
-    fullAddress: '100 Feet Road, Indiranagar · 3.1 km away',
-    distanceKm: 3.1,
-    pricePerMonth: 7500,
-    rating: 4.4,
-    gradientStart: 0xff1a5547n,
-    gradientEnd: 0xff0e3a30n,
-    amenities: [
-      { iconKey: 'wifi', label: 'Wi-Fi' },
-      { iconKey: 'laundry', label: 'Laundry' },
-      { iconKey: 'backup', label: 'Power backup' },
-      { iconKey: 'security', label: 'Biometric entry' },
-    ],
-    description:
-      "Budget-friendly men's PG on 100 Feet Road, Indiranagar. Single occupancy rooms with basic amenities — perfect for working professionals on a budget.",
-  },
-  {
-    slug: 'lavender-villa',
-    name: 'Lavender Villa',
-    categoryType: StayCategoryType.WOMENS_HOSTEL,
-    badge: "Women's PG",
-    roomType: 'Single room',
-    location: 'Bellandur',
-    fullAddress: 'Sarjapura Road, Bellandur · 4.2 km away',
-    distanceKm: 4.2,
-    pricePerMonth: 10000,
-    rating: 4.5,
-    gradientStart: 0xffc97d2an,
-    gradientEnd: 0xffa85f16n,
-    amenities: [
-      { iconKey: 'wifi', label: '50 Mbps Wi-Fi' },
-      { iconKey: 'meals', label: '2 meals / day' },
-      { iconKey: 'ac', label: 'AC available' },
-      { iconKey: 'parking', label: 'Two-wheeler parking' },
-    ],
-    description:
-      "A thoughtfully designed women's PG near tech parks on Sarjapura Road. Clean rooms, nutritious meals and a friendly warden on site.",
-  },
-  {
-    slug: 'birch-homestay',
-    name: 'Birch Homestay',
-    categoryType: StayCategoryType.HOMESTAY,
-    badge: 'Homestay',
-    roomType: 'Private room',
-    location: 'Indiranagar',
-    fullAddress: 'CMH Road, Indiranagar · 3.5 km away',
-    distanceKm: 3.5,
-    pricePerMonth: 15000,
-    rating: 4.9,
-    gradientStart: 0xff3a6b5en,
-    gradientEnd: 0xff244c42n,
-    amenities: [
-      { iconKey: 'wifi', label: 'Broadband Wi-Fi' },
-      { iconKey: 'meals', label: 'Home-cooked meals' },
-      { iconKey: 'ac', label: 'AC room' },
-      { iconKey: 'parking', label: 'Parking' },
-    ],
-    description:
-      'A private room in a family home in the heart of Indiranagar. Enjoy home-cooked meals, a peaceful atmosphere and easy access to the metro, cafes and markets.',
-  },
-];
-
-async function seedStays(providerId: string | null): Promise<void> {
-  for (const s of STAYS) {
-    const { amenities, ...stay } = s;
-    await prisma.stay.upsert({
-      where: { slug: s.slug },
-      update: {},
-      create: {
-        ...stay,
-        providerId,
-        isVerified: true,
-        amenities: {
-          create: amenities.map((a, i) => ({ ...a, sortOrder: i })),
-        },
-        roomOptions: {
-          create: ROOM_OPTIONS.map((r, i) => ({ ...r, sortOrder: i })),
-        },
-      },
-    });
-  }
-}
-
-async function seedStayCoupon(): Promise<void> {
-  await prisma.stayCoupon.upsert({
-    where: { code: 'ELKNEW' },
-    update: {},
-    create: { code: 'ELKNEW', discountAmount: 500, isActive: true },
-  });
-}
-
-// ─── Car Rental fixtures (mirror rental_screen.dart / rental_booking_flow.dart) ─
-
-const RENTAL_CARS: {
-  slug: string;
-  name: string;
-  category: RentalCarCategory;
-  iconKey: string;
-  seats: number;
-  transmission: string;
-  fuel: string;
-  rating: number;
-  pricePerDay: number;
-  badge: string | null;
-}[] = [
-  // prettier-ignore
-  { slug: 'toyota-camry', name: 'Toyota Camry', category: RentalCarCategory.SEDAN, iconKey: 'rental_sedan', seats: 5, transmission: 'Automatic', fuel: 'Petrol', rating: 4.8, pricePerDay: 199, badge: 'BEST DEAL' },
-  // prettier-ignore
-  { slug: 'honda-civic', name: 'Honda Civic', category: RentalCarCategory.SEDAN, iconKey: 'rental_sedan', seats: 5, transmission: 'Automatic', fuel: 'Petrol', rating: 4.7, pricePerDay: 179, badge: null },
-  // prettier-ignore
-  { slug: 'nissan-patrol', name: 'Nissan Patrol', category: RentalCarCategory.SUV, iconKey: 'rental_suv', seats: 7, transmission: 'Automatic', fuel: 'Petrol', rating: 4.7, pricePerDay: 349, badge: null },
-  // prettier-ignore
-  { slug: 'hyundai-tucson', name: 'Hyundai Tucson', category: RentalCarCategory.SUV, iconKey: 'rental_suv', seats: 5, transmission: 'Automatic', fuel: 'Petrol', rating: 4.6, pricePerDay: 289, badge: null },
-  // prettier-ignore
-  { slug: 'mercedes-e-class', name: 'Mercedes E-Class', category: RentalCarCategory.LUXURY, iconKey: 'rental_luxury', seats: 4, transmission: 'Automatic', fuel: 'Petrol', rating: 4.9, pricePerDay: 599, badge: 'PREMIUM' },
-  // prettier-ignore
-  { slug: 'bmw-5-series', name: 'BMW 5 Series', category: RentalCarCategory.LUXURY, iconKey: 'rental_luxury', seats: 5, transmission: 'Automatic', fuel: 'Petrol', rating: 4.8, pricePerDay: 549, badge: null },
-];
-
-const RENTAL_BRANCHES = [
-  // prettier-ignore
-  { slug: 'corniche', name: 'MG Road Branch', address: 'MG Road, Bengaluru', distanceLabel: '1.2 km', lat: 12.9756, lng: 77.6068 },
-  {
-    slug: 'yas',
-    name: 'Whitefield Branch',
-    address: 'Phoenix Mall, Whitefield',
-    distanceLabel: '18 km',
-    lat: 12.9962,
-    lng: 77.6968,
-  },
-  // prettier-ignore
-  { slug: 'airport', name: 'Kempegowda Airport Branch', address: 'Terminal 1 Arrivals', distanceLabel: '27 km', lat: 13.1986, lng: 77.7066 },
-];
-
-const RENTAL_EXTRAS = [
-  // prettier-ignore
-  { key: 'protection', name: 'Full Protection Plan', description: 'Zero excess, drive worry-free', pricePerDay: 30 },
-  // prettier-ignore
-  { key: 'driver', name: 'Extra Driver', description: 'Add a second registered driver', pricePerDay: 20 },
-  { key: 'seat', name: 'Child Seat', description: 'Safety seat for ages 1–4', pricePerDay: 15 },
-  {
-    key: 'wifi',
-    name: 'Portable Wi-Fi',
-    description: 'Stay connected on the road',
-    pricePerDay: 10,
-  },
-];
-
-async function seedRentals(providerId: string | null): Promise<void> {
-  for (const car of RENTAL_CARS) {
-    await prisma.rentalCar.upsert({
-      where: { slug: car.slug },
-      update: {},
-      create: { ...car, providerId },
-    });
-  }
-  for (const branch of RENTAL_BRANCHES) {
-    await prisma.rentalBranch.upsert({
-      where: { slug: branch.slug },
-      update: branch,
-      create: branch,
-    });
-  }
-  for (const extra of RENTAL_EXTRAS) {
-    await prisma.rentalExtra.upsert({
-      where: { key: extra.key },
-      update: {},
-      create: extra,
-    });
-  }
-  await prisma.rentalPromo.upsert({
-    where: { code: 'ELK10' },
-    update: {},
-    create: { code: 'ELK10', percent: 10, isActive: true },
-  });
-}
-
-// ─── ELK Clean fixtures (mirror elkclean_data.dart) ──────────────────────────
-
-const CLEAN_CATEGORIES = [
-  // prettier-ignore
-  { slug: 'cln', code: 'CLN', label: 'Home Cleaning', blurb: 'Standard, deep & move-out', iconKey: 'ic_home_clean', badge: null as string | null, star: false },
-  // prettier-ignore
-  { slug: 'deep', code: 'DCP', label: 'Deep Cleaning', blurb: 'Top-to-bottom detail clean', iconKey: 'ic_deep_clean', badge: '40% Off', star: false },
-  // prettier-ignore
-  { slug: 'tnk', code: 'TNK', label: 'Water Tank', blurb: 'Drain, scrub & disinfect', iconKey: 'ic_water_tank', badge: null, star: true },
-  // prettier-ignore
-  { slug: 'sof', code: 'SOF', label: 'Sofa & Upholstery', blurb: 'Shampoo & protect', iconKey: 'ic_sofa', badge: null, star: false },
-  // prettier-ignore
-  { slug: 'crp', code: 'CRP', label: 'Carpet & Rug', blurb: 'Steam deep clean', iconKey: 'ic_carpet', badge: null, star: false },
-  // prettier-ignore
-  { slug: 'kit', code: 'KIT', label: 'Kitchen Clean', blurb: 'Degrease & sanitise', iconKey: 'ic_kitchen', badge: null, star: false },
-  // prettier-ignore
-  { slug: 'bth', code: 'BTH', label: 'Bathroom Clean', blurb: 'Sanitise & descale', iconKey: 'ic_bath', badge: null, star: false },
-  // prettier-ignore
-  { slug: 'lndr', code: 'LND', label: 'Laundry & Iron', blurb: 'Wash, dry & press', iconKey: 'ic_laundry', badge: null, star: false },
-];
-
-interface CleanServiceSeed {
-  code: string;
-  name: string;
-  description: string;
-  price: number;
-  durationLabel: string;
-  tag?: string;
-  checklist: string[];
-  steps?: string[];
-}
-
-const CLEAN_SERVICES: Record<string, CleanServiceSeed[]> = {
-  cln: [
-    {
-      code: 'CLN-01',
-      name: 'Standard Home Cleaning',
-      description: 'Dusting, mopping & surface wipe-down.',
-      price: 79,
-      durationLabel: '2–3 hrs',
-      tag: 'Popular',
-      checklist: [
-        'Dust all surfaces & fittings',
-        'Vacuum & mop floors',
-        'Wipe doors, switches, skirting',
-        'Empty bins & tidy',
-      ],
-    },
-    {
-      code: 'CLN-02',
-      name: 'Deep Cleaning (Full Home)',
-      description: 'Top-to-bottom detailed clean.',
-      price: 199,
-      durationLabel: 'Half day',
-      checklist: [
-        'Everything in standard clean',
-        'Inside cabinets & appliances',
-        'Descale taps & fittings',
-        'Detail corners, vents & frames',
-        'Sanitise high-touch points',
-      ],
-    },
-    {
-      code: 'CLN-03',
-      name: 'Move-in / Move-out Clean',
-      description: 'Handover-ready spotless finish.',
-      price: 249,
-      durationLabel: 'Half day',
-      checklist: [
-        'Full deep clean of empty home',
-        'Inside all cupboards & drawers',
-        'Mark & scuff removal',
-        'Balcony & window tracks',
-      ],
-    },
-  ],
-  deep: [
-    {
-      code: 'DCP-01',
-      name: 'Full Home Deep Clean',
-      description: 'Top-to-bottom detail clean, inside & out.',
-      price: 199,
-      durationLabel: 'Half day',
-      tag: 'Popular',
-      checklist: [
-        'Everything in standard clean',
-        'Inside cabinets & appliances',
-        'Descale taps & fittings',
-        'Detail corners, vents & frames',
-        'Sanitise high-touch points',
-      ],
-    },
-    {
-      code: 'DCP-02',
-      name: 'Move-in / Move-out Clean',
-      description: 'Handover-ready spotless finish.',
-      price: 249,
-      durationLabel: 'Half day',
-      checklist: [
-        'Full deep clean of empty home',
-        'Inside all cupboards & drawers',
-        'Mark & scuff removal',
-        'Balcony & window tracks',
-      ],
-    },
-  ],
-  tnk: [
-    {
-      code: 'TNK-01',
-      name: 'Water Tank Cleaning – up to 1000L',
-      description: 'Drain, scrub, disinfect & refill.',
-      price: 149,
-      durationLabel: '60–90 min',
-      tag: 'Featured',
-      checklist: [
-        'Full drain & sludge removal',
-        'Manual scrub of walls & base',
-        'Anti-bacterial disinfection',
-        'Fresh water refill',
-        'Cleanliness photo report',
-      ],
-      steps: ['Inspect', 'Drain', 'Scrub', 'Disinfect', 'Refill', 'Report'],
-    },
-    {
-      code: 'TNK-02',
-      name: 'Large / Underground Tank – 1000L+',
-      description: 'For villas & buildings, per tank.',
-      price: 299,
-      durationLabel: '2–3 hrs',
-      checklist: [
-        'Confined-space trained crew',
-        'Full sediment & sludge removal',
-        'Pressure wash + disinfect',
-        'Refill & chlorination test',
-        'Hygiene certificate',
-      ],
-      steps: ['Inspect', 'Drain', 'Pressure wash', 'Disinfect', 'Refill', 'Certify'],
-    },
-    {
-      code: 'TNK-03',
-      name: 'Tank Disinfection Only',
-      description: 'Sanitise without full drain.',
-      price: 89,
-      durationLabel: '45 min',
-      checklist: [
-        'Surface skim & debris removal',
-        'Anti-bacterial fogging',
-        'Safe-to-use water test',
-      ],
-      steps: ['Inspect', 'Skim', 'Disinfect', 'Test'],
-    },
-  ],
-  sof: [
-    {
-      code: 'SOF-01',
-      name: 'Sofa Shampoo (per seat)',
-      description: 'Lift stains, odours & dust mites.',
-      price: 35,
-      durationLabel: '20 min/seat',
-      tag: 'Popular',
-      checklist: ['Pre-treat stains', 'Deep shampoo extraction', 'Deodorise & fast-dry'],
-    },
-    {
-      code: 'SOF-02',
-      name: 'Fabric Protection Coat',
-      description: 'Repels future spills & stains.',
-      price: 49,
-      durationLabel: '30 min',
-      checklist: ['Apply protective layer', 'Cure & buff', 'Spill-resistant finish'],
-    },
-  ],
-  crp: [
-    {
-      code: 'CRP-01',
-      name: 'Carpet Steam Clean (per room)',
-      description: 'Hot-water extraction deep clean.',
-      price: 69,
-      durationLabel: '45 min',
-      tag: 'Popular',
-      checklist: [
-        'Vacuum & pre-spray',
-        'Hot steam extraction',
-        'Spot-treat stains',
-        'Speed-dry pass',
-      ],
-    },
-    {
-      code: 'CRP-02',
-      name: 'Rug Deep Clean',
-      description: 'Per rug, collected if needed.',
-      price: 89,
-      durationLabel: 'By size',
-      checklist: ['Dust & beat out grit', 'Submersion wash', 'Fibre-safe dry & groom'],
-    },
-  ],
-  kit: [
-    {
-      code: 'KIT-01',
-      name: 'Kitchen Deep Clean',
-      description: 'Degrease every surface.',
-      price: 119,
-      durationLabel: '2 hrs',
-      tag: 'Popular',
-      checklist: [
-        'Degrease counters & backsplash',
-        'Inside & outside cabinets',
-        'Sink descale & polish',
-        'Floor scrub',
-      ],
-    },
-    {
-      code: 'KIT-02',
-      name: 'Oven & Hob Degrease',
-      description: 'Baked-on grime removal.',
-      price: 79,
-      durationLabel: '60 min',
-      checklist: ['Dismantle racks & trays', 'Soak & scrub', 'Polish glass & hob'],
-    },
-  ],
-  bth: [
-    {
-      code: 'BTH-01',
-      name: 'Bathroom Sanitation',
-      description: 'Descale, sanitise & shine.',
-      price: 59,
-      durationLabel: '45 min',
-      tag: 'Popular',
-      checklist: [
-        'Descale taps & glass',
-        'Disinfect toilet & basin',
-        'Scrub tiles & floor',
-        'Mirror & fittings polish',
-      ],
-    },
-    {
-      code: 'BTH-02',
-      name: 'Grout & Tile Restoration',
-      description: 'Bring tiles back to new.',
-      price: 99,
-      durationLabel: '90 min',
-      checklist: ['Deep-scrub grout lines', 'Mould & stain treatment', 'Seal & protect'],
-    },
-  ],
-  lndr: [
-    {
-      code: 'LND-01',
-      name: 'Wash & Iron (per kg)',
-      description: 'Wash, dry and press clothes to perfection.',
-      price: 12,
-      durationLabel: '24 hrs',
-      tag: 'Popular',
-      checklist: [
-        'Sort & pre-treat stains',
-        'Machine wash at correct temp',
-        'Tumble-dry & press',
-        'Fold & pack neatly',
-      ],
-    },
-    {
-      code: 'LND-02',
-      name: 'Dry Cleaning (per item)',
-      description: 'Professional dry cleaning for delicates.',
-      price: 25,
-      durationLabel: '48 hrs',
-      checklist: ['Inspect & tag items', 'Chemical clean', 'Steam press & finish'],
-    },
-    {
-      code: 'LND-03',
-      name: 'Curtain Cleaning',
-      description: 'Remove & rehang after full clean.',
-      price: 69,
-      durationLabel: '3–4 hrs',
-      checklist: ['Remove & label curtains', 'Steam or wash as needed', 'Press & rehang'],
-    },
-  ],
-};
-
-const CLEAN_OFFERS = [
-  // prettier-ignore
-  { title: 'Instant Tank Refresh', discountLabel: 'Up to 60% off', promoCode: 'TANK60', timeLabel: '60', timeUnit: 'MINUTES', categoryLabel: 'Water Tank', iconKey: 'ic_water_tank' },
-  // prettier-ignore
-  { title: 'Sofa & Carpet Revival', discountLabel: 'Flat 50% off', promoCode: 'SOFA50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Upholstery', iconKey: 'ic_sofa' },
-  // prettier-ignore
-  { title: 'Sparkling Deep Clean', discountLabel: '₹70 off', promoCode: 'DEEP70', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Deep Clean', iconKey: 'ic_deep_clean' },
-];
-
-const CLEAN_PROMOS = [
-  { code: 'TANK60', kind: CleanPromoKind.PERCENT, value: 60 },
-  { code: 'SOFA50', kind: CleanPromoKind.PERCENT, value: 50 },
-  { code: 'DEEP70', kind: CleanPromoKind.FIXED, value: 70 },
-];
-
-async function seedClean(): Promise<void> {
-  for (const [i, cat] of CLEAN_CATEGORIES.entries()) {
-    const category = await prisma.cleanCategory.upsert({
-      where: { slug: cat.slug },
-      update: {},
-      create: { ...cat, sortOrder: i },
-    });
-    for (const [j, svc] of (CLEAN_SERVICES[cat.slug] ?? []).entries()) {
-      await prisma.cleanService.upsert({
-        where: { code: svc.code },
-        update: {},
-        create: {
-          ...svc,
-          tag: svc.tag ?? null,
-          steps: svc.steps ?? undefined,
-          categoryId: category.id,
-          sortOrder: j,
-        },
-      });
-    }
-  }
-  for (const [i, offer] of CLEAN_OFFERS.entries()) {
-    // Refresh in place rather than skipping: the seed is the source of truth
-    // for display copy, so re-running it must pick up changed labels.
-    const existing = await prisma.cleanOffer.findFirst({ where: { promoCode: offer.promoCode } });
-    if (existing) {
-      await prisma.cleanOffer.update({
-        where: { id: existing.id },
-        data: { ...offer, sortOrder: i },
-      });
-    } else {
-      await prisma.cleanOffer.create({ data: { ...offer, sortOrder: i } });
-    }
-  }
-  for (const promo of CLEAN_PROMOS) {
-    await prisma.cleanPromo.upsert({
-      where: { code: promo.code },
-      update: {},
-      create: promo,
-    });
-  }
-}
-
-// ─── ELK Porter fixtures (mirror porter_screen.dart / dummy_data.dart) ───────
+// ─── ELK Porter fixtures (mirror porter_screen.dart) ─────────────────────────
 
 const PORTER_VEHICLES = [
   // prettier-ignore
-  { slug: 'bike', name: 'Bike', emoji: '🏍️', iconKey: 'veh_bike', capacityLabel: 'Up to 5 kg', etaMinutes: 12, baseFare: 35, badge: 'FASTEST' as string | null },
+  { slug: 'bike', name: 'Bike', emoji: '🏍️', iconKey: 'veh_bike', capacityLabel: 'Up to 20 kg', etaMinutes: 12, baseFare: 25, badge: 'FASTEST' as string | null },
   // prettier-ignore
   { slug: 'car', name: 'Car', emoji: '🚐', iconKey: 'veh_car', capacityLabel: 'Up to 100 kg', etaMinutes: 18, baseFare: 65, badge: null },
   // prettier-ignore
@@ -784,240 +68,6 @@ async function seedRides(): Promise<void> {
   }
 }
 
-// ─── ELK Rep fixtures (mirror elkrep_data.dart) ──────────────────────────────
-
-const REPAIR_CATEGORIES = [
-  {
-    slug: 'ac',
-    code: 'AC',
-    label: 'AC & Cooling',
-    blurb: 'Service, gas, deep clean',
-    iconKey: 'ic_ac',
-  },
-  {
-    slug: 'plm',
-    code: 'PLM',
-    label: 'Plumbing',
-    blurb: 'Leaks, taps, drains',
-    iconKey: 'ic_plumb',
-  },
-  {
-    slug: 'elc',
-    code: 'ELC',
-    label: 'Electrical',
-    blurb: 'Wiring, fittings, faults',
-    iconKey: 'ic_elec',
-  },
-  // prettier-ignore
-  { slug: 'cpt', code: 'CPT', label: 'Carpentry', blurb: 'Doors, furniture, fixes', iconKey: 'ic_carpentry' },
-  { slug: 'pnt', code: 'PNT', label: 'Painting', blurb: 'Walls, touch-ups', iconKey: 'ic_paint' },
-  {
-    slug: 'gen',
-    code: 'GEN',
-    label: 'Handyman',
-    blurb: 'Odd jobs & mounting',
-    iconKey: 'ic_handyman',
-  },
-];
-
-interface RepairServiceSeed {
-  code: string;
-  name: string;
-  description: string;
-  price: number;
-  durationLabel: string;
-  tag?: string;
-}
-
-const REPAIR_SERVICES: Record<string, RepairServiceSeed[]> = {
-  ac: [
-    {
-      code: 'AC-01',
-      name: 'AC General Service',
-      description: 'Coil clean, filter wash, performance check.',
-      price: 89,
-      durationLabel: '45–60 min',
-      tag: 'Popular',
-    },
-    {
-      code: 'AC-02',
-      name: 'AC Deep Cleaning',
-      description: 'Full unit dismantle, jet wash, sanitise.',
-      price: 149,
-      durationLabel: '60–90 min',
-    },
-    {
-      code: 'AC-03',
-      name: 'Gas Refill (R410)',
-      description: 'Leak test, vacuum & refill refrigerant.',
-      price: 199,
-      durationLabel: '60 min',
-    },
-    {
-      code: 'AC-04',
-      name: 'AC Not Cooling – Diagnose',
-      description: 'Technician inspects & quotes the fix.',
-      price: 25,
-      durationLabel: '30 min',
-      tag: 'Diagnostic',
-    },
-  ],
-  plm: [
-    {
-      code: 'PLM-01',
-      name: 'Tap / Mixer Repair',
-      description: 'Fix drips, replace cartridge or washer.',
-      price: 69,
-      durationLabel: '30–45 min',
-      tag: 'Popular',
-    },
-    {
-      code: 'PLM-02',
-      name: 'Leak Detection & Fix',
-      description: 'Trace hidden leaks, seal & test.',
-      price: 129,
-      durationLabel: '60 min',
-    },
-    {
-      code: 'PLM-03',
-      name: 'Drain Unblocking',
-      description: 'Clear sink, basin or floor drains.',
-      price: 99,
-      durationLabel: '45 min',
-    },
-  ],
-  elc: [
-    {
-      code: 'ELC-01',
-      name: 'Switch / Socket Fix',
-      description: 'Replace faulty points, safety check.',
-      price: 59,
-      durationLabel: '30 min',
-      tag: 'Popular',
-    },
-    {
-      code: 'ELC-02',
-      name: 'Light Fitting Install',
-      description: 'Mount & wire fixtures, chandeliers.',
-      price: 89,
-      durationLabel: '45 min',
-    },
-    {
-      code: 'ELC-03',
-      name: 'Power Trip Diagnose',
-      description: 'Find the fault behind tripping.',
-      price: 25,
-      durationLabel: '30 min',
-      tag: 'Diagnostic',
-    },
-  ],
-  cpt: [
-    {
-      code: 'CPT-01',
-      name: 'Door Repair / Align',
-      description: 'Hinges, locks, sticking doors.',
-      price: 79,
-      durationLabel: '45 min',
-    },
-    {
-      code: 'CPT-02',
-      name: 'Furniture Assembly',
-      description: 'Flat-pack build, per unit.',
-      price: 99,
-      durationLabel: '60 min',
-      tag: 'Popular',
-    },
-  ],
-  pnt: [
-    {
-      code: 'PNT-01',
-      name: 'Single Room Painting',
-      description: 'Walls prep, two coats, clean finish.',
-      price: 299,
-      durationLabel: 'Half day',
-      tag: 'Popular',
-    },
-    {
-      code: 'PNT-02',
-      name: 'Patch & Touch-up',
-      description: 'Cracks, dents, small wall areas.',
-      price: 119,
-      durationLabel: '60 min',
-    },
-  ],
-  gen: [
-    {
-      code: 'GEN-01',
-      name: 'TV / Shelf Mounting',
-      description: 'Wall-mount with level & anchors.',
-      price: 79,
-      durationLabel: '45 min',
-      tag: 'Popular',
-    },
-    {
-      code: 'GEN-02',
-      name: 'Curtain / Blind Fitting',
-      description: 'Brackets, rods, per window.',
-      price: 59,
-      durationLabel: '30 min',
-    },
-  ],
-};
-
-const REPAIR_OFFERS = [
-  // prettier-ignore
-  { title: 'Instant AC Refresh', discountLabel: 'Up to 60% off', promoCode: 'AC60', timeLabel: '60', timeUnit: 'MINUTES', categoryLabel: 'AC & Cooling', iconKey: 'ic_ac' },
-  // prettier-ignore
-  { title: 'Leak Fix Express', discountLabel: 'Flat 50% off', promoCode: 'LEAK50', timeLabel: '90', timeUnit: 'MINUTES', categoryLabel: 'Plumbing', iconKey: 'ic_plumb' },
-  // prettier-ignore
-  { title: 'Full Home Repaint', discountLabel: '₹120 off', promoCode: 'PAINT120', timeLabel: 'Same', timeUnit: 'DAY', categoryLabel: 'Painting', iconKey: 'ic_paint' },
-];
-
-const REPAIR_PROMOS = [
-  { code: 'AC60', kind: RepairPromoKind.PERCENT, value: 60 },
-  { code: 'LEAK50', kind: RepairPromoKind.PERCENT, value: 50 },
-  { code: 'PAINT120', kind: RepairPromoKind.FIXED, value: 120 },
-];
-
-async function seedRepair(): Promise<void> {
-  for (const [i, cat] of REPAIR_CATEGORIES.entries()) {
-    const category = await prisma.repairCategory.upsert({
-      where: { slug: cat.slug },
-      update: {},
-      create: { ...cat, sortOrder: i },
-    });
-    for (const [j, svc] of (REPAIR_SERVICES[cat.slug] ?? []).entries()) {
-      await prisma.repairService.upsert({
-        where: { code: svc.code },
-        update: {},
-        create: { ...svc, tag: svc.tag ?? null, categoryId: category.id, sortOrder: j },
-      });
-    }
-  }
-  for (const [i, offer] of REPAIR_OFFERS.entries()) {
-    // Refresh in place rather than skipping: the seed is the source of truth
-    // for display copy, so re-running it must pick up changed labels.
-    const existing = await prisma.repairOffer.findFirst({ where: { promoCode: offer.promoCode } });
-    if (existing) {
-      await prisma.repairOffer.update({
-        where: { id: existing.id },
-        data: { ...offer, sortOrder: i },
-      });
-    } else {
-      await prisma.repairOffer.create({ data: { ...offer, sortOrder: i } });
-    }
-  }
-  for (const promo of REPAIR_PROMOS) {
-    await prisma.repairPromo.upsert({
-      where: { code: promo.code },
-      update: {},
-      create: promo,
-    });
-  }
-}
-
-// ─── Notifications fixtures (mirror dummyNotificationsJson) ─────────────────
-
 // ─── Offers fixtures (mirror dummyOffersJson) ────────────────────────────────
 
 const OFFERS = [
@@ -1055,16 +105,33 @@ async function seedOffers(): Promise<void> {
   }
 }
 
-// ─── Provider fixtures (mirror dummyProviderProfileJson / earnings / requests) ─
+// ─── Marketplace listings ────────────────────────────────────────────────────
 
-// ─── Marketplace ads ────────────────────────────────────────────────────────
+/**
+ * Listings with *no* engagement: view and wishlist counts must be earned by
+ * real users, or the "best sellers" ranking would be showing invented
+ * popularity. Ratings start at zero for the same reason — a listing is "New"
+ * until somebody actually rates it.
+ *
+ * `categorySlug` is what each vertical's screen filters on, so the set here is
+ * exactly the set the app groups by. `attributes` follows the per-category
+ * shape in src/modules/marketplace/ad-attributes.ts.
+ */
+type AdFixture = {
+  title: string;
+  categorySlug: string;
+  icon: string;
+  price: number;
+  priceUnit: string;
+  locality: string;
+  city: string;
+  description: string;
+  attributes?: Prisma.InputJsonObject;
+};
 
-/// Seed ads with *no* engagement: view and wishlist counts must be earned by
-/// real users, or the "best sellers" ranking would be showing invented
-/// popularity. The catalogue is real; the rankings start at zero.
-const ADS = [
+const ADS: AdFixture[] = [
+  // ── Cleaning ───────────────────────────────────────────────────────────────
   {
-    slug: 'ad-deep-clean',
     title: 'Deep Home Cleaning',
     categorySlug: 'cleaning',
     icon: '🧹',
@@ -1074,9 +141,25 @@ const ADS = [
     city: 'Bengaluru',
     description:
       'Full-home deep clean by a vetted team. Kitchen degreasing, bathroom descaling, floor scrubbing and balcony wash included. Materials and equipment provided.',
+    attributes: {
+      subCategory: 'deep',
+      durationLabel: '3-4 hrs',
+      includes: ['Kitchen degreasing', 'Bathroom descaling', 'Floor scrubbing', 'Balcony wash'],
+    },
   },
   {
-    slug: 'ad-sofa-shampoo',
+    title: 'Home Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🏠',
+    price: 85,
+    priceUnit: '/ visit',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Routine cleaning for a 2BHK: sweeping, mopping, dusting and bin clearance. Ideal weekly or fortnightly.',
+    attributes: { subCategory: 'cln', durationLabel: '2-3 hrs' },
+  },
+  {
     title: 'Sofa & Carpet Shampoo',
     categorySlug: 'cleaning',
     icon: '🛋️',
@@ -1086,33 +169,71 @@ const ADS = [
     city: 'Bengaluru',
     description:
       'Wet shampoo and extraction for upholstery and rugs. Removes stains and odour; fabric-safe solutions only. Dries in 4-6 hours.',
+    attributes: { subCategory: 'sof', durationLabel: '2-3 hrs' },
   },
   {
-    slug: 'ad-ac-service',
+    title: 'Water Tank Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🚰',
+    price: 140,
+    priceUnit: '/ tank',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Drain, scrub, disinfect and refill. Sludge removal and anti-bacterial treatment for overhead and underground tanks.',
+    attributes: { subCategory: 'tnk', durationLabel: '1-2 hrs' },
+  },
+  {
+    title: 'Kitchen Deep Clean',
+    categorySlug: 'cleaning',
+    icon: '🍽️',
+    price: 99,
+    priceUnit: '/ visit',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'Chimney and hob degreasing, cabinet fronts, tiles and sink polish. Food-safe products throughout.',
+    attributes: { subCategory: 'kit', durationLabel: '2 hrs' },
+  },
+  {
+    title: 'Bathroom Deep Clean',
+    categorySlug: 'cleaning',
+    icon: '🚿',
+    price: 79,
+    priceUnit: '/ bathroom',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Hard-water stain removal, grout scrubbing, sanitary-ware descaling and disinfection.',
+    attributes: { subCategory: 'bth', durationLabel: '1-2 hrs' },
+  },
+  {
+    title: 'Wash & Fold Laundry',
+    categorySlug: 'cleaning',
+    icon: '🧺',
+    price: 45,
+    priceUnit: '/ kg',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Pickup, machine wash, tumble dry and fold. Separate wash for whites and colours. Returned within 24 hours.',
+    attributes: { subCategory: 'lndr', durationLabel: '24 hrs' },
+  },
+
+  // ── Repairs ────────────────────────────────────────────────────────────────
+  {
     title: 'AC Service & Gas Refill',
-    categorySlug: 'ac_service',
+    categorySlug: 'repairing',
     icon: '❄️',
     price: 90,
     priceUnit: 'starting',
     locality: 'Indiranagar',
     city: 'Bengaluru',
     description:
-      'Split and window AC servicing, coil cleaning, gas top-up and leak check. Certified technicians, 30-day service warranty.',
+      'Split and window AC servicing, coil cleaning, gas top-up and leak check. Certified technicians.',
+    attributes: { subCategory: 'ac', durationLabel: '1-2 hrs', warrantyLabel: '30-day warranty' },
   },
   {
-    slug: 'ad-electrical',
-    title: 'Electrical Repairs',
-    categorySlug: 'repairing',
-    icon: '⚡',
-    price: 89,
-    priceUnit: '/ visit',
-    locality: 'Whitefield',
-    city: 'Bengaluru',
-    description:
-      'Wiring faults, switchboard replacement, fan and light installation. Licensed electricians with their own tools.',
-  },
-  {
-    slug: 'ad-plumbing',
     title: 'Plumbing & Leak Fix',
     categorySlug: 'repairing',
     icon: '🚿',
@@ -1122,33 +243,45 @@ const ADS = [
     city: 'Bengaluru',
     description:
       'Tap and mixer replacement, blocked drains, concealed leak detection and pipe repair. Same-day slots available.',
+    attributes: { subCategory: 'plm', durationLabel: '1-2 hrs', warrantyLabel: '15-day warranty' },
   },
   {
-    slug: 'ad-wash-fold',
-    title: 'Wash & Fold Laundry',
-    categorySlug: 'laundry',
-    icon: '🧺',
-    price: 45,
-    priceUnit: '/ kg',
-    locality: 'Koramangala',
+    title: 'Electrical Repairs',
+    categorySlug: 'repairing',
+    icon: '⚡',
+    price: 89,
+    priceUnit: '/ visit',
+    locality: 'Whitefield',
     city: 'Bengaluru',
     description:
-      'Pickup, machine wash, tumble dry and fold. Separate wash for whites and colours. Returned within 24 hours.',
+      'Wiring faults, switchboard replacement, fan and light installation. Licensed electricians with their own tools.',
+    attributes: { subCategory: 'elc', durationLabel: '1-2 hrs', warrantyLabel: '30-day warranty' },
   },
   {
-    slug: 'ad-dry-clean',
-    title: 'Dry Cleaning',
-    categorySlug: 'laundry',
-    icon: '👔',
-    price: 60,
-    priceUnit: '/ piece',
+    title: 'Carpentry & Furniture Repair',
+    categorySlug: 'repairing',
+    icon: '🪚',
+    price: 110,
+    priceUnit: '/ visit',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Door alignment, hinge and lock replacement, shelving, and repairs to wardrobes and beds.',
+    attributes: { subCategory: 'cpt', durationLabel: '2-3 hrs' },
+  },
+  {
+    title: 'Interior Painting',
+    categorySlug: 'repairing',
+    icon: '🎨',
+    price: 260,
+    priceUnit: '/ room',
     locality: 'MG Road',
     city: 'Bengaluru',
     description:
-      'Suits, sarees, curtains and delicate fabrics. Solvent cleaning with pressing and garment covers.',
+      'Putty, primer and two coats of emulsion. Furniture covering and post-work cleanup included.',
+    attributes: { subCategory: 'pnt', durationLabel: '1-2 days', warrantyLabel: '1-year warranty' },
   },
   {
-    slug: 'ad-handyman',
     title: 'Handyman & Assembly',
     categorySlug: 'repairing',
     icon: '🛠️',
@@ -1158,12 +291,187 @@ const ADS = [
     city: 'Bengaluru',
     description:
       'Furniture assembly, wall mounting, curtain rods, door alignment and general odd jobs around the house.',
+    attributes: { subCategory: 'gen', durationLabel: '1-3 hrs' },
+  },
+
+  // ── Car rental ─────────────────────────────────────────────────────────────
+  {
+    title: 'Maruti Swift',
+    categorySlug: 'car_rental',
+    icon: '🚗',
+    price: 1400,
+    priceUnit: '/ day',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Compact hatchback, ideal for city driving. Unlimited kilometres within city limits; fuel not included.',
+    attributes: { subCategory: 'SEDAN', seats: 5, transmission: 'MANUAL', fuel: 'PETROL' },
+  },
+  {
+    title: 'Honda City',
+    categorySlug: 'car_rental',
+    icon: '🚙',
+    price: 2100,
+    priceUnit: '/ day',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description: 'Comfortable sedan with boot space for four bags. Automatic, well-maintained.',
+    attributes: { subCategory: 'SEDAN', seats: 5, transmission: 'AUTOMATIC', fuel: 'PETROL' },
+  },
+  {
+    title: 'Toyota Innova Crysta',
+    categorySlug: 'car_rental',
+    icon: '🚐',
+    price: 3400,
+    priceUnit: '/ day',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Seven-seater for family trips and outstation runs. Diesel, roof carrier on request.',
+    attributes: { subCategory: 'SUV', seats: 7, transmission: 'MANUAL', fuel: 'DIESEL' },
+  },
+  {
+    title: 'Mahindra XUV700',
+    categorySlug: 'car_rental',
+    icon: '🚙',
+    price: 3900,
+    priceUnit: '/ day',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Full-size SUV with automatic gearbox and panoramic sunroof. Ideal for long drives.',
+    attributes: { subCategory: 'SUV', seats: 7, transmission: 'AUTOMATIC', fuel: 'DIESEL' },
+  },
+  {
+    title: 'BMW 3 Series',
+    categorySlug: 'car_rental',
+    icon: '🏎️',
+    price: 7500,
+    priceUnit: '/ day',
+    locality: 'MG Road',
+    city: 'Bengaluru',
+    description: 'Luxury sedan for occasions and executive travel. Chauffeur available on request.',
+    attributes: { subCategory: 'LUXURY', seats: 5, transmission: 'AUTOMATIC', fuel: 'PETROL' },
+  },
+  {
+    title: 'Tata Nexon EV',
+    categorySlug: 'car_rental',
+    icon: '🔋',
+    price: 2600,
+    priceUnit: '/ day',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description: 'Electric compact SUV, roughly 300 km on a charge. Home charger cable supplied.',
+    attributes: { subCategory: 'SUV', seats: 5, transmission: 'AUTOMATIC', fuel: 'ELECTRIC' },
+  },
+
+  // ── ELK Stay ───────────────────────────────────────────────────────────────
+  {
+    title: 'Maple Nest — Single Room',
+    categorySlug: 'elkstay',
+    icon: '🏨',
+    price: 11500,
+    priceUnit: '/ month',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Furnished single room in a co-living house. Wi-Fi, housekeeping twice a week, and meals available on a separate plan.',
+    attributes: {
+      roomType: 'Single occupancy',
+      stayType: 'PG',
+      depositAmount: 11500,
+      furnished: true,
+    },
+  },
+  {
+    title: 'Maple Nest — Twin Sharing',
+    categorySlug: 'elkstay',
+    icon: '🛏️',
+    price: 7800,
+    priceUnit: '/ month',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description: 'Twin-sharing room with attached bathroom, wardrobe and study table per occupant.',
+    attributes: {
+      roomType: 'Twin sharing',
+      stayType: 'PG',
+      depositAmount: 7800,
+      furnished: true,
+    },
+  },
+  {
+    title: 'Skyline Mens Hostel',
+    categorySlug: 'elkstay',
+    icon: '🏢',
+    price: 6500,
+    priceUnit: '/ month',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Walking distance from the tech park. Three meals a day, laundry, and 24-hour security.',
+    attributes: {
+      roomType: 'Triple sharing',
+      stayType: 'MENS_HOSTEL',
+      depositAmount: 6500,
+      furnished: true,
+    },
+  },
+  {
+    title: 'Lotus Womens Hostel',
+    categorySlug: 'elkstay',
+    icon: '🌸',
+    price: 7200,
+    priceUnit: '/ month',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description: 'Women-only accommodation with warden, biometric entry and a common study room.',
+    attributes: {
+      roomType: 'Twin sharing',
+      stayType: 'WOMENS_HOSTEL',
+      depositAmount: 14400,
+      furnished: true,
+    },
+  },
+  {
+    title: 'Green Court Homestay',
+    categorySlug: 'elkstay',
+    icon: '🏡',
+    price: 18000,
+    priceUnit: '/ month',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'Independent 1BHK on the first floor of a family home. Private entrance, kitchen and parking.',
+    attributes: {
+      roomType: '1BHK',
+      stayType: 'HOMESTAY',
+      depositAmount: 36000,
+      furnished: false,
+    },
+  },
+  {
+    title: 'Harbour View PG',
+    categorySlug: 'elkstay',
+    icon: '🏬',
+    price: 9400,
+    priceUnit: '/ month',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description: 'Newly built PG with air-conditioned rooms, gym access and a rooftop common area.',
+    attributes: {
+      roomType: 'Single occupancy',
+      stayType: 'PG',
+      depositAmount: 18800,
+      furnished: true,
+    },
   },
 ];
 
-/// Centre of each seeded locality, so the ad detail screen can draw a real
-/// coverage map. Localities repeat across ads, hence a lookup rather than a
-/// coordinate pair on every row.
+/**
+ * Centre of each seeded locality, so the ad detail screen can draw a real
+ * coverage map. Localities repeat across listings, hence a lookup rather than
+ * a coordinate pair on every row.
+ */
 const LOCALITY_COORDS: Record<string, { lat: number; lng: number }> = {
   Koramangala: { lat: 12.9352, lng: 77.6245 },
   'HSR Layout': { lat: 12.9116, lng: 77.6474 },
@@ -1177,12 +485,17 @@ async function seedAds(sellerId: string | null): Promise<number> {
   if (!sellerId) return 0;
   let count = 0;
   for (const ad of ADS) {
-    const { slug: _slug, ...rest } = ad;
-    const coords = LOCALITY_COORDS[rest.locality];
-    const data = { ...rest, lat: coords?.lat ?? null, lng: coords?.lng ?? null };
+    const coords = LOCALITY_COORDS[ad.locality];
+    const data = {
+      ...ad,
+      attributes: ad.attributes ?? undefined,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
+    };
     const existing = await prisma.ad.findFirst({ where: { title: data.title, sellerId } });
     if (existing) {
-      // Refresh the copy, but never the counters — those belong to real users.
+      // Refresh the copy, but never the counters or the rating — those are
+      // earned by real users.
       await prisma.ad.update({ where: { id: existing.id }, data });
     } else {
       await prisma.ad.create({ data: { ...data, sellerId } });
@@ -1192,9 +505,21 @@ async function seedAds(sellerId: string | null): Promise<number> {
   return count;
 }
 
-/// Ads need an owner. Rather than reintroduce a demo account, they hang off the
-/// oldest real user — replace `sellerId` once sellers can register properly.
-async function firstUserId(): Promise<string | null> {
+/**
+ * Who owns the seeded listings.
+ *
+ * The demo provider when there is one — a listing belongs to the person who
+ * would actually do the work, and that account is the one with a seller
+ * profile. Otherwise the oldest real account, so a fresh production database
+ * still gets a catalogue rather than nothing.
+ */
+async function seedSellerId(): Promise<string | null> {
+  const provider = await prisma.user.findUnique({
+    where: { phone: '+971500000002' },
+    select: { id: true },
+  });
+  if (provider) return provider.id;
+
   const user = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
   return user?.id ?? null;
 }
@@ -1203,92 +528,119 @@ async function firstUserId(): Promise<string | null> {
  * Demo accounts, created **only** when SEED_DEMO_USERS is set.
  *
  * Production seeds must not invent users — that decision stands, and is why
- * `firstUserId()` below hangs ads off a real account instead. But the
- * integration suite runs against an empty container and needs a signed-in
- * caller to test anything at all, so it opts in via the env var. The three
- * roles mirror what those specs expect.
+ * `seedSellerId()` falls back to a real account instead. But the integration
+ * suite runs against an empty container and needs a signed-in caller to test
+ * anything at all, so it opts in via the env var.
  */
 async function seedDemoUsers(): Promise<number> {
   if (process.env.SEED_DEMO_USERS !== 'true') return 0;
 
   const demo = [
-    // First names matter: the home feeds greet the user by theirs, and the
-    // specs assert on the greeting.
+    // First names matter: the home feeds greet the user by theirs.
     { phone: '+971500000000', name: 'Demo Admin', roles: ['ADMIN'] },
     { phone: '+971500000001', name: 'Demo User', roles: ['USER'] },
     { phone: '+971500000002', name: 'Demo Provider', roles: ['PROVIDER'] },
   ];
-  for (const user of demo) {
+
+  for (const account of demo) {
     await prisma.user.upsert({
-      where: { phone: user.phone },
+      where: { phone: account.phone },
       update: {},
-      create: { phone: user.phone, name: user.name, roles: user.roles },
+      create: { phone: account.phone, name: account.name, roles: account.roles },
     });
   }
   return demo.length;
 }
 
 /**
- * Records the integration specs read back: one home-services order with its
- * chat thread, and one stay booking. Same opt-in as the demo users — they are
- * owned by those accounts and meaningless without them.
+ * Records the integration suite reads back: a live order with a chat thread, a
+ * completed order to review, a wallet ledger, and notifications.
  */
 async function seedDemoRecords(): Promise<void> {
   if (process.env.SEED_DEMO_USERS !== 'true') return;
 
-  const user = await prisma.user.findUnique({ where: { phone: '+971500000001' } });
-  const service = await prisma.service.findFirst({ where: { slug: 'deep_cleaning' } });
-  if (!user || !service) return;
+  const buyer = await prisma.user.findUnique({ where: { phone: '+971500000001' } });
+  const seller = await prisma.user.findUnique({ where: { phone: '+971500000002' } });
+  if (!buyer || !seller) return;
 
-  // Home-services order + chat. CONFIRMED is what makes the tracking timeline
-  // read "Arriving soon" with the third step active.
-  const booking = await prisma.booking.upsert({
-    where: { reference: 'ELK-2026-04921' },
-    update: {},
-    create: {
-      reference: 'ELK-2026-04921',
-      userId: user.id,
-      serviceId: service.id,
-      status: 'CONFIRMED',
-      scheduledAt: new Date('2026-06-12T09:00:00.000Z'),
-      addressText: '5th Block, Koramangala, Bengaluru',
-      lat: 12.9352,
-      lng: 77.6245,
-      serviceFee: 149,
-      total: 149,
-    },
+  const listing = await prisma.ad.findFirst({
+    where: { title: 'Deep Home Cleaning', sellerId: seller.id },
   });
+  if (listing) {
+    // An in-progress order with a chat thread — what the orders spec tracks.
+    const order = await prisma.adOrder.upsert({
+      where: { code: 'ELK-A-SEED1' },
+      update: {},
+      create: {
+        code: 'ELK-A-SEED1',
+        adId: listing.id,
+        buyerId: buyer.id,
+        sellerId: seller.id,
+        status: 'IN_PROGRESS',
+        amount: 180,
+        quantity: 1,
+        serviceName: listing.title,
+        scheduledAt: new Date('2026-06-12T09:00:00.000Z'),
+        addressText: '5th Block, Koramangala, Bengaluru',
+        lat: 12.9352,
+        lng: 77.6245,
+        contactPhone: buyer.phone!,
+        acceptedAt: new Date('2026-06-12T08:30:00.000Z'),
+      },
+    });
 
-  if ((await prisma.chatMessage.count({ where: { bookingId: booking.id } })) === 0) {
-    // Order matters: provider first, so the thread opens with an incoming
-    // message carrying the provider's initials.
-    await prisma.chatMessage.createMany({
-      data: [
-        {
-          bookingId: booking.id,
-          fromProvider: true,
-          text: 'On my way, should reach in 20 minutes.',
-        },
-        { bookingId: booking.id, fromProvider: false, text: 'Great, the gate code is 4471.' },
-        { bookingId: booking.id, fromProvider: true, text: 'Noted, thank you.' },
-      ],
+    if ((await prisma.chatMessage.count({ where: { adOrderId: order.id } })) === 0) {
+      // Order matters: seller first, so the thread opens with an incoming
+      // message carrying the seller's initials.
+      await prisma.chatMessage.createMany({
+        data: [
+          {
+            adOrderId: order.id,
+            fromProvider: true,
+            text: 'On my way, should reach in 20 minutes.',
+          },
+          { adOrderId: order.id, fromProvider: false, text: 'Great, the gate code is 4471.' },
+          { adOrderId: order.id, fromProvider: true, text: 'Noted, thank you.' },
+        ],
+      });
+    }
+
+    // A finished order, so the review flow has something to rate.
+    await prisma.adOrder.upsert({
+      where: { code: 'ELK-A-SEED2' },
+      update: {},
+      create: {
+        code: 'ELK-A-SEED2',
+        adId: listing.id,
+        buyerId: buyer.id,
+        sellerId: seller.id,
+        status: 'COMPLETED',
+        amount: 180,
+        quantity: 1,
+        serviceName: listing.title,
+        scheduledAt: new Date('2026-05-19T09:00:00.000Z'),
+        addressText: '5th Block, Koramangala, Bengaluru',
+        contactPhone: buyer.phone!,
+        acceptedAt: new Date('2026-05-19T08:30:00.000Z'),
+        completedAt: new Date('2026-05-19T12:00:00.000Z'),
+      },
     });
   }
 
   // Wallet: balance and reward points live on the user; the ledger is its own
   // table. Both are read back by the wallet, payments and offers specs.
   await prisma.user.update({
-    where: { id: user.id },
+    where: { id: buyer.id },
     data: { walletBalance: 240.5, rewardPoints: 150 },
   });
 
-  if ((await prisma.walletTransaction.count({ where: { userId: user.id } })) === 0) {
+  if ((await prisma.walletTransaction.count({ where: { userId: buyer.id } })) === 0) {
     // Newest first is what the summary returns, so these are created oldest
     // first and the last one here is the one the spec reads as [0].
     await prisma.walletTransaction.createMany({
       data: [
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🚕',
           title: 'Airport Ride',
           amount: 320,
@@ -1297,7 +649,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: new Date('2026-05-02T10:00:00.000Z'),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '💰',
           title: 'Wallet Top-Up',
           amount: 500,
@@ -1306,7 +658,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: new Date('2026-05-08T10:00:00.000Z'),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🔧',
           title: 'AC Service',
           amount: 260,
@@ -1315,7 +667,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: new Date('2026-05-13T10:00:00.000Z'),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🎁',
           title: 'Referral Bonus',
           amount: 100,
@@ -1324,7 +676,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: new Date('2026-05-16T10:00:00.000Z'),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🧹',
           title: 'Deep Home Cleaning',
           amount: 119,
@@ -1337,12 +689,12 @@ async function seedDemoRecords(): Promise<void> {
   }
 
   // Notifications: two unread, newest first.
-  if ((await prisma.notification.count({ where: { userId: user.id } })) === 0) {
+  if ((await prisma.notification.count({ where: { userId: buyer.id } })) === 0) {
     const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
     await prisma.notification.createMany({
       data: [
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '⭐',
           colorHex: 0xfffef3c7,
           title: 'Rate Your Service',
@@ -1351,7 +703,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: minutesAgo(60 * 72),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🎉',
           colorHex: 0xffe0f7f5,
           title: 'Welcome to ELK',
@@ -1360,7 +712,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: minutesAgo(60 * 48),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '💰',
           colorHex: 0xffd1fae5,
           title: 'Wallet Topped Up',
@@ -1369,7 +721,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: minutesAgo(60 * 24),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '📦',
           colorHex: 0xfffee2e2,
           title: 'Delivery Completed',
@@ -1378,7 +730,7 @@ async function seedDemoRecords(): Promise<void> {
           createdAt: minutesAgo(90),
         },
         {
-          userId: user.id,
+          userId: buyer.id,
           icon: '🧹',
           colorHex: 0xffe0f7f5,
           title: 'Provider On The Way',
@@ -1390,140 +742,47 @@ async function seedDemoRecords(): Promise<void> {
     });
   }
 
-  // Verified provider profile with two job requests — one already accepted so
-  // the earnings screen has a transaction, one pending so it can be responded
-  // to. Wednesday off is what the schedule spec asserts.
-  const providerUser = await prisma.user.findUnique({ where: { phone: '+971500000002' } });
-  if (providerUser) {
-    // The catalogue seeders run before any user exists, so cars and stays are
-    // created unowned. Provider-only steps (confirm pickup, confirm return,
-    // edit a listing) check ownership, so hand the demo catalogue to the demo
-    // provider once they exist.
-    await prisma.rentalCar.updateMany({
-      where: { providerId: null },
-      data: { providerId: providerUser.id },
-    });
-    await prisma.stay.updateMany({
-      where: { providerId: null },
-      data: { providerId: providerUser.id },
-    });
-
-    const profile = await prisma.providerProfile.upsert({
-      where: { userId: providerUser.id },
-      update: {},
-      create: {
-        userId: providerUser.id,
-        businessName: 'Royal Shine Co.',
-        serviceCategory: 'cleaning',
-        contactNumber: '+971500000002',
-        serviceArea: 'Bengaluru · Within 15 km',
-        tradeLicenseUploaded: true,
-        idDocumentUploaded: true,
-        status: 'VERIFIED',
-        isAvailable: true,
-        rating: 4.8,
-        reviewCount: 126,
-        totalEarnings: 2840,
-        completedJobs: 38,
-        avgPerJob: 74,
-        scheduleDays: [true, true, false, true, true, true, false],
-      },
-    });
-
-    if ((await prisma.providerRequest.count({ where: { providerId: profile.id } })) === 0) {
-      await prisma.providerRequest.createMany({
-        data: [
-          {
-            providerId: profile.id,
-            serviceName: 'Kitchen Cleaning',
-            customerName: 'Sara Mohammed',
-            location: 'HSR Layout',
-            timeLabel: 'Today 12:00 PM',
-            amount: 149,
-            status: 'ACCEPTED',
-            icon: '🧹',
-          },
-          {
-            providerId: profile.id,
-            serviceName: 'Bathroom Deep Clean',
-            customerName: 'Rahul Nair',
-            location: 'Indiranagar',
-            timeLabel: 'Tomorrow 10:00 AM',
-            amount: 199,
-            status: 'PENDING',
-            icon: '🚿',
-          },
-        ],
-      });
-    }
-  }
-
-  // Stay booking, with the dates the ElkStay spec asserts on.
-  const stay = await prisma.stay.findUnique({ where: { slug: 'maple-nest' } });
-  if (stay) {
-    await prisma.stayBooking.upsert({
-      where: { code: 'ELK-SEED1' },
-      update: {},
-      create: {
-        code: 'ELK-SEED1',
-        userId: user.id,
-        stayId: stay.id,
-        type: 'STAY',
-        status: 'CONFIRMED',
-        moveInDate: new Date('2026-06-12T00:00:00.000Z'),
-        durationMonths: 6,
-        rentPerMonth: 11500,
-        depositAmount: 11500,
-        serviceFee: 499,
-        totalPaid: 23499,
-        paymentMethod: 'card',
-        paidAt: new Date('2026-06-01T00:00:00.000Z'),
-        nextDueDate: new Date('2026-07-01T00:00:00.000Z'),
-      },
-    });
-  }
+  // The seller's own profile. Its stats are no longer stored here — the panel
+  // derives them from the orders above. Wednesday off is what the schedule
+  // spec asserts.
+  await prisma.providerProfile.upsert({
+    where: { userId: seller.id },
+    update: {},
+    create: {
+      userId: seller.id,
+      businessName: 'Royal Shine Co.',
+      serviceCategory: 'cleaning',
+      contactNumber: '+971500000002',
+      serviceArea: 'Bengaluru · Within 15 km',
+      tradeLicenseUploaded: true,
+      idDocumentUploaded: true,
+      status: 'VERIFIED',
+      isAvailable: true,
+      scheduleDays: [true, true, false, true, true, true, false],
+    },
+  });
 }
 
 async function main(): Promise<void> {
-  // Before everything else: the catalogue seeders below hang owned records off
-  // whichever user exists first.
+  // Before the listings: they need an owner, and the demo provider is it.
   const demoUsers = await seedDemoUsers();
   if (demoUsers > 0) console.log(`Seeded ${demoUsers} demo users (SEED_DEMO_USERS=true)`);
 
-  const serviceCount = await seedCatalog();
-
-  await seedStays(null);
-  await seedStayCoupon();
-  await seedRentals(null);
-  await seedClean();
   await seedPorter();
   await seedRides();
-  await seedRepair();
   await seedOffers();
-  const adCount = await seedAds(await firstUserId());
+
+  const adCount = await seedAds(await seedSellerId());
   await seedDemoRecords();
+
   console.log(
     adCount > 0
-      ? `Seeded marketplace: ${adCount} ads (zero engagement — counts are earned)`
-      : 'Skipped marketplace ads: no user to own them yet',
+      ? `Seeded marketplace: ${adCount} listings (zero engagement — counts and ratings are earned)`
+      : 'Skipped marketplace listings: no user to own them yet',
   );
-
-  const stays = await prisma.stay.count();
-  const cars = await prisma.rentalCar.count();
-  const cleanServices = await prisma.cleanService.count();
-  const repairServices = await prisma.repairService.count();
-
   console.log(`Seeded offers: ${OFFERS.length} banners`);
-  console.log(`Seeded catalog: ${catalog.length} categories, ${serviceCount} services`);
-  console.log(`Seeded: ${stays} stays, ${cars} rental cars, coupons ELKNEW/ELK10`);
-  console.log(
-    `Seeded clean: ${CLEAN_CATEGORIES.length} categories, ${cleanServices} services, promos TANK60/SOFA50/DEEP70`,
-  );
   console.log(`Seeded porter: ${PORTER_VEHICLES.length} vehicles, ${PORTER_ADDONS.length} add-ons`);
   console.log(`Seeded rides: ${RIDE_TYPES.length} ride types`);
-  console.log(
-    `Seeded repair: ${REPAIR_CATEGORIES.length} categories, ${repairServices} services, promos AC60/LEAK50/PAINT120`,
-  );
 }
 
 main()

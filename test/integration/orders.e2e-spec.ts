@@ -7,9 +7,12 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 /**
- * Orders (chat + tracking) against real MySQL/Redis: the seeded provider
- * chat thread, sending a customer message, the status-derived tracking
- * timeline, order cancellation, and per-user ownership isolation.
+ * Orders (chat + tracking) against real MySQL/Redis: the seeded seller chat
+ * thread, sending a customer message, the status-derived tracking timeline,
+ * order cancellation, and per-user ownership isolation.
+ *
+ * Everything here hangs off an order placed against a listing — the only kind
+ * of order there is.
  */
 describe('Orders — chat & tracking (integration)', () => {
   let mysql: StartedMySqlContainer;
@@ -49,14 +52,14 @@ describe('Orders — chat & tracking (integration)', () => {
     const prisma = app.get<import('@/database/prisma.extension').ExtendedPrismaClient>(PRISMA);
     const auth = app.get(AuthService);
 
-    const [user, admin, booking] = await Promise.all([
+    const [user, admin, order] = await Promise.all([
       prisma.user.findFirst({ where: { phone: '+971500000001' } }),
       prisma.user.findFirst({ where: { phone: '+971500000000' } }),
-      prisma.booking.findUnique({ where: { reference: 'ELK-2026-04921' } }),
+      prisma.adOrder.findUnique({ where: { code: 'ELK-A-SEED1' } }),
     ]);
     userToken = (await auth.issueTokenPair(user!, {})).accessToken;
     adminToken = (await auth.issueTokenPair(admin!, {})).accessToken;
-    orderId = booking!.id;
+    orderId = order!.id;
   });
 
   afterAll(async () => {
@@ -67,7 +70,7 @@ describe('Orders — chat & tracking (integration)', () => {
   const http = (): App => app.getHttpServer();
   const bearer = (t: string) => `Bearer ${t}`;
 
-  it('serves the seeded chat thread with provider contact + 3 messages', async () => {
+  it('serves the seeded chat thread with seller contact + 3 messages', async () => {
     const res = await request(http())
       .get(`/api/v1/orders/${orderId}/chat`)
       .set('Authorization', bearer(userToken))
@@ -75,12 +78,12 @@ describe('Orders — chat & tracking (integration)', () => {
 
     const thread = res.body.data;
     expect(thread).toMatchObject({
-      contactName: 'Royal Shine Cleaning Co.',
+      contactName: 'Demo Provider',
       contactStatus: '● Online · Service Provider',
     });
     expect(thread.contactInitials).toHaveLength(2);
     expect(thread.messages).toHaveLength(3);
-    // first is a provider message → incoming with initials
+    // first is a seller message → incoming with initials
     expect(thread.messages[0]).toMatchObject({ isOutgoing: false });
     expect(thread.messages[0].senderInitials).not.toBeNull();
     // second is the customer → outgoing, no initials
@@ -113,19 +116,22 @@ describe('Orders — chat & tracking (integration)', () => {
       .expect(200);
 
     expect(res.body.data).toMatchObject({
-      orderId: 'ELK-2026-04921',
-      serviceName: 'Deep Cleaning',
-      serviceIcon: '✨',
-      statusLabel: 'Arriving soon',
+      orderId: 'ELK-A-SEED1',
+      serviceName: 'Deep Home Cleaning',
+      serviceIcon: '🧹',
+      statusLabel: 'Work under way',
     });
-    expect(res.body.data.steps).toHaveLength(5);
+    // Four steps, not five: an ad order has no dispatch leg.
+    expect(res.body.data.steps).toHaveLength(4);
     expect(res.body.data.steps.map((s: { status: string }) => s.status)).toEqual([
       'done',
       'done',
       'active',
       'pending',
-      'pending',
     ]);
+    // The buyer picked the address on the map, so the screen gets a pin.
+    expect(res.body.data.lat).toBeCloseTo(12.9352);
+    expect(res.body.data.lng).toBeCloseTo(77.6245);
   });
 
   it("404s another user's order for chat, tracking, and cancel", async () => {
@@ -143,7 +149,22 @@ describe('Orders — chat & tracking (integration)', () => {
       .expect(404);
   });
 
-  it('cancels the order, then reflects CANCELLED in tracking and blocks re-cancel', async () => {
+  it('refuses a buyer cancel once the seller has started work', async () => {
+    // The seeded order is IN_PROGRESS. Sharing the marketplace's transition
+    // rules is what stops this endpoint undoing work already under way.
+    await request(http())
+      .post(`/api/v1/orders/${orderId}/cancel`)
+      .set('Authorization', bearer(userToken))
+      .expect(409);
+  });
+
+  it('cancels an order the seller has not started, then blocks re-cancel', async () => {
+    const prisma = app.get<import('@/database/prisma.extension').ExtendedPrismaClient>(
+      (await import('@/database/prisma.constants')).PRISMA,
+    );
+    const fresh = await prisma.adOrder.findUnique({ where: { code: 'ELK-A-SEED1' } });
+    await prisma.adOrder.update({ where: { id: fresh!.id }, data: { status: 'NEW' } });
+
     await request(http())
       .post(`/api/v1/orders/${orderId}/cancel`)
       .set('Authorization', bearer(userToken))
@@ -153,7 +174,7 @@ describe('Orders — chat & tracking (integration)', () => {
       .get(`/api/v1/orders/${orderId}/tracking`)
       .set('Authorization', bearer(userToken))
       .expect(200);
-    expect(tracking.body.data.statusLabel).toBe('Booking cancelled');
+    expect(tracking.body.data.statusLabel).toBe('Order cancelled');
 
     await request(http())
       .post(`/api/v1/orders/${orderId}/cancel`)

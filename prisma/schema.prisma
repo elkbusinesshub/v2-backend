@@ -49,16 +49,8 @@ model User {
   addresses          Address[]
   adOrdersPlaced     AdOrder[]           @relation("AdOrdersPlaced")
   adOrdersReceived   AdOrder[]           @relation("AdOrdersReceived")
-  bookings           Booking[]
-  stays              Stay[]              @relation("ProviderStays")
-  stayBookings       StayBooking[]
-  stayFavorites      StayFavorite[]
-  rentalCars         RentalCar[]         @relation("ProviderRentalCars")
-  rentalBookings     RentalBooking[]
-  cleanBookings      CleanBooking[]
   porterBookings     PorterBooking[]
   rideBookings       RideBooking[]
-  repairBookings     RepairBooking[]
   reviews            Review[]
   notifications      Notification[]
   deviceTokens       DeviceToken[]
@@ -116,618 +108,6 @@ model Address {
   @@index([userId])
   @@index([deletedAt])
   @@map("addresses")
-}
-
-/// Top-level service category (Cleaning, Laundry, AC Service, ...).
-/// `slug` is the stable natural key used by the seed and deep links.
-model ServiceCategory {
-  id       String @id @default(uuid(7)) @db.Char(36)
-  slug     String @unique
-  name     String
-  icon     String
-  /// ARGB color for the home-grid tile, e.g. 0xFFE0F7F5
-  colorHex Int    @default(4293848814) @db.UnsignedInt
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  services Service[]
-
-  @@map("service_categories")
-}
-
-/// A bookable service in the catalog. Provider / rating / bookings fields are
-/// seeded display values for now — they become relations/aggregates when the
-/// provider and review modules exist.
-model Service {
-  id            String          @id @default(uuid(7)) @db.Char(36)
-  categoryId    String          @db.Char(36)
-  category      ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  slug          String          @unique
-  name          String
-  icon          String
-  badge         String?
-  description   String          @db.Text
-  price         Decimal         @db.Decimal(10, 2)
-  priceUnit     String
-  durationLabel String
-  teamSizeLabel String
-  /// JSON array of strings shown as "What's included"
-  included      Json            @default("[]")
-
-  providerName       String
-  providerExperience String
-  rating             Float  @default(0)
-  reviewCount        Int    @default(0)
-  bookingsLabel      String @default("0")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookings Booking[]
-
-  @@index([categoryId])
-  @@map("services")
-}
-
-enum BookingStatus {
-  CONFIRMED
-  COMPLETED
-  CANCELLED
-}
-
-/// A home-services booking. Money fields are computed server-side from the
-/// service price — the client's total is never trusted. `addressText` is a
-/// snapshot: editing the saved address later must not rewrite history.
-model Booking {
-  id          String        @id @default(uuid(7)) @db.Char(36)
-  /// Human-facing reference shown on the confirmation screen, e.g. ELK-2026-48213
-  reference   String        @unique
-  userId      String        @db.Char(36)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  serviceId   String        @db.Char(36)
-  service     Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  status      BookingStatus @default(CONFIRMED)
-  scheduledAt DateTime
-  addressText String
-  /// Coordinate of `addressText`, so tracking can show the job on a real map.
-  /// Nullable: bookings made before this existed have text only.
-  lat         Float?
-  lng         Float?
-  serviceFee  Decimal       @db.Decimal(10, 2)
-  total       Decimal       @db.Decimal(10, 2)
-  cancelledAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  review       Review?
-  chatMessages ChatMessage[]
-
-  @@index([userId])
-  @@index([serviceId])
-  @@map("bookings")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ELK Stay module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum StayCategoryType {
-  PG_STAY
-  MENS_HOSTEL
-  WOMENS_HOSTEL
-  HOMESTAY
-}
-
-enum StayBookingType {
-  STAY
-  VISIT
-}
-
-enum StayBookingStatus {
-  PENDING
-  VISIT_BOOKED
-  CONFIRMED
-  COMPLETED
-  CANCELLED
-}
-
-/// A property listing (PG, hostel, homestay). Soft-deletable.
-/// Gradient colors are ARGB values like 0xFF1C5044 — they exceed a 4-byte
-/// Int, hence BigInt (serialized to JSON numbers in the mapping layer).
-model Stay {
-  id            String           @id @default(uuid(7)) @db.Char(36)
-  /// stable human key — makes seeding idempotent and URLs debuggable
-  slug          String           @unique
-  providerId    String?          @db.Char(36)
-  provider      User?            @relation("ProviderStays", fields: [providerId], references: [id])
-  name          String
-  categoryType  StayCategoryType
-  badge         String
-  /// display summary shown on cards, e.g. "Single room"
-  roomType      String
-  location      String
-  fullAddress   String
-  /// static until the geo layer computes this from lat/lng + user position
-  distanceKm    Decimal          @db.Decimal(6, 2)
-  latitude      Decimal?         @db.Decimal(9, 6)
-  longitude     Decimal?         @db.Decimal(9, 6)
-  /// starting-from price (min of room options), denormalized for list cards
-  pricePerMonth Int
-  /// denormalized aggregate; reviews module will maintain it later
-  rating        Decimal          @default(0) @db.Decimal(2, 1)
-  isVerified    Boolean          @default(false)
-  description   String           @db.Text
-  gradientStart BigInt
-  gradientEnd   BigInt
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  amenities   StayAmenity[]
-  roomOptions StayRoomOption[]
-  bookings    StayBooking[]
-  favorites   StayFavorite[]
-
-  @@index([categoryType])
-  @@index([providerId])
-  @@index([isVerified])
-  @@index([deletedAt])
-  @@map("stays")
-}
-
-model StayAmenity {
-  id        String @id @default(uuid(7)) @db.Char(36)
-  stayId    String @db.Char(36)
-  stay      Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
-  iconKey   String
-  label     String
-  sortOrder Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([stayId])
-  @@map("stay_amenities")
-}
-
-model StayRoomOption {
-  id            String @id @default(uuid(7)) @db.Char(36)
-  stayId        String @db.Char(36)
-  stay          Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
-  kind          String
-  subtitle      String
-  pricePerMonth Int
-  sortOrder     Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookings StayBooking[]
-
-  @@index([stayId])
-  @@map("stay_room_options")
-}
-
-/// One row per visit request or stay reservation. Money amounts are integers
-/// in the app currency's main unit (matching frontend display). Payment is
-/// recorded inline as a mock/internal charge until the payments module owns
-/// real payment tables. Cancellation is a status, not a delete.
-model StayBooking {
-  id             String            @id @default(uuid(7)) @db.Char(36)
-  /// user-facing reference shown on the success ticket, e.g. ELK-7GK2P
-  code           String            @unique
-  userId         String            @db.Char(36)
-  user           User              @relation(fields: [userId], references: [id])
-  stayId         String            @db.Char(36)
-  stay           Stay              @relation(fields: [stayId], references: [id])
-  roomOptionId   String?           @db.Char(36)
-  roomOption     StayRoomOption?   @relation(fields: [roomOptionId], references: [id])
-  type           StayBookingType
-  status         StayBookingStatus
-  moveInDate     DateTime?         @db.Date
-  durationMonths Int?
-  visitAt        DateTime?
-  rentPerMonth   Int?
-  depositAmount  Int?
-  serviceFee     Int?
-  discountAmount Int               @default(0)
-  couponCode     String?
-  totalPaid      Int?
-  paymentMethod  String?
-  paymentRef     String?
-  paidAt         DateTime?
-  nextDueDate    DateTime?         @db.Date
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([stayId])
-  @@index([roomOptionId])
-  @@index([status])
-  @@map("stay_bookings")
-}
-
-model StayCoupon {
-  id             String  @id @default(uuid(7)) @db.Char(36)
-  code           String  @unique
-  discountAmount Int
-  isActive       Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("stay_coupons")
-}
-
-model StayFavorite {
-  id     String @id @default(uuid(7)) @db.Char(36)
-  userId String @db.Char(36)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stayId String @db.Char(36)
-  stay   Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, stayId])
-  @@index([stayId])
-  @@map("stay_favorites")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Car Rental module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum RentalCarCategory {
-  SEDAN
-  SUV
-  LUXURY
-}
-
-enum RentalType {
-  DAILY
-  WEEKLY
-  MONTHLY
-}
-
-enum RentalFulfilment {
-  PICKUP
-  DELIVERY
-}
-
-enum RentalBookingStatus {
-  CONFIRMED
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
-/// A rentable vehicle. Soft-deletable.
-model RentalCar {
-  id           String            @id @default(uuid(7)) @db.Char(36)
-  slug         String            @unique
-  providerId   String?           @db.Char(36)
-  provider     User?             @relation("ProviderRentalCars", fields: [providerId], references: [id])
-  name         String
-  category     RentalCarCategory
-  /// SVG asset key the app renders, e.g. "rental_sedan"
-  iconKey      String
-  seats        Int
-  transmission String
-  fuel         String
-  /// denormalized aggregate; reviews module will maintain it later
-  rating       Decimal           @default(0) @db.Decimal(2, 1)
-  pricePerDay  Int
-  /// "BEST DEAL" | "PREMIUM" | null — rendered verbatim by the app
-  badge        String?
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  bookings RentalBooking[]
-
-  @@index([category])
-  @@index([providerId])
-  @@index([deletedAt])
-  @@map("rental_cars")
-}
-
-/// Self-pickup branch locations.
-model RentalBranch {
-  id            String @id @default(uuid(7)) @db.Char(36)
-  slug          String @unique
-  name          String
-  address       String
-  /// static display label, e.g. "1.2 km" — becomes computed when geo lands
-  distanceLabel String
-  /// Branch coordinate, so the pickup step can show the branch on a real map.
-  /// Nullable: a branch added before its location is known still lists.
-  lat           Float?
-  lng           Float?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookings RentalBooking[]
-
-  @@map("rental_branches")
-}
-
-/// Add-ons priced per rental day (protection, extra driver, …).
-model RentalExtra {
-  id          String  @id @default(uuid(7)) @db.Char(36)
-  key         String  @unique
-  name        String
-  description String
-  pricePerDay Int
-  isActive    Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookingExtras RentalBookingExtra[]
-
-  @@map("rental_extras")
-}
-
-/// Percentage promo codes for rentals (ELK10 = 10%).
-model RentalPromo {
-  id       String  @id @default(uuid(7)) @db.Char(36)
-  code     String  @unique
-  percent  Int
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("rental_promos")
-}
-
-/// One rental order with a full price snapshot (amounts in ₹). Status flow:
-/// CONFIRMED → ACTIVE (pickup confirmed) → COMPLETED (return confirmed,
-/// late fee applied if overdue); CONFIRMED → CANCELLED (free cancellation
-/// before pickup, mock refund recorded via refundedAt).
-model RentalBooking {
-  id               String           @id @default(uuid(7)) @db.Char(36)
-  /// user-facing reference on the success ticket, e.g. ELK-48213
-  code             String           @unique
-  userId           String           @db.Char(36)
-  user             User             @relation(fields: [userId], references: [id])
-  carId            String           @db.Char(36)
-  car              RentalCar        @relation(fields: [carId], references: [id])
-  rentalType       RentalType
-  fulfilment       RentalFulfilment
-  branchId         String?          @db.Char(36)
-  branch           RentalBranch?    @relation(fields: [branchId], references: [id])
-  deliveryAddress  String?
-  deliveryBuilding String?
-  deliveryNotes    String?
-  pickupAt         DateTime
-  returnAt         DateTime
-  actualPickupAt   DateTime?
-  actualReturnAt   DateTime?
-
-  days          Int
-  dailyRate     Int
-  rentalTotal   Int
-  deliveryFee   Int
-  extrasTotal   Int
-  subtotal      Int
-  promoCode     String?
-  promoDiscount Int     @default(0)
-  vatAmount     Int
-  totalAmount   Int
-  lateFee       Int     @default(0)
-
-  status        RentalBookingStatus
-  paymentMethod String
-  paymentRef    String?
-  paidAt        DateTime?
-  refundedAt    DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  extras RentalBookingExtra[]
-
-  @@index([userId])
-  @@index([carId, status])
-  @@index([branchId])
-  @@index([status])
-  @@map("rental_bookings")
-}
-
-/// Extras chosen on a booking, with the per-day price snapshotted at booking
-/// time — later catalog price changes must not rewrite history.
-model RentalBookingExtra {
-  id          String        @id @default(uuid(7)) @db.Char(36)
-  bookingId   String        @db.Char(36)
-  booking     RentalBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  extraId     String        @db.Char(36)
-  extra       RentalExtra   @relation(fields: [extraId], references: [id])
-  name        String
-  pricePerDay Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([bookingId, extraId])
-  @@index([extraId])
-  @@map("rental_booking_extras")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ELK Clean module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum CleanBookingStatus {
-  CONFIRMED
-  COMPLETED
-  CANCELLED
-}
-
-enum CleanPromoKind {
-  PERCENT
-  FIXED
-}
-
-/// A cleaning vertical tile on the ELK Clean home grid (Home Cleaning,
-/// Water Tank, Sofa & Upholstery, ...).
-model CleanCategory {
-  id        String  @id @default(uuid(7)) @db.Char(36)
-  /// stable wire id used by the app's tiles, e.g. "tnk"
-  slug      String  @unique
-  /// SKU prefix for services in this category, e.g. "TNK"
-  code      String
-  label     String
-  blurb     String
-  /// SVG asset key the app renders, e.g. "ic_water_tank"
-  iconKey   String
-  /// yellow tile badge, e.g. "40% Off"
-  badge     String?
-  /// featured (starred) tile on the home grid
-  star      Boolean @default(false)
-  sortOrder Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  services CleanService[]
-
-  @@map("clean_categories")
-}
-
-/// A bookable cleaning service. Prices are integer ₹per unit (per seat /
-/// per room / per kg — the unit lives in the name & duration labels).
-/// Deactivation (isActive) is the retirement mechanism — history keeps
-/// snapshots, so no soft delete needed.
-model CleanService {
-  id            String        @id @default(uuid(7)) @db.Char(36)
-  /// human SKU shown across the app, e.g. "CLN-01"
-  code          String        @unique
-  categoryId    String        @db.Char(36)
-  category      CleanCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name          String
-  description   String
-  price         Int
-  durationLabel String
-  /// "Popular" | "Featured" | null — list-card ribbon
-  tag           String?
-  /// JSON array of strings — the "what's included" checklist
-  checklist     Json
-  /// JSON array of strings — process timeline (water-tank flow); null when N/A
-  steps         Json?
-  isActive      Boolean       @default(true)
-  sortOrder     Int           @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookingItems CleanBookingItem[]
-
-  @@index([categoryId])
-  @@map("clean_services")
-}
-
-/// Home-screen offer card (display content; the promo code on it is
-/// redeemable via CleanPromo).
-model CleanOffer {
-  id            String  @id @default(uuid(7)) @db.Char(36)
-  title         String
-  /// e.g. "Up to 60% off" / "₹70 off"
-  discountLabel String
-  promoCode     String
-  /// speed chip, e.g. "60" + "MINUTES" or "Same" + "DAY"
-  timeLabel     String
-  timeUnit      String
-  categoryLabel String
-  iconKey       String
-  sortOrder     Int     @default(0)
-  isActive      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("clean_offers")
-}
-
-/// Redeemable promo codes for cleans — percentage (SOFA50 = 50%) or fixed
-/// ₹amount (DEEP70 = ₹70 off the service subtotal).
-model CleanPromo {
-  id       String         @id @default(uuid(7)) @db.Char(36)
-  code     String         @unique
-  kind     CleanPromoKind
-  value    Int
-  isActive Boolean        @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("clean_promos")
-}
-
-/// One cleaning order (multi-service cart). Prices are snapshotted at
-/// booking time; the address is a text snapshot so later edits to the saved
-/// address never rewrite history. Payment is a mock/internal charge until
-/// the payments module exists. Cancellation is a status, not a delete.
-model CleanBooking {
-  id             String             @id @default(uuid(7)) @db.Char(36)
-  /// user-facing reference on the done screen, e.g. ELC-3391
-  code           String             @unique
-  userId         String             @db.Char(36)
-  user           User               @relation(fields: [userId], references: [id])
-  status         CleanBookingStatus
-  scheduledDate  DateTime           @db.Date
-  /// arrival-window start, e.g. "10:00"
-  timeSlot       String
-  /// scheduledDate + timeSlot in Gulf time — drives the 2h cancellation cutoff
-  scheduledAt    DateTime
-  addressLabel   String
-  addressText    String
-  subtotal       Int
-  supplyFee      Int
-  promoCode      String?
-  discountAmount Int                @default(0)
-  totalAmount    Int
-  paymentMethod  String
-  paymentRef     String?
-  paidAt         DateTime?
-  cancelledAt    DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  items CleanBookingItem[]
-
-  @@index([userId])
-  @@index([status])
-  @@map("clean_bookings")
-}
-
-/// A cart line on a booking, with the unit price snapshotted at booking
-/// time — later catalog price changes must not rewrite history.
-model CleanBookingItem {
-  id        String       @id @default(uuid(7)) @db.Char(36)
-  bookingId String       @db.Char(36)
-  booking   CleanBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  serviceId String       @db.Char(36)
-  service   CleanService @relation(fields: [serviceId], references: [id])
-  name      String
-  unitPrice Int
-  quantity  Int
-  lineTotal Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([bookingId])
-  @@index([serviceId])
-  @@map("clean_booking_items")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -943,166 +323,6 @@ model RideBooking {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  ELK Rep (repair) module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum RepairBookingStatus {
-  CONFIRMED
-  COMPLETED
-  CANCELLED
-}
-
-enum RepairPromoKind {
-  PERCENT
-  FIXED
-}
-
-/// A trade vertical on the ELK Rep home grid (AC & Cooling, Plumbing, ...).
-model RepairCategory {
-  id        String @id @default(uuid(7)) @db.Char(36)
-  /// stable wire id used by the app's tiles, e.g. "ac"
-  slug      String @unique
-  /// SKU prefix for services in this category, e.g. "AC"
-  code      String
-  label     String
-  blurb     String
-  /// SVG asset key the app renders, e.g. "ic_ac"
-  iconKey   String
-  sortOrder Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  services RepairService[]
-
-  @@map("repair_categories")
-}
-
-/// A bookable repair job. Prices are integer ₹per job. The "what's
-/// included" checklist is identical static copy across every service in the
-/// app (inspection, labour, parts, clean-up, warranty) — presentational
-/// text, not per-service data, so it isn't modeled as a column.
-model RepairService {
-  id            String         @id @default(uuid(7)) @db.Char(36)
-  /// human SKU shown across the app, e.g. "AC-01"
-  code          String         @unique
-  categoryId    String         @db.Char(36)
-  category      RepairCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name          String
-  description   String
-  price         Int
-  durationLabel String
-  /// "Popular" | "Diagnostic" | null — list-card ribbon
-  tag           String?
-  isActive      Boolean        @default(true)
-  sortOrder     Int            @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookingItems RepairBookingItem[]
-
-  @@index([categoryId])
-  @@map("repair_services")
-}
-
-/// Home-screen offer card (display content; the promo code on it is
-/// redeemable via RepairPromo).
-model RepairOffer {
-  id            String  @id @default(uuid(7)) @db.Char(36)
-  title         String
-  /// e.g. "Up to 60% off" / "₹120 off"
-  discountLabel String
-  promoCode     String
-  /// speed chip, e.g. "60" + "MINUTES" or "Same" + "DAY"
-  timeLabel     String
-  timeUnit      String
-  categoryLabel String
-  iconKey       String
-  sortOrder     Int     @default(0)
-  isActive      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("repair_offers")
-}
-
-/// Redeemable promo codes for repairs — percentage (AC60 = 60%) or fixed
-/// ₹amount (PAINT120 = ₹120 off the service subtotal).
-model RepairPromo {
-  id       String          @id @default(uuid(7)) @db.Char(36)
-  code     String          @unique
-  kind     RepairPromoKind
-  value    Int
-  isActive Boolean         @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("repair_promos")
-}
-
-/// One repair work order (multi-service cart). Prices are snapshotted at
-/// booking time; the address is a text snapshot so later edits to the saved
-/// address never rewrite history. Payment is a mock/internal charge until
-/// the payments module exists. Cancellation is a status, not a delete.
-model RepairBooking {
-  id             String              @id @default(uuid(7)) @db.Char(36)
-  /// user-facing reference on the done screen, e.g. ELK-2487
-  code           String              @unique
-  userId         String              @db.Char(36)
-  user           User                @relation(fields: [userId], references: [id])
-  status         RepairBookingStatus
-  scheduledDate  DateTime            @db.Date
-  /// arrival-window start, e.g. "10:00"
-  timeSlot       String
-  /// scheduledDate + timeSlot in Gulf time — drives the cancellation cutoff
-  scheduledAt    DateTime
-  addressLabel   String
-  addressText    String
-  subtotal       Int
-  visitFee       Int
-  promoCode      String?
-  discountAmount Int                 @default(0)
-  totalAmount    Int
-  paymentMethod  String
-  paymentRef     String?
-  paidAt         DateTime?
-  cancelledAt    DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  items RepairBookingItem[]
-
-  @@index([userId])
-  @@index([status])
-  @@map("repair_bookings")
-}
-
-/// A cart line on a booking, with the unit price snapshotted at booking
-/// time — later catalog price changes must not rewrite history.
-model RepairBookingItem {
-  id        String        @id @default(uuid(7)) @db.Char(36)
-  bookingId String        @db.Char(36)
-  booking   RepairBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  serviceId String        @db.Char(36)
-  service   RepairService @relation(fields: [serviceId], references: [id])
-  name      String
-  unitPrice Int
-  quantity  Int
-  lineTotal Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([bookingId])
-  @@index([serviceId])
-  @@map("repair_booking_items")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
 //  Reviews module
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1113,12 +333,9 @@ model RepairBookingItem {
 model Review {
   id String @id @default(uuid(7)) @db.Char(36)
 
-  /// One review per job, whichever kind of job it was. Both are nullable and
-  /// both unique: exactly one is set, and neither can be reviewed twice.
-  bookingId String?  @unique @db.Char(36)
-  booking   Booking? @relation(fields: [bookingId], references: [id])
-  adOrderId String?  @unique @db.Char(36)
-  adOrder   AdOrder? @relation(fields: [adOrderId], references: [id])
+  /// One review per order — unique, so an order cannot be rated twice.
+  adOrderId String  @unique @db.Char(36)
+  adOrder   AdOrder @relation(fields: [adOrderId], references: [id])
 
   userId  String @db.Char(36)
   user    User   @relation(fields: [userId], references: [id])
@@ -1254,14 +471,10 @@ model WalletTransaction {
 model ChatMessage {
   id String @id @default(uuid(7)) @db.Char(36)
 
-  /// A thread hangs off exactly one of these. Both are nullable because a
-  /// message belongs either to a catalogue booking or to an order placed
-  /// against a listing — never both, and never neither. MySQL cannot express
-  /// that as a constraint, so the service is what enforces it.
-  bookingId String?  @db.Char(36)
-  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  adOrderId String?  @db.Char(36)
-  adOrder   AdOrder? @relation(fields: [adOrderId], references: [id], onDelete: Cascade)
+  /// The order this thread belongs to. Deleting the order takes its messages
+  /// with it — a thread with no job on the other end is not worth keeping.
+  adOrderId String  @db.Char(36)
+  adOrder   AdOrder @relation(fields: [adOrderId], references: [id], onDelete: Cascade)
 
   fromProvider Boolean
   text         String  @db.Text
@@ -1269,7 +482,6 @@ model ChatMessage {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([bookingId])
   @@index([adOrderId])
   @@map("chat_messages")
 }
@@ -1282,12 +494,6 @@ enum ProviderStatus {
   PENDING
   VERIFIED
   REJECTED
-}
-
-enum ProviderRequestStatus {
-  PENDING
-  ACCEPTED
-  DECLINED
 }
 
 /// A service provider's business profile. Created by registration (PENDING),
@@ -1308,48 +514,14 @@ model ProviderProfile {
   status               ProviderStatus @default(PENDING)
   isAvailable          Boolean        @default(false)
 
-  rating        Decimal @default(0) @db.Decimal(2, 1)
-  reviewCount   Int     @default(0)
-  totalEarnings Decimal @default(0) @db.Decimal(10, 2)
-  completedJobs Int     @default(0)
-  avgPerJob     Decimal @default(0) @db.Decimal(10, 2)
   /// Mon→Sun availability, e.g. [true,true,false,true,true,false,false]
-  scheduleDays  Json    @default("[true,true,true,true,true,false,false]")
+  scheduleDays Json @default("[true,true,true,true,true,false,false]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  requests ProviderRequest[]
 
   @@index([status])
   @@map("provider_profiles")
-}
-
-/// A job request directed at a provider. Accept/decline are real status
-/// transitions (the dashboard's respond action). Not yet linked to a
-/// customer `Booking` — customer/service are snapshot display strings until
-/// the dispatch engine wires requests to real bookings.
-model ProviderRequest {
-  id           String                @id @default(uuid(7)) @db.Char(36)
-  providerId   String                @db.Char(36)
-  provider     ProviderProfile       @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  serviceName  String
-  customerName String
-  location     String
-  /// display label, e.g. "Today 12:00 PM"
-  timeLabel    String
-  amount       Decimal               @db.Decimal(10, 2)
-  status       ProviderRequestStatus @default(PENDING)
-  /// icon + tile color for the earnings transaction row this becomes.
-  /// No default, for the same reason as `Ad.icon` — every caller supplies one.
-  icon         String
-  colorHex     Int                   @default(4285668597) @db.UnsignedInt
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([providerId, status])
-  @@map("provider_requests")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1408,8 +580,13 @@ model AdOrder {
   depositAmount  Decimal?  @db.Decimal(10, 2)
 
   addressText  String
+  /// Coordinate of `addressText`, when the buyer picked it on the map rather
+  /// than typing it. Null for a hand-typed address; the tracking screen then
+  /// shows the address without a map instead of centring on a guess.
+  lat          Decimal? @db.Decimal(10, 7)
+  lng          Decimal? @db.Decimal(10, 7)
   contactPhone String
-  note         String? @db.Text
+  note         String?  @db.Text
 
   acceptedAt  DateTime?
   completedAt DateTime?
@@ -1482,6 +659,13 @@ model Ad {
   /// Maintained by the view/wishlist writes; never trusted from the client.
   viewCount     Int @default(0)
   wishlistCount Int @default(0)
+
+  /// Denormalised from the reviews on this listing's completed orders, so a
+  /// card can show a rating without aggregating on every read. Recomputed
+  /// whole on each new review rather than nudged, so it cannot drift.
+  /// Zero count means "no ratings yet", which the app shows as "New".
+  ratingAverage Decimal @default(0) @db.Decimal(2, 1)
+  ratingCount   Int     @default(0)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

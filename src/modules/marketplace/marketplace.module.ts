@@ -11,7 +11,8 @@ import { MarketplaceService } from './marketplace.service';
   imports: [StorageModule, NotificationsModule],
   controllers: [MarketplaceController],
   providers: [MarketplaceService, MarketplaceRepository, AdOrdersService, AdOrdersRepository],
-  // exported so the home feed can embed the same ranked list
-  exports: [MarketplaceService],
+  // MarketplaceService so the home feed can embed the same ranked list;
+  // AdOrdersService so the orders module's cancel shares its transition rules
+  exports: [MarketplaceService, AdOrdersService],
 })
 export class MarketplaceModule {}
