@@ -18,8 +18,6 @@ import { JobsModule } from '@/jobs/jobs.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
 import { AppConfigModule } from '@/modules/config/config.module';
-import { ElkCleanModule } from '@/modules/elkclean/elkclean.module';
-import { ElkStayModule } from '@/modules/elkstay/elkstay.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
@@ -31,8 +29,6 @@ import { PlacesModule } from '@/modules/places/places.module';
 import { PorterModule } from '@/modules/porter/porter.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProviderModule } from '@/modules/provider/provider.module';
-import { ElkRepModule } from '@/modules/repair/repair.module';
-import { RentalsModule } from '@/modules/rentals/rentals.module';
 import { RidesModule } from '@/modules/rides/rides.module';
 import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { ServicesModule } from '@/modules/services/services.module';
@@ -123,12 +119,8 @@ import { StorageModule } from '@/storage/storage.module';
     ServicesModule,
     HomeModule,
     BookingsModule,
-    ElkStayModule,
-    RentalsModule,
-    ElkCleanModule,
     PorterModule,
     RidesModule,
-    ElkRepModule,
     ReviewsModule,
     NotificationsModule,
     OffersModule,
