@@ -11,6 +11,19 @@ import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 import { HEARTBEAT_STALE_SECONDS } from './dispatch.constants';
 import { boundingBox, distanceKm } from './geo';
 
+/**
+ * Midnight this morning.
+ *
+ * A licence is valid *through* the day it expires, so the comparison is
+ * against the start of today rather than this instant — otherwise a partner
+ * would be cut off at whatever time of day the column happens to hold.
+ */
+function startOfToday(): Date {
+  const at = new Date();
+  at.setHours(0, 0, 0, 0);
+  return at;
+}
+
 /** A partner's profile alongside the name shown to whoever they are serving. */
 export type DriverWithName = DriverProfile & { user: { name: string | null } };
 
@@ -68,6 +81,14 @@ export class DispatchRepository {
    * Excludes anyone already on a job, and anyone whose heartbeat has gone
    * quiet — an app killed mid-shift never gets to mark itself offline, and
    * dispatching to it would strand the rider.
+   *
+   * Also excludes anyone whose licence has run out, or who has none on file.
+   * This is the one place work is handed out, so it is the only place the
+   * check cannot be walked around: a partner who went on duty yesterday with a
+   * licence expiring at midnight stops being offered work this morning without
+   * anything having to notice and log them out. A null expiry is a profile
+   * from before documents were required — it has proved nothing, so it is
+   * treated the same as expired.
    */
   async findNearby(
     service: DriverService,
@@ -84,6 +105,7 @@ export class DispatchRepository {
         isOnline: true,
         activeBookingId: null,
         lastSeenAt: { gte: freshSince },
+        licenceExpiry: { gte: startOfToday() },
         lat: { gte: box.minLat, lte: box.maxLat },
         lng: { gte: box.minLng, lte: box.maxLng },
         ...(options.vehicleSlug ? { vehicleSlug: options.vehicleSlug } : {}),

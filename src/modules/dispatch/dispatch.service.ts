@@ -163,9 +163,16 @@ export class DispatchService {
    * Going offline never abandons a job already accepted — `activeBookingId` is
    * what marks a partner busy, and it is cleared by finishing or cancelling the
    * trip, not by a toggle.
+   *
+   * Going *on* duty with a lapsed licence is refused. Dispatch already skips
+   * such a partner, so without this they would sit online all day being
+   * offered nothing and never learn why.
    */
   async setOnline(user: AuthUser, dto: SetOnlineDto): Promise<Record<string, unknown>> {
     const profile = await this.assertProfile(user.id, dto.service);
+    if (dto.isOnline) {
+      this.assertLicenceStillValid(profile);
+    }
     const updated = await this.drivers.update(profile.id, {
       isOnline: dto.isOnline,
       // A fix taken as they go on duty makes them dispatchable immediately,
@@ -175,6 +182,33 @@ export class DispatchService {
         : {}),
     });
     return this.toProfileJson(updated);
+  }
+
+  /**
+   * Refuses duty to a partner whose licence has run out, or who has none.
+   *
+   * Compared against the start of today, not this instant: a licence is valid
+   * through the day it expires, and cutting somebody off at whatever time the
+   * column happens to hold would be arbitrary.
+   */
+  private assertLicenceStillValid(profile: DriverProfile): void {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    if (!profile.licenceExpiry) {
+      throw new DomainException(
+        HttpStatus.FORBIDDEN,
+        'LICENCE_MISSING',
+        'Add your driving licence details before going on duty',
+      );
+    }
+    if (profile.licenceExpiry < startOfToday) {
+      throw new DomainException(
+        HttpStatus.FORBIDDEN,
+        'LICENCE_EXPIRED',
+        'Your driving licence has expired — register again with a current one',
+      );
+    }
   }
 
   /**

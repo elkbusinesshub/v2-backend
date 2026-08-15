@@ -5,6 +5,7 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
+import { DomainException } from '@/common/errors/domain.exceptions';
 import { DispatchGateway } from '@/modules/dispatch/dispatch.gateway';
 import { DispatchRepository } from '@/modules/dispatch/dispatch.repository';
 import { DispatchService } from '@/modules/dispatch/dispatch.service';
@@ -36,6 +37,32 @@ const registration = {
   licenceBackKey: 'provider-docs/2026/back.jpg',
   vehicleDocKey: 'provider-docs/2026/rc.jpg',
 };
+
+/** A stored profile, as the repository hands it back. */
+function profile(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'dp-1',
+    userId: 'u-1',
+    service: DriverService.RIDE,
+    vehicleSlug: 'auto',
+    vehicleLabel: 'Bajaj RE · Yellow',
+    plateNumber: 'KA05TA1111',
+    fullName: 'Ravi Kumar',
+    dateOfBirth: new Date('1992-04-17'),
+    licenceNumber: 'KA0520110001234',
+    licenceExpiry: new Date(yearsFromNow(5)),
+    licenceFrontKey: 'k1',
+    licenceBackKey: 'k2',
+    vehicleDocKey: 'k3',
+    verification: DriverVerification.VERIFIED,
+    isOnline: false,
+    lat: null,
+    lng: null,
+    lastSeenAt: null,
+    activeBookingId: null,
+    ...overrides,
+  };
+}
 
 describe('DispatchService.register', () => {
   let service: DispatchService;
@@ -203,5 +230,78 @@ describe('DispatchService.register', () => {
     });
     expect(profile).not.toHaveProperty('licenceFrontKey');
     expect(profile).not.toHaveProperty('vehicleDocKey');
+  });
+});
+
+describe('DispatchService.setOnline', () => {
+  let service: DispatchService;
+  let drivers: jest.Mocked<DispatchRepository>;
+
+  /** Builds the service around one stored profile. */
+  async function build(stored: ReturnType<typeof profile>) {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        DispatchService,
+        {
+          provide: DispatchRepository,
+          useValue: {
+            findProfile: jest.fn().mockResolvedValue({ ...stored, user: { name: 'Ravi K' } }),
+            update: jest
+              .fn()
+              .mockImplementation((_id, data) => Promise.resolve({ ...stored, ...data })),
+          },
+        },
+        { provide: DispatchGateway, useValue: {} },
+        { provide: RideTypesRepository, useValue: {} },
+        { provide: PorterCatalogRepository, useValue: {} },
+      ],
+    }).compile();
+    service = moduleRef.get(DispatchService);
+    drivers = moduleRef.get(DispatchRepository);
+  }
+
+  const goOnline = { service: DriverService.RIDE, isOnline: true };
+
+  it('lets a partner with a current licence go on duty', async () => {
+    await build(profile());
+
+    const result = await service.setOnline(user, goOnline);
+
+    expect(result).toMatchObject({ isOnline: true });
+  });
+
+  it('refuses duty once the licence has run out', async () => {
+    // Dispatch already skips them; without this they would sit online all day
+    // being offered nothing and never learn why.
+    await build(profile({ licenceExpiry: new Date(yearsAgo(1)) }));
+
+    await expect(service.setOnline(user, goOnline)).rejects.toBeInstanceOf(DomainException);
+    expect(drivers.update).not.toHaveBeenCalled();
+  });
+
+  it('counts a licence expiring today as still valid', async () => {
+    // Valid *through* the day it expires — cutting somebody off at whatever
+    // time the column holds would be arbitrary.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    await build(profile({ licenceExpiry: today }));
+
+    await expect(service.setOnline(user, goOnline)).resolves.toMatchObject({ isOnline: true });
+  });
+
+  it('refuses duty to a profile with no licence on file', async () => {
+    // Registered before documents were required: it has proved nothing.
+    await build(profile({ licenceExpiry: null }));
+
+    await expect(service.setOnline(user, goOnline)).rejects.toBeInstanceOf(DomainException);
+  });
+
+  it('still lets an expired partner go off duty', async () => {
+    // Refusing this would strand somebody online with no way back.
+    await build(profile({ licenceExpiry: new Date(yearsAgo(1)), isOnline: true }));
+
+    await expect(
+      service.setOnline(user, { service: DriverService.RIDE, isOnline: false }),
+    ).resolves.toMatchObject({ isOnline: false });
   });
 });
