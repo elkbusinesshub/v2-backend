@@ -28,6 +28,70 @@ export class RideBookingsRepository {
     return this.db.rideBooking.findFirst({ where: { id, userId }, include: WITH_TYPE });
   }
 
+  /** Unscoped — for the partner's side, which is not the rider. */
+  async findById(id: string): Promise<RideBookingWithType | null> {
+    return this.db.rideBooking.findFirst({ where: { id }, include: WITH_TYPE });
+  }
+
+  /** The trip a partner is working, if any. */
+  async findForDriver(driverId: string): Promise<RideBookingWithType | null> {
+    return this.db.rideBooking.findFirst({
+      where: {
+        driverId,
+        status: { in: [RideBookingStatus.CONFIRMED, RideBookingStatus.IN_PROGRESS] },
+      },
+      include: WITH_TYPE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Assigns the partner who accepted — but only while the trip is still on
+   * offer, so the second partner through the door changes nothing.
+   */
+  async assignDriver(
+    id: string,
+    driver: {
+      driverId: string;
+      driverName: string;
+      vehicleLabel: string;
+      plateNumber: string;
+      otpCode: string;
+    },
+  ): Promise<boolean> {
+    const result = await this.db.rideBooking.updateMany({
+      where: { id, status: RideBookingStatus.SEARCHING },
+      data: { ...driver, status: RideBookingStatus.CONFIRMED },
+    });
+    return result.count === 1;
+  }
+
+  /** Nobody took it. Only meaningful while it was still on offer. */
+  async markNoDrivers(id: string): Promise<boolean> {
+    const result = await this.db.rideBooking.updateMany({
+      where: { id, status: RideBookingStatus.SEARCHING },
+      data: { status: RideBookingStatus.NO_DRIVERS },
+    });
+    return result.count === 1;
+  }
+
+  /** The partner starts the trip, having been given the rider's code. */
+  async startByDriver(id: string, driverId: string): Promise<boolean> {
+    const result = await this.db.rideBooking.updateMany({
+      where: { id, driverId, status: RideBookingStatus.CONFIRMED },
+      data: { status: RideBookingStatus.IN_PROGRESS, startedAt: new Date() },
+    });
+    return result.count === 1;
+  }
+
+  async completeByDriver(id: string, driverId: string): Promise<boolean> {
+    const result = await this.db.rideBooking.updateMany({
+      where: { id, driverId, status: RideBookingStatus.IN_PROGRESS },
+      data: { status: RideBookingStatus.COMPLETED, completedAt: new Date() },
+    });
+    return result.count === 1;
+  }
+
   /**
    * Atomic status transitions — each succeeds only from the expected
    * previous status, so a double-tap or a race can never double-apply.
@@ -50,7 +114,13 @@ export class RideBookingsRepository {
 
   async cancel(id: string, userId: string): Promise<boolean> {
     const result = await this.db.rideBooking.updateMany({
-      where: { id, userId, status: RideBookingStatus.CONFIRMED },
+      // Also cancellable while still searching: a rider who gives up waiting
+      // must not be stuck until the offer window closes on its own.
+      where: {
+        id,
+        userId,
+        status: { in: [RideBookingStatus.SEARCHING, RideBookingStatus.CONFIRMED] },
+      },
       data: { status: RideBookingStatus.CANCELLED, cancelledAt: new Date() },
     });
     return result.count === 1;

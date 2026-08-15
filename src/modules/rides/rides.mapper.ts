@@ -33,11 +33,16 @@ export function toRideBookingJson(
     dropAddress: booking.dropAddress,
     distanceKm: Number(booking.distanceKm),
     etaMinutes: booking.etaMinutes,
-    driver: {
-      name: booking.driverName,
-      vehicle: booking.vehicleLabel,
-      plateNumber: booking.plateNumber,
-    },
+    // Null while the trip is still out on offer: there is genuinely nobody
+    // yet, and an object of nulls would render as a driver card with blanks.
+    driver:
+      booking.driverName === null
+        ? null
+        : {
+            name: booking.driverName,
+            vehicle: booking.vehicleLabel,
+            plateNumber: booking.plateNumber,
+          },
     // the OTP is only meaningful before the trip starts — hidden afterwards
     otpCode: booking.startedAt ? null : booking.otpCode,
     breakdown: {

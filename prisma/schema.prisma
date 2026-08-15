@@ -51,6 +51,7 @@ model User {
   adOrdersReceived   AdOrder[]           @relation("AdOrdersReceived")
   porterBookings     PorterBooking[]
   rideBookings       RideBooking[]
+  driverProfiles     DriverProfile[]
   reviews            Review[]
   notifications      Notification[]
   deviceTokens       DeviceToken[]
@@ -115,6 +116,11 @@ model Address {
 // ═════════════════════════════════════════════════════════════════════════════
 
 enum PorterBookingStatus {
+  /// Broadcast to nearby partners; nobody has taken it yet.
+  SEARCHING
+  /// Nobody accepted before the offer window closed.
+  NO_DRIVERS
+  /// A partner accepted and is on the way.
   CONFIRMED
   PICKED_UP
   DELIVERED
@@ -196,6 +202,15 @@ model PorterBooking {
   vatAmount   Decimal @db.Decimal(10, 2)
   totalAmount Decimal @db.Decimal(10, 2)
 
+  /// The partner who accepted, once one has.
+  driverId     String?        @db.Char(36)
+  driver       DriverProfile? @relation(fields: [driverId], references: [id])
+  driverName   String?
+  vehicleLabel String?
+  plateNumber  String?
+  /// Handed over at pickup, proving the partner is really there.
+  otpCode      String?
+
   paymentMethod String
   paymentRef    String?
   paidAt        DateTime?
@@ -238,6 +253,11 @@ model PorterBookingAddon {
 // ═════════════════════════════════════════════════════════════════════════════
 
 enum RideBookingStatus {
+  /// Broadcast to nearby drivers; nobody has taken it yet.
+  SEARCHING
+  /// Nobody accepted before the offer window closed.
+  NO_DRIVERS
+  /// A driver accepted and is on the way.
   CONFIRMED
   IN_PROGRESS
   COMPLETED
@@ -296,10 +316,18 @@ model RideBooking {
   distanceKm    Decimal @db.Decimal(6, 2)
   etaMinutes    Int
 
-  driverName   String
-  vehicleLabel String
-  plateNumber  String
-  otpCode      String
+  /// The partner who accepted, once one has. Null while SEARCHING and for a
+  /// request nobody took.
+  driverId     String?        @db.Char(36)
+  driver       DriverProfile? @relation(fields: [driverId], references: [id])
+  /// Snapshotted at assignment: a partner may later change vehicle or plate,
+  /// and a past trip must still show who actually drove it.
+  driverName   String?
+  vehicleLabel String?
+  plateNumber  String?
+  /// Handed to the rider at pickup, so a driver cannot start a trip they are
+  /// not actually at. Null until a driver is assigned.
+  otpCode      String?
 
   fare            Decimal @db.Decimal(10, 2)
   cancellationFee Decimal @db.Decimal(10, 2)
@@ -319,7 +347,70 @@ model RideBooking {
   @@index([userId])
   @@index([rideTypeId])
   @@index([status])
+  @@index([driverId])
   @@map("ride_bookings")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Dispatch (drivers & delivery partners)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Which dispatch product a driver signed up to run.
+///
+/// Separate profiles rather than one with two flags: the same person may ride
+/// passengers on a bike and also deliver parcels, but they are online for one
+/// at a time, and each carries its own vehicle class.
+enum DriverService {
+  RIDE
+  PORTER
+}
+
+/// A driver or delivery partner, and where they are right now.
+///
+/// Position lives on this row rather than in a history table: dispatch and the
+/// rider's map only ever ask "where is this partner now", and keeping a
+/// breadcrumb trail of every heartbeat would grow without bound for data
+/// nobody reads. A trail earns its own table the day a replay screen exists.
+model DriverProfile {
+  id      String        @id @default(uuid(7)) @db.Char(36)
+  userId  String        @db.Char(36)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service DriverService
+
+  /// `RideType.slug` or `PorterVehicle.slug` — the class this partner runs.
+  /// Not a foreign key: the two catalogues are separate tables and the slug is
+  /// the stable id both the app and dispatch already match on.
+  vehicleSlug  String
+  /// "Honda Activa · White" — shown to the rider once assigned.
+  vehicleLabel String
+  plateNumber  String
+
+  /// Only an online partner is offered work. Going offline does not abandon a
+  /// trip already accepted; `activeBookingId` is what says they are busy.
+  isOnline Boolean @default(false)
+
+  /// Last known position, refreshed by the partner's app while online. Null
+  /// before the first heartbeat — such a partner is not dispatchable.
+  lat        Decimal?  @db.Decimal(10, 7)
+  lng        Decimal?  @db.Decimal(10, 7)
+  lastSeenAt DateTime?
+
+  /// The trip or job in hand. Set while working so dispatch skips them, and
+  /// cleared on completion. Deliberately not a foreign key: it points at one
+  /// of two tables depending on `service`.
+  activeBookingId String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rideBookings   RideBooking[]
+  porterBookings PorterBooking[]
+
+  /// One profile per person per product.
+  @@unique([userId, service])
+  /// The dispatch lookup: online partners of one class, for one product.
+  @@index([service, vehicleSlug, isOnline])
+  @@map("driver_profiles")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

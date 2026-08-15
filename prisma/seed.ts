@@ -768,17 +768,25 @@ async function main(): Promise<void> {
   const demoUsers = await seedDemoUsers();
   if (demoUsers > 0) console.log(`Seeded ${demoUsers} demo users (SEED_DEMO_USERS=true)`);
 
+  // Catalogue rows no seller ever creates: ride classes, porter vehicles and
+  // promo banners are configuration, not somebody's listing. They must come
+  // back after a wipe or the taxi and porter screens have nothing to show.
   await seedPorter();
   await seedRides();
   await seedOffers();
 
-  const adCount = await seedAds(await seedSellerId());
-  await seedDemoRecords();
+  // Listings are a seller's work, so a database cleared on purpose can ask to
+  // stay empty and still get the configuration above.
+  const withListings = process.env.SEED_LISTINGS !== 'false';
+  const adCount = withListings ? await seedAds(await seedSellerId()) : 0;
+  if (withListings) await seedDemoRecords();
 
   console.log(
-    adCount > 0
-      ? `Seeded marketplace: ${adCount} listings (zero engagement — counts and ratings are earned)`
-      : 'Skipped marketplace listings: no user to own them yet',
+    !withListings
+      ? 'Skipped marketplace listings (SEED_LISTINGS=false)'
+      : adCount > 0
+        ? `Seeded marketplace: ${adCount} listings (zero engagement — counts and ratings are earned)`
+        : 'Skipped marketplace listings: no user to own them yet',
   );
   console.log(`Seeded offers: ${OFFERS.length} banners`);
   console.log(`Seeded porter: ${PORTER_VEHICLES.length} vehicles, ${PORTER_ADDONS.length} add-ons`);

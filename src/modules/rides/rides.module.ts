@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DispatchModule } from '@/modules/dispatch/dispatch.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
 import { RideBookingsRepository } from './ride-bookings.repository';
 import { RideTypesRepository } from './ride-types.repository';
@@ -6,7 +7,7 @@ import { RidesController } from './rides.controller';
 import { RidesService } from './rides.service';
 
 @Module({
-  imports: [LocationsModule],
+  imports: [LocationsModule, DispatchModule],
   controllers: [RidesController],
   providers: [RidesService, RideTypesRepository, RideBookingsRepository],
 })

@@ -18,6 +18,7 @@ import { JobsModule } from '@/jobs/jobs.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
 import { AppConfigModule } from '@/modules/config/config.module';
+import { DispatchModule } from '@/modules/dispatch/dispatch.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
@@ -114,6 +115,7 @@ import { StorageModule } from '@/storage/storage.module';
     HealthModule,
     LocationsModule,
     MarketplaceModule,
+    DispatchModule,
     PlacesModule,
     HomeModule,
     BookingsModule,

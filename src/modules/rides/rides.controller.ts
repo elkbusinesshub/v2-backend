@@ -14,6 +14,7 @@ import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
 import {
   CreateRideBookingDto,
+  DriverOtpDto,
   RateRideDto,
   RideRequestPreviewDto,
   StartRideDto,
@@ -118,5 +119,46 @@ export class RidesController {
       await this.service.rateRide(user, id, dto),
       'Thanks for rating your ride',
     );
+  }
+
+  // ─── the partner's side ────────────────────────────────────────────────────
+
+  @Get('driver/active')
+  @ApiOperation({ summary: 'The trip this partner is working, if any' })
+  async driverActive(
+    @CurrentUser() user: AuthUser,
+  ): Promise<ApiResponse<Record<string, unknown> | null>> {
+    return ApiResponse.of(await this.service.driverActiveTrip(user));
+  }
+
+  @Post('bookings/:id/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partner accepts an offered trip (first one wins)' })
+  async accept(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(await this.service.acceptRide(user, id), 'Trip accepted');
+  }
+
+  @Post('bookings/:id/driver-start')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Partner starts the trip with the rider's code" })
+  async driverStart(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DriverOtpDto,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(await this.service.driverStart(user, id, dto.otpCode), 'Trip started');
+  }
+
+  @Post('bookings/:id/driver-complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partner ends the trip and becomes available again' })
+  async driverComplete(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(await this.service.driverComplete(user, id), 'Trip completed');
   }
 }

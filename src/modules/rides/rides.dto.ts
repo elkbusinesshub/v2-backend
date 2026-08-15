@@ -3,6 +3,8 @@ import { Transform } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -54,6 +56,29 @@ export class CreateRideBookingDto {
   @Transform(lower)
   @IsIn([...RIDE_PAYMENT_METHODS])
   paymentMethod!: string;
+
+  /**
+   * Where to send a driver. Taken from the saved address when
+   * `pickupAddressId` is given, so this is only needed for a map pick or the
+   * current-location option — but without it from one source or the other
+   * there is nothing to search around, and the request cannot be dispatched.
+   */
+  @IsOptional()
+  @IsLatitude()
+  pickupLat?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  pickupLng?: number;
+}
+
+/** A partner accepting, or working, a job offered to them. */
+export class DriverOtpDto {
+  @ApiProperty({ example: '8264' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(8)
+  otpCode!: string;
 }
 
 /** "Driver Arrived · Start Trip" — the rider confirms the OTP shown to the driver. */

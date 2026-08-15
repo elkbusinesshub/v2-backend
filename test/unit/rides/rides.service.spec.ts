@@ -10,6 +10,9 @@ import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { RideBookingsRepository } from '@/modules/rides/ride-bookings.repository';
 import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 import { RidesService } from '@/modules/rides/rides.service';
+import { DispatchService } from '@/modules/dispatch/dispatch.service';
+import { DispatchGateway } from '@/modules/dispatch/dispatch.gateway';
+import { DispatchScheduler } from '@/modules/dispatch/dispatch.queue';
 
 const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
 
@@ -44,12 +47,17 @@ const savedAddress = {
 };
 
 describe('RidesService', () => {
+  /** The row `create` last wrote — what `findById` reads back. */
+  let stored: Record<string, unknown> | null = null;
+
   let service: RidesService;
   let rideTypes: jest.Mocked<RideTypesRepository>;
   let bookings: jest.Mocked<RideBookingsRepository>;
   let locations: jest.Mocked<LocationsRepository>;
+  let dispatch: jest.Mocked<DispatchService>;
 
   beforeEach(async () => {
+    stored = null;
     const moduleRef = await Test.createTestingModule({
       providers: [
         RidesService,
@@ -63,11 +71,16 @@ describe('RidesService', () => {
         {
           provide: RideBookingsRepository,
           useValue: {
-            create: jest.fn().mockImplementation((booking) =>
-              Promise.resolve({
+            create: jest.fn().mockImplementation((booking) => {
+              stored = {
                 ...booking,
                 id: 'b-1',
                 rideType: auto,
+                driverId: null,
+                driverName: null,
+                vehicleLabel: null,
+                plateNumber: null,
+                otpCode: null,
                 tipAmount: new Prisma.Decimal(0),
                 ratingStars: null,
                 startedAt: null,
@@ -75,10 +88,17 @@ describe('RidesService', () => {
                 cancelledAt: null,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-              }),
-            ),
+              };
+              return Promise.resolve(stored);
+            }),
             listForUser: jest.fn().mockResolvedValue([]),
             findForUser: jest.fn(),
+            findById: jest.fn().mockImplementation(() => Promise.resolve(stored)),
+            findForDriver: jest.fn().mockResolvedValue(null),
+            assignDriver: jest.fn().mockResolvedValue(true),
+            markNoDrivers: jest.fn().mockResolvedValue(true),
+            startByDriver: jest.fn().mockResolvedValue(true),
+            completeByDriver: jest.fn().mockResolvedValue(true),
             start: jest.fn(),
             complete: jest.fn(),
             cancel: jest.fn(),
@@ -90,6 +110,23 @@ describe('RidesService', () => {
           provide: LocationsRepository,
           useValue: { findByIdForUser: jest.fn().mockResolvedValue(null) },
         },
+        {
+          provide: DispatchService,
+          useValue: {
+            // No partners on duty by default: the interesting cases opt in.
+            offer: jest.fn().mockResolvedValue([]),
+            claim: jest.fn(),
+            release: jest.fn(),
+            closeOffers: jest.fn(),
+            pickupOtp: jest.fn().mockReturnValue('4471'),
+            profileFor: jest.fn(),
+          },
+        },
+        {
+          provide: DispatchGateway,
+          useValue: { joinTrip: jest.fn(), emitTrip: jest.fn() },
+        },
+        { provide: DispatchScheduler, useValue: { scheduleExpiry: jest.fn() } },
       ],
     }).compile();
 
@@ -97,6 +134,7 @@ describe('RidesService', () => {
     rideTypes = moduleRef.get(RideTypesRepository);
     bookings = moduleRef.get(RideBookingsRepository);
     locations = moduleRef.get(LocationsRepository);
+    dispatch = moduleRef.get(DispatchService);
   });
 
   describe('legacy contract', () => {
@@ -110,10 +148,11 @@ describe('RidesService', () => {
       expect(estimate).toMatchObject({ etaMinutes: 14, distanceKm: 8.2 });
     });
 
-    it('previews a driver match without creating a booking', async () => {
+    it('previews the class ETA without naming a driver or booking anything', async () => {
+      // Who comes is decided by whoever accepts; naming somebody here would
+      // be a promise dispatch cannot keep.
       const match = await service.previewDriverMatch({ rideTypeId: 'auto' });
-      expect(match).toHaveProperty('driverName');
-      expect(match).toHaveProperty('plateNumber');
+      expect(match).toEqual({ etaMinutes: 4 });
       expect(bookings.create).not.toHaveBeenCalled();
     });
 
@@ -133,15 +172,42 @@ describe('RidesService', () => {
       paymentMethod: 'cash',
     };
 
-    it('books instantly with a driver, OTP, and mock payment', async () => {
-      const booking = await service.createBooking(user, dto);
+    it('opens as a search with no driver yet, and charges the fare', async () => {
+      // Nobody is assigned at booking time any more: the trip goes out to
+      // nearby partners and belongs to whoever accepts it first.
+      const booking = await service.createBooking(user, {
+        ...dto,
+        pickupLat: 12.9352,
+        pickupLng: 77.6245,
+      });
+
       expect(booking.code).toMatch(/^ELK-[A-Z0-9]{7}$/);
-      expect(booking.status).toBe('confirmed');
-      expect(booking.otpCode).toMatch(/^\d{4}$/);
-      expect(booking.driver).toHaveProperty('name');
+      expect(booking.status).toBe('searching');
+      expect(booking.driver).toBeNull();
       const breakdown = booking.breakdown as Record<string, number>;
       expect(breakdown.totalAmount).toBe(8);
       expect(booking.paidAt).not.toBeNull();
+    });
+
+    it('offers the trip to partners around the pickup', async () => {
+      await service.createBooking(user, { ...dto, pickupLat: 12.9352, pickupLng: 77.6245 });
+
+      expect(dispatch.offer).toHaveBeenCalledWith(
+        'RIDE',
+        { lat: 12.9352, lng: 77.6245 },
+        'auto',
+        expect.objectContaining({ pickupAddress: 'Indiranagar · Gate 3' }),
+        expect.any(Number),
+      );
+    });
+
+    it('gives up immediately when there is no pickup coordinate to search around', async () => {
+      // A hand-typed address has no fix. Waiting out the full offer window on
+      // a search that could never match anybody just wastes the rider's time.
+      await service.createBooking(user, dto);
+
+      expect(dispatch.offer).not.toHaveBeenCalled();
+      expect(bookings.markNoDrivers).toHaveBeenCalled();
     });
 
     it('rejects an unknown ride type', async () => {

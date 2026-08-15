@@ -19,20 +19,5 @@ export const RIDE_PAYMENT_METHODS = ['cash', 'card', 'wallet', 'applepay'] as co
 export const RIDE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const RIDE_CODE_LENGTH = 7;
 
-/** Pickup OTP shown to the rider to hand to the driver at pickup. */
-export const RIDE_OTP_LENGTH = 4;
-
 /** Rating is a 1–5 star scale, tip is capped so it can't be abused as a side-channel charge. */
 export const RIDE_MAX_TIP = 200;
-
-/**
- * Mock driver pool — assigned pseudo-randomly at booking time. Plain
- * snapshot fields on the booking, not a relation: there's no real driver
- * module yet (mirrors `Service.providerName`, a seeded display value until
- * the provider module exists).
- */
-export const RIDE_MOCK_DRIVERS: readonly { name: string; vehicleLabel: string; plate: string }[] = [
-  { name: 'Farhan Ahmed', vehicleLabel: 'Toyota Corolla · White', plate: 'DXB · B 22417' },
-  { name: 'Yusuf Khan', vehicleLabel: 'Toyota Corolla · White', plate: 'DXB 4471' },
-  { name: 'Amir Hassan', vehicleLabel: 'Honda Civic · Silver', plate: 'DXB · C 88790' },
-];

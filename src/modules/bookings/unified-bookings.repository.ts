@@ -83,7 +83,8 @@ export class UnifiedBookingsRepository {
         reference: b.code,
         serviceName: `${b.rideType.name} ride`,
         serviceIcon: '🚕',
-        providerName: b.driverName,
+        // Null until a driver accepts; the row still has to list.
+        providerName: b.driverName ?? 'Finding a driver',
         status: b.status,
         scheduledAt: b.createdAt,
         addressText: `${b.pickupAddress} → ${b.dropAddress}`,
