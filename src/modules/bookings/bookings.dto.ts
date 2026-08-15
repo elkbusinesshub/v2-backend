@@ -13,6 +13,12 @@ export class BookingListItemDto {
   providerName!: string;
   /** Each vertical has its own status enum; they share CONFIRMED/COMPLETED/CANCELLED. */
   status!: string;
+  /**
+   * The listing's category (`cleaning`, `repairing`, `car_rental`, `elkstay`),
+   * or `porter` / `taxi` for the two verticals that are not listings. Drives
+   * the category filter on My Bookings.
+   */
+  categorySlug!: string;
   /** Null for a booking with no date yet (an immediate porter pickup). */
   scheduledAt!: string | null;
   addressText!: string;

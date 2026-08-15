@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { ProviderStatus, Role } from '@prisma/client';
 import {
   DuplicateResourceException,
-  ForbiddenResourceException,
   ResourceNotFoundException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
@@ -68,7 +67,11 @@ describe('ProviderService', () => {
             findProfileByUser: jest.fn().mockResolvedValue(profile),
             createProfile: jest
               .fn()
-              .mockResolvedValue({ ...profile, status: ProviderStatus.PENDING }),
+              // Echoes what it was asked to store, so a test can tell what the
+              // service actually wrote rather than reading back a fixture.
+              .mockImplementation((data) =>
+                Promise.resolve({ ...profile, ...data, status: ProviderStatus.PENDING }),
+              ),
             updateProfile: jest
               .fn()
               .mockImplementation((_id, data) => Promise.resolve({ ...profile, ...data })),
@@ -81,7 +84,14 @@ describe('ProviderService', () => {
         {
           provide: UsersRepository,
           useValue: {
-            findById: jest.fn().mockResolvedValue({ id: 'u-1', roles: [Role.USER] }),
+            findById: jest
+              .fn()
+              .mockResolvedValue({
+                id: 'u-1',
+                name: 'Ravi K',
+                phone: '+919876500011',
+                roles: [Role.USER],
+              }),
           },
         },
       ],
@@ -113,6 +123,27 @@ describe('ProviderService', () => {
     it('rejects a duplicate registration', async () => {
       await expect(service.register(user, dto)).rejects.toBeInstanceOf(DuplicateResourceException);
     });
+
+    it('fills in the placeholder a seller got from using the panel', async () => {
+      // Opening the panel auto-creates a bare PENDING row. Registering later
+      // must complete it — telling them they had already registered when they
+      // never had was how the old behaviour read.
+      providers.findProfileByUser.mockResolvedValue({
+        ...profile,
+        status: ProviderStatus.PENDING,
+        businessName: 'Ravi K',
+        serviceCategory: '',
+      });
+
+      const result = await service.register(user, dto);
+
+      expect(result).toMatchObject({ businessName: 'New Co.' });
+      expect(providers.createProfile).not.toHaveBeenCalled();
+      expect(providers.updateProfile).toHaveBeenCalledWith(
+        'pp-1',
+        expect.objectContaining({ businessName: 'New Co.', serviceCategory: 'Plumbing' }),
+      );
+    });
   });
 
   describe('dashboard', () => {
@@ -137,9 +168,18 @@ describe('ProviderService', () => {
       expect(stats[2]).toMatchObject({ value: 'New', trend: '0 reviews' });
     });
 
-    it('403s a user without a provider profile', async () => {
+    it('gives a seller with no profile one rather than 403ing the panel', async () => {
+      // The panel's own duty toggle used to answer 403 and quietly do nothing,
+      // so a seller believed they were online while the server had never
+      // heard of them.
       providers.findProfileByUser.mockResolvedValue(null);
-      await expect(service.getDashboard(user)).rejects.toBeInstanceOf(ForbiddenResourceException);
+
+      const dashboard = await service.getDashboard(user);
+
+      expect(dashboard).toMatchObject({ businessName: 'Ravi K' });
+      expect(providers.createProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-1', businessName: 'Ravi K' }),
+      );
     });
   });
 
@@ -181,6 +221,14 @@ describe('ProviderService', () => {
     it('toggles availability', async () => {
       const result = await service.setAvailability(user, { isAvailable: false });
       expect(result).toEqual({ isAvailable: false });
+    });
+
+    it('works for a seller who never registered as a provider', async () => {
+      providers.findProfileByUser.mockResolvedValue(null);
+
+      const result = await service.setAvailability(user, { isAvailable: true });
+
+      expect(result).toEqual({ isAvailable: true });
     });
   });
 

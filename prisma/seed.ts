@@ -791,7 +791,13 @@ const TEST_VEHICLES = {
 };
 
 /**
- * Two listings in each of the four seller categories, per selling account.
+ * One listing for **every sub-category** of the four seller categories, per
+ * selling account.
+ *
+ * The vertical home grids only draw a tile for a sub-category that actually
+ * has listings — an empty tile is a dead end. Seeding two listings meant the
+ * cleaning and repair screens showed two tiles out of eight and six, which
+ * read as a half-built app rather than an empty shelf.
  *
  * Taxi and porter are absent by design: they are dispatch products served by
  * the two driving accounts, and nobody posts an ad for them.
@@ -901,6 +907,176 @@ const TEST_AD_TEMPLATES: AdFixture[] = [
       'First-floor 1BHK in a family home. Private entrance, kitchen and covered parking.',
     attributes: { roomType: '1BHK', stayType: 'HOMESTAY', depositAmount: 38000, furnished: false },
   },
+  {
+    title: 'Standard Home Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🧽',
+    price: 110,
+    priceUnit: '/ visit',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Weekly or fortnightly upkeep: sweeping, mopping, dusting and bin clearing across the whole house.',
+    attributes: { subCategory: 'cln', durationLabel: '2 hrs', includes: ['Floors', 'Dusting'] },
+  },
+  {
+    title: 'Water Tank Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🚰',
+    price: 160,
+    priceUnit: '/ tank',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Drain, scrub, vacuum and disinfect overhead and sump tanks. Before-and-after photos shared.',
+    attributes: { subCategory: 'tnk', durationLabel: '1-2 hrs' },
+  },
+  {
+    title: 'Carpet & Rug Steam Clean',
+    categorySlug: 'cleaning',
+    icon: '🧶',
+    price: 120,
+    priceUnit: '/ piece',
+    locality: 'MG Road',
+    city: 'Bengaluru',
+    description:
+      'Hot-water extraction for wool and synthetic rugs, stain treatment and deodorising included.',
+    attributes: { subCategory: 'crp', durationLabel: '2 hrs' },
+  },
+  {
+    title: 'Kitchen Degreasing',
+    categorySlug: 'cleaning',
+    icon: '🍳',
+    price: 140,
+    priceUnit: '/ visit',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Chimney, hob, tiles and cabinet fronts degreased. Food-safe products, no chemical smell left behind.',
+    attributes: {
+      subCategory: 'kit',
+      durationLabel: '2 hrs',
+      includes: ['Chimney', 'Hob', 'Tiles'],
+    },
+  },
+  {
+    title: 'Bathroom Deep Clean',
+    categorySlug: 'cleaning',
+    icon: '🚿',
+    price: 100,
+    priceUnit: '/ bathroom',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Descaling, grout scrubbing, sanitising and drain clearing for up to two bathrooms.',
+    attributes: { subCategory: 'bth', durationLabel: '1-2 hrs' },
+  },
+  {
+    title: 'Laundry & Ironing Service',
+    categorySlug: 'cleaning',
+    icon: '👕',
+    price: 60,
+    priceUnit: '/ kg',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'Pickup, wash, dry, press and delivery within 24 hours. Separate wash per household.',
+    attributes: { subCategory: 'lndr', durationLabel: '24 hrs' },
+  },
+  {
+    title: 'Electrical Fault & Wiring',
+    categorySlug: 'repairing',
+    icon: '💡',
+    price: 85,
+    priceUnit: '/ visit',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Switchboards, MCB trips, fan and light installation, and short-circuit tracing by a licensed electrician.',
+    attributes: { subCategory: 'elc', durationLabel: '1-2 hrs', warrantyLabel: '30-day warranty' },
+  },
+  {
+    title: 'Carpentry & Furniture Repair',
+    categorySlug: 'repairing',
+    icon: '🪚',
+    price: 120,
+    priceUnit: '/ visit',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Door alignment, hinge and lock replacement, modular fittings and flat-pack assembly.',
+    attributes: { subCategory: 'cpt', durationLabel: '2-3 hrs', warrantyLabel: '15-day warranty' },
+  },
+  {
+    title: 'Interior Painting',
+    categorySlug: 'repairing',
+    icon: '🎨',
+    price: 18,
+    priceUnit: '/ sq ft',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Putty, primer and two coats of emulsion. Furniture covered and floors masked before work starts.',
+    attributes: { subCategory: 'pnt', durationLabel: '2-3 days', warrantyLabel: '1-year warranty' },
+  },
+  {
+    title: 'General Handyman Visit',
+    categorySlug: 'repairing',
+    icon: '🧰',
+    price: 70,
+    priceUnit: '/ hour',
+    locality: 'MG Road',
+    city: 'Bengaluru',
+    description:
+      'Odd jobs by the hour: curtain rods, wall mounts, minor leaks and anything on your list.',
+    attributes: { subCategory: 'gen', durationLabel: '1 hr', warrantyLabel: '7-day warranty' },
+  },
+  {
+    title: 'Mercedes E-Class · Chauffeur',
+    categorySlug: 'car_rental',
+    icon: '🚙',
+    price: 8500,
+    priceUnit: '/ day',
+    locality: 'MG Road',
+    city: 'Bengaluru',
+    description:
+      'Executive sedan with a uniformed chauffeur for airport runs, weddings and corporate travel.',
+    attributes: { subCategory: 'LUXURY', seats: 4, transmission: 'AUTOMATIC', fuel: 'DIESEL' },
+  },
+  {
+    title: "Men's Hostel · Twin Sharing",
+    categorySlug: 'elkstay',
+    icon: '🛏️',
+    price: 7500,
+    priceUnit: '/ month',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Twin-sharing rooms for working men. Three meals, laundry twice a week and a study room on the ground floor.',
+    attributes: {
+      roomType: 'Twin sharing',
+      stayType: 'MENS_HOSTEL',
+      depositAmount: 15000,
+      furnished: true,
+    },
+  },
+  {
+    title: "Women's Hostel · Single Room",
+    categorySlug: 'elkstay',
+    icon: '🏘️',
+    price: 9500,
+    priceUnit: '/ month',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Secure women-only hostel with biometric entry, warden on site, meals and weekly housekeeping.',
+    attributes: {
+      roomType: 'Single occupancy',
+      stayType: 'WOMENS_HOSTEL',
+      depositAmount: 19000,
+      furnished: true,
+    },
+  },
 ];
 
 async function seedTestAccounts(): Promise<void> {
@@ -927,9 +1103,9 @@ async function seedTestAccounts(): Promise<void> {
     });
 
     if (account.role === 'SELLER') {
-      // Each selling account gets its own copy of all eight, so the four
-      // category screens have several sellers to choose between rather than
-      // one seller's list repeated.
+      // Each selling account gets its own copy of the whole set, so every
+      // tile on every category screen has several sellers to choose between
+      // rather than one seller's list repeated.
       for (const template of TEST_AD_TEMPLATES) {
         const coords = LOCALITY_COORDS[template.locality];
         const data = {
@@ -980,7 +1156,8 @@ async function seedTestAccounts(): Promise<void> {
 
   console.log(
     `Seeded ${TEST_ACCOUNTS.length} test accounts (SEED_TEST_ACCOUNTS=true): ` +
-      `1 taxi driver, 1 delivery partner, 3 sellers with ${ads} listings`,
+      `1 taxi driver, 1 delivery partner, 3 sellers with ${ads} listings ` +
+      `covering every sub-category`,
   );
 }
 

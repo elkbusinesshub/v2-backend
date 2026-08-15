@@ -36,7 +36,12 @@ function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
-    seller: { name: 'Ravi K', providerProfile: { businessName: 'Royal Shine Co.' } },
+    seller: {
+      name: 'Ravi K',
+      phone: '+919876500011',
+      email: 'ravi@example.com',
+      providerProfile: { businessName: 'Royal Shine Co.', contactNumber: '+919876500022' },
+    },
     images: [],
     ...overrides,
   };
@@ -114,7 +119,7 @@ describe('MarketplaceService', () => {
 
     it('falls back to the personal name when there is no provider profile', async () => {
       repo.findTopSellers.mockResolvedValue([
-        ad({ seller: { name: 'Ravi K', providerProfile: null } }),
+        ad({ seller: { name: 'Ravi K', phone: null, email: null, providerProfile: null } }),
       ]);
 
       const [card] = await service.topSellers('u-1');
@@ -161,6 +166,42 @@ describe('MarketplaceService', () => {
 
       const card = await service.detail('ad-1', 'u-1');
       expect(card.viewCount).toBe(10);
+    });
+
+    it('carries the seller’s contact details', async () => {
+      const card = await service.detail('ad-1', 'u-1');
+
+      // The registered business number wins over the sign-in number.
+      expect(card.sellerPhone).toBe('+919876500022');
+      expect(card.sellerEmail).toBe('ravi@example.com');
+    });
+
+    it('falls back to the sign-in number when no business one is on file', async () => {
+      repo.findById.mockResolvedValue(
+        ad({
+          seller: {
+            name: 'Ravi K',
+            phone: '+919876500011',
+            email: null,
+            providerProfile: { businessName: 'Royal Shine Co.', contactNumber: '  ' },
+          },
+        }),
+      );
+
+      const card = await service.detail('ad-1', 'u-1');
+
+      expect(card.sellerPhone).toBe('+919876500011');
+      // Blank is not a contact detail; the app hides what it does not get.
+      expect(card.sellerEmail).toBeNull();
+    });
+
+    it('keeps contact details off the list reads', async () => {
+      // A phone number travels with the one listing a buyer opened, not with
+      // every card in a category.
+      const [card] = await service.topSellers('u-1');
+
+      expect(card!.sellerPhone).toBeNull();
+      expect(card!.sellerEmail).toBeNull();
     });
 
     it('404s an unknown or inactive ad, without recording a view', async () => {

@@ -40,7 +40,7 @@ function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
-    seller: { name: 'Ravi K', providerProfile: null },
+    seller: { name: 'Ravi K', phone: null, email: null, providerProfile: null },
     images: [],
     ...overrides,
   };

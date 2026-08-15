@@ -23,6 +23,18 @@ export const DEFAULT_TOP_SELLERS = 10;
  */
 const DEFAULT_AD_ICON = '🛍️';
 
+/**
+ * A contact detail, or null when there is nothing to show.
+ *
+ * A blank string is what an unfilled column holds, and it would reach the app
+ * as a phone number to dial. Null is the honest answer, and the app already
+ * hides what it does not get.
+ */
+function orNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 @Injectable()
 export class MarketplaceService {
   private readonly logger = new Logger(MarketplaceService.name);
@@ -67,7 +79,7 @@ export class MarketplaceService {
     }
 
     const firstView = await this.ads.recordView(id, userId);
-    const [dto] = await this.decorate([ad], userId);
+    const [dto] = await this.decorate([ad], userId, true);
     // The row was read before the increment, so reflect it rather than
     // re-querying just to move one number.
     return { ...dto!, viewCount: ad.viewCount + (firstView ? 1 : 0) };
@@ -196,8 +208,18 @@ export class MarketplaceService {
     return ad;
   }
 
-  /** Maps rows to cards, resolving image URLs and the caller's wishlist state. */
-  private async decorate(rows: AdWithSeller[], userId: string): Promise<AdDto[]> {
+  /**
+   * Maps rows to cards, resolving image URLs and the caller's wishlist state.
+   *
+   * `withContact` is set only by the single-ad read. Contact details are a
+   * seller's personal phone and email, so they travel with the one listing a
+   * buyer opened rather than with every card in a category.
+   */
+  private async decorate(
+    rows: AdWithSeller[],
+    userId: string,
+    withContact = false,
+  ): Promise<AdDto[]> {
     const wishlisted = await this.ads.wishlistedIds(
       userId,
       rows.map((r) => r.id),
@@ -225,6 +247,12 @@ export class MarketplaceService {
         ratingAverage: Number(ad.ratingAverage),
         ratingCount: ad.ratingCount,
         isWishlisted: wishlisted.has(ad.id),
+        // The business contact number the seller registered, falling back to
+        // the number they sign in with.
+        sellerPhone: withContact
+          ? (orNull(ad.seller.providerProfile?.contactNumber) ?? orNull(ad.seller.phone))
+          : null,
+        sellerEmail: withContact ? orNull(ad.seller.email) : null,
         status: ad.status,
         imageUrls: await this.imageUrls(ad),
         // Prisma types a nullable Json column as JsonValue, which includes the

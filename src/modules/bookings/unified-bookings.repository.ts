@@ -29,6 +29,13 @@ export interface UnifiedBooking {
   serviceIcon: string;
   providerName: string;
   status: string;
+  /**
+   * Which category of listing this was, e.g. `cleaning` or `elkstay`, so the
+   * app can group My Bookings the way the user shops. Porter and rides are
+   * not listings and carry their own vertical name instead — every row has
+   * something to file itself under.
+   */
+  categorySlug: string;
   /** Null for a booking with no date yet (an unscheduled porter pickup). */
   scheduledAt: Date | null;
   addressText: string;
@@ -58,7 +65,10 @@ export class UnifiedBookingsRepository {
       // tab, not in the list of things they have booked.
       this.db.adOrder.findMany({
         where: { buyerId: userId },
-        include: { ad: { select: { icon: true } }, seller: { select: { name: true } } },
+        include: {
+          ad: { select: { icon: true, categorySlug: true } },
+          seller: { select: { name: true } },
+        },
       }),
     ]);
 
@@ -71,6 +81,7 @@ export class UnifiedBookingsRepository {
         serviceIcon: '📦',
         providerName: 'ELK Porter',
         status: b.status,
+        categorySlug: 'porter',
         // Null for "pickup now" jobs, which carry no scheduled time.
         scheduledAt: b.scheduledAt,
         addressText: `${b.pickupAddress} → ${b.dropAddress}`,
@@ -86,6 +97,7 @@ export class UnifiedBookingsRepository {
         // Null until a driver accepts; the row still has to list.
         providerName: b.driverName ?? 'Finding a driver',
         status: b.status,
+        categorySlug: 'taxi',
         scheduledAt: b.createdAt,
         addressText: `${b.pickupAddress} → ${b.dropAddress}`,
         total: Number(b.fare),
@@ -100,6 +112,7 @@ export class UnifiedBookingsRepository {
         // The person who will actually do the work, rather than a house brand.
         providerName: o.seller.name ?? 'ELK Seller',
         status: o.status,
+        categorySlug: o.ad.categorySlug,
         scheduledAt: o.scheduledAt,
         addressText: o.addressText,
         total: Number(o.amount),

@@ -24,6 +24,7 @@ describe('BookingsService', () => {
         {
           id: 'ao-1',
           vertical: 'marketplace',
+          categorySlug: 'cleaning',
           reference: 'ELK-A-4T29K',
           serviceName: 'Deep Cleaning',
           serviceIcon: '✨',
@@ -37,6 +38,7 @@ describe('BookingsService', () => {
         {
           id: 'rd-1',
           vertical: 'rides',
+          categorySlug: 'taxi',
           reference: 'ELK-7781-QQ',
           serviceName: 'ELK Go ride',
           serviceIcon: '🚕',
@@ -56,6 +58,7 @@ describe('BookingsService', () => {
       expect(items[0]).toEqual({
         id: 'ao-1',
         vertical: 'marketplace',
+        categorySlug: 'cleaning',
         reference: 'ELK-A-4T29K',
         serviceName: 'Deep Cleaning',
         serviceIcon: '✨',
@@ -72,6 +75,7 @@ describe('BookingsService', () => {
         {
           id: 'po-1',
           vertical: 'porter',
+          categorySlug: 'porter',
           reference: 'ELK-4390-LX',
           serviceName: 'Bike delivery',
           serviceIcon: '📦',

@@ -77,6 +77,17 @@ export class AdDto {
   isWishlisted!: boolean;
 
   /**
+   * How to reach the seller. **Only populated on `GET /marketplace/ads/:id`** —
+   * the list reads leave both null, so a contact detail is handed out when a
+   * buyer opens one listing and not in bulk to anyone paging the catalogue.
+   *
+   * Null also when the seller has no such detail on file: phone is optional on
+   * an account and email is rarely set, so the app shows whichever it gets.
+   */
+  sellerPhone!: string | null;
+  sellerEmail!: string | null;
+
+  /**
    * DRAFT / ACTIVE / PAUSED. Always ACTIVE on the public reads, which filter
    * to it; it carries information only on `my-ads`, where the seller's own
    * drafts and paused listings appear alongside their live ones.

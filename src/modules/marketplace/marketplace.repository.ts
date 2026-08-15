@@ -4,12 +4,26 @@ import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
 export type AdWithSeller = Ad & {
-  seller: { name: string | null; providerProfile: { businessName: string } | null };
+  seller: {
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    providerProfile: { businessName: string; contactNumber: string } | null;
+  };
   images: { key: string }[];
 };
 
 const withSeller = {
-  seller: { select: { name: true, providerProfile: { select: { businessName: true } } } },
+  seller: {
+    select: {
+      name: true,
+      // Only ever read on the ad detail, where the buyer is deciding whether
+      // to get in touch — the list reads drop them (see `decorate`).
+      phone: true,
+      email: true,
+      providerProfile: { select: { businessName: true, contactNumber: true } },
+    },
+  },
   images: { select: { key: true }, orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.AdInclude;
 

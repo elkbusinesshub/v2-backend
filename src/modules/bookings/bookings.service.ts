@@ -17,6 +17,7 @@ export class BookingsService {
       serviceIcon: b.serviceIcon,
       providerName: b.providerName,
       status: b.status,
+      categorySlug: b.categorySlug,
       scheduledAt: b.scheduledAt?.toISOString() ?? null,
       addressText: b.addressText,
       total: b.total,
