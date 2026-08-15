@@ -45,8 +45,69 @@ export class PorterBookingsRepository {
    */
   async cancel(id: string, userId: string): Promise<boolean> {
     const result = await this.db.porterBooking.updateMany({
-      where: { id, userId, status: PorterBookingStatus.CONFIRMED },
+      // Also while searching: a sender who gives up waiting must not be held
+      // until the offer window closes on its own.
+      where: {
+        id,
+        userId,
+        status: { in: [PorterBookingStatus.SEARCHING, PorterBookingStatus.CONFIRMED] },
+      },
       data: { status: PorterBookingStatus.CANCELLED, cancelledAt: new Date() },
+    });
+    return result.count === 1;
+  }
+
+  /** The partner a job was offered to and accepted. */
+  async assignDriver(
+    id: string,
+    driver: {
+      driverId: string;
+      driverName: string;
+      vehicleLabel: string;
+      plateNumber: string;
+      otpCode: string;
+    },
+  ): Promise<boolean> {
+    const result = await this.db.porterBooking.updateMany({
+      where: { id, status: PorterBookingStatus.SEARCHING },
+      data: { ...driver, status: PorterBookingStatus.CONFIRMED },
+    });
+    return result.count === 1;
+  }
+
+  async markNoDrivers(id: string): Promise<boolean> {
+    const result = await this.db.porterBooking.updateMany({
+      where: { id, status: PorterBookingStatus.SEARCHING },
+      data: { status: PorterBookingStatus.NO_DRIVERS },
+    });
+    return result.count === 1;
+  }
+
+  /** The job this partner is working, if any. */
+  async findForDriver(driverId: string) {
+    return this.db.porterBooking.findFirst({
+      where: {
+        driverId,
+        status: { in: [PorterBookingStatus.CONFIRMED, PorterBookingStatus.PICKED_UP] },
+      },
+      include: FULL_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** The partner collects the parcel, with the code the sender shows them. */
+  async pickUpByDriver(id: string, driverId: string): Promise<boolean> {
+    const result = await this.db.porterBooking.updateMany({
+      where: { id, driverId, status: PorterBookingStatus.CONFIRMED },
+      data: { status: PorterBookingStatus.PICKED_UP, pickedUpAt: new Date() },
+    });
+    return result.count === 1;
+  }
+
+  async deliverByDriver(id: string, driverId: string): Promise<boolean> {
+    const result = await this.db.porterBooking.updateMany({
+      where: { id, driverId, status: PorterBookingStatus.PICKED_UP },
+      data: { status: PorterBookingStatus.DELIVERED, deliveredAt: new Date() },
     });
     return result.count === 1;
   }

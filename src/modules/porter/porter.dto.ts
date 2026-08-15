@@ -6,6 +6,8 @@ import {
   IsArray,
   IsIn,
   IsNotEmpty,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   IsUUID,
@@ -94,4 +96,24 @@ export class CreatePorterBookingDto extends PorterQuoteDto {
   @Transform(lower)
   @IsIn([...PORTER_PAYMENT_METHODS])
   paymentMethod!: string;
+  /**
+   * Where to send a partner. Taken from the saved address when
+   * `pickupAddressId` is given; without a coordinate from one source or the
+   * other the job cannot be dispatched.
+   */
+  @IsOptional()
+  @IsLatitude()
+  pickupLat?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  pickupLng?: number;
+}
+
+/** A partner collecting a parcel, against the code the sender shows. */
+export class PorterOtpDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(8)
+  otpCode!: string;
 }

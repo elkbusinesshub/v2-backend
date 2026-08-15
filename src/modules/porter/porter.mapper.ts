@@ -37,6 +37,18 @@ export function toPorterBookingJson(booking: PorterBookingFull): Record<string, 
     id: booking.id,
     code: booking.code,
     status: booking.status.toLowerCase(),
+    // Null while the job is still out on offer — there is genuinely nobody
+    // yet, and a card of blanks reads worse than no card.
+    driver:
+      booking.driverName === null
+        ? null
+        : {
+            name: booking.driverName,
+            vehicle: booking.vehicleLabel,
+            plateNumber: booking.plateNumber,
+          },
+    // The code the sender reads out at collection. Pointless once collected.
+    otpCode: booking.pickedUpAt ? null : booking.otpCode,
     vehicle: toVehicleJson(booking.vehicle),
     pickupAddress: booking.pickupAddress,
     dropAddress: booking.dropAddress,

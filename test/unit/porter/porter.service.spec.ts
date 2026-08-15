@@ -10,6 +10,9 @@ import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { PorterBookingsRepository } from '@/modules/porter/porter-bookings.repository';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { PorterService } from '@/modules/porter/porter.service';
+import { DispatchGateway } from '@/modules/dispatch/dispatch.gateway';
+import { DispatchScheduler } from '@/modules/dispatch/dispatch.queue';
+import { DispatchService } from '@/modules/dispatch/dispatch.service';
 
 const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
 
@@ -71,12 +74,17 @@ const savedAddress = {
 };
 
 describe('PorterService', () => {
+  /** The row `create` last wrote — what `findById` reads back. */
+  let stored: Record<string, unknown> | null = null;
+  let dispatch: jest.Mocked<DispatchService>;
+
   let service: PorterService;
   let catalog: jest.Mocked<PorterCatalogRepository>;
   let bookings: jest.Mocked<PorterBookingsRepository>;
   let locations: jest.Mocked<LocationsRepository>;
 
   beforeEach(async () => {
+    stored = null;
     const moduleRef = await Test.createTestingModule({
       providers: [
         PorterService,
@@ -92,22 +100,35 @@ describe('PorterService', () => {
         {
           provide: PorterBookingsRepository,
           useValue: {
-            create: jest.fn().mockImplementation(({ booking, addons }) =>
-              Promise.resolve({
+            create: jest.fn().mockImplementation(({ booking, addons }) => {
+              stored = {
                 ...booking,
                 id: 'b-1',
                 vehicle: bike,
                 addons,
+                driverId: null,
+                driverName: null,
+                vehicleLabel: null,
+                plateNumber: null,
+                otpCode: null,
                 pickedUpAt: null,
                 deliveredAt: null,
                 cancelledAt: null,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-              }),
-            ),
+              };
+              return Promise.resolve(stored);
+            }),
             listForUser: jest.fn().mockResolvedValue([]),
             findForUser: jest.fn(),
-            findById: jest.fn(),
+            // The service re-reads the row it just wrote, so the fake store
+            // has to echo it back rather than a fixed fixture.
+            findById: jest.fn().mockImplementation(() => Promise.resolve(stored)),
+            assignDriver: jest.fn().mockResolvedValue(true),
+            markNoDrivers: jest.fn().mockResolvedValue(true),
+            findForDriver: jest.fn().mockResolvedValue(null),
+            pickUpByDriver: jest.fn().mockResolvedValue(true),
+            deliverByDriver: jest.fn().mockResolvedValue(true),
             cancel: jest.fn(),
             markPickedUp: jest.fn(),
             markDelivered: jest.fn(),
@@ -118,10 +139,25 @@ describe('PorterService', () => {
           provide: LocationsRepository,
           useValue: { findByIdForUser: jest.fn().mockResolvedValue(null) },
         },
+        {
+          provide: DispatchService,
+          useValue: {
+            // Nobody on duty by default; cases that care opt in.
+            offer: jest.fn().mockResolvedValue([]),
+            claim: jest.fn(),
+            release: jest.fn(),
+            closeOffers: jest.fn(),
+            pickupOtp: jest.fn().mockReturnValue('4471'),
+            profileFor: jest.fn(),
+          },
+        },
+        { provide: DispatchGateway, useValue: { joinTrip: jest.fn(), emitTrip: jest.fn() } },
+        { provide: DispatchScheduler, useValue: { scheduleExpiry: jest.fn() } },
       ],
     }).compile();
 
     service = moduleRef.get(PorterService);
+    dispatch = moduleRef.get(DispatchService);
     catalog = moduleRef.get(PorterCatalogRepository);
     bookings = moduleRef.get(PorterBookingsRepository);
     locations = moduleRef.get(LocationsRepository);
@@ -174,14 +210,40 @@ describe('PorterService', () => {
       paymentMethod: 'wallet',
     };
 
-    it('books an ASAP pickup with a tracking code and mock payment', async () => {
-      const booking = await service.createBooking(user, base);
+    it('opens as a search for a partner, and charges the quote', async () => {
+      // No partner is attached at booking time: the job goes out to whoever
+      // is nearby and belongs to the first one who takes it.
+      const booking = await service.createBooking(user, {
+        ...base,
+        pickupLat: 12.9352,
+        pickupLng: 77.6245,
+      });
+
       expect(booking.code).toMatch(/^ELK-\d{4}-[A-Z]{2}$/);
-      expect(booking.status).toBe('confirmed');
+      expect(booking.status).toBe('searching');
       expect(booking.scheduledAt).toBeNull();
       const breakdown = booking.breakdown as Record<string, number>;
       expect(breakdown.totalAmount).toBe(40.43);
       expect(booking.paidAt).not.toBeNull();
+    });
+
+    it('offers the job to partners around the pickup', async () => {
+      await service.createBooking(user, { ...base, pickupLat: 12.9352, pickupLng: 77.6245 });
+
+      expect(dispatch.offer).toHaveBeenCalledWith(
+        'PORTER',
+        { lat: 12.9352, lng: 77.6245 },
+        'bike',
+        expect.objectContaining({ pickupAddress: 'Indiranagar, Block C' }),
+        expect.any(Number),
+      );
+    });
+
+    it('gives up at once when there is no pickup coordinate to search around', async () => {
+      await service.createBooking(user, base);
+
+      expect(dispatch.offer).not.toHaveBeenCalled();
+      expect(bookings.markNoDrivers).toHaveBeenCalled();
     });
 
     it('books a scheduled pickup inside the 30-day horizon', async () => {

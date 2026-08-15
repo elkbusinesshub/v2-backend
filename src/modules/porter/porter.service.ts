@@ -1,6 +1,15 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { PorterBookingStatus, type PorterAddon, type PorterVehicle } from '@prisma/client';
+import {
+  DriverService,
+  PorterBookingStatus,
+  type PorterAddon,
+  type PorterVehicle,
+} from '@prisma/client';
+import { OFFER_WINDOW_SECONDS } from '@/modules/dispatch/dispatch.constants';
+import { DispatchGateway } from '@/modules/dispatch/dispatch.gateway';
+import { DispatchScheduler } from '@/modules/dispatch/dispatch.queue';
+import { DispatchService } from '@/modules/dispatch/dispatch.service';
 import {
   DomainException,
   ResourceNotFoundException,
@@ -51,7 +60,16 @@ export class PorterService {
     private readonly catalog: PorterCatalogRepository,
     private readonly bookings: PorterBookingsRepository,
     private readonly locations: LocationsRepository,
+    private readonly dispatch: DispatchService,
+    private readonly gateway: DispatchGateway,
+    private readonly scheduler: DispatchScheduler,
   ) {}
+
+  /**
+   * Who a job was offered to, so the losers can be told once it is taken.
+   * In memory: it matters for seconds, and only to the instance that offered.
+   */
+  private readonly offered = new Map<string, string[]>();
 
   // ─── options (the exact payload the app's repository already fetches) ──────
 
@@ -127,10 +145,12 @@ export class PorterService {
   ): Promise<Record<string, unknown>> {
     const schedule = this.resolveSchedule(dto);
     const q = await this.resolveQuote(dto);
-    const [pickupAddress, dropAddress] = await Promise.all([
-      this.resolveAddress(user, dto.pickupAddressId, dto.pickupAddress),
-      this.resolveAddress(user, dto.dropAddressId, dto.dropAddress),
+    const [pickup, drop] = await Promise.all([
+      this.resolvePlace(user, dto.pickupAddressId, dto.pickupAddress, dto.pickupLat, dto.pickupLng),
+      this.resolvePlace(user, dto.dropAddressId, dto.dropAddress),
     ]);
+    const pickupAddress = pickup.address;
+    const dropAddress = drop.address;
     const code = await this.generateCode();
 
     const booking = await this.bookings.create({
@@ -138,7 +158,9 @@ export class PorterService {
         code,
         userId: user.id,
         vehicleId: q.vehicle.id,
-        status: PorterBookingStatus.CONFIRMED,
+        // No partner yet: the job goes out to whoever is nearby, and belongs
+        // to the first one who takes it.
+        status: PorterBookingStatus.SEARCHING,
         pickupAddress,
         dropAddress,
         packageType: dto.packageType ?? null,
@@ -160,8 +182,165 @@ export class PorterService {
       addons: q.addons.map((a) => ({ addonId: a.id, label: a.label, price: Number(a.price) })),
     });
 
-    this.logger.log(`porter booking created: ${code} user=${user.id} vehicle=${q.vehicle.slug}`);
+    this.gateway.joinTrip(user.id, booking.id);
+
+    if (pickup.lat === null || pickup.lng === null) {
+      // Nothing to search around; say so now rather than after a minute of
+      // waiting on a search that could never match anybody.
+      await this.bookings.markNoDrivers(booking.id);
+      this.logger.warn(`porter ${code} has no pickup coordinate — cannot dispatch`);
+      return toPorterBookingJson((await this.bookings.findById(booking.id))!);
+    }
+
+    const offered = await this.dispatch.offer(
+      DriverService.PORTER,
+      { lat: pickup.lat, lng: pickup.lng },
+      q.vehicle.slug,
+      {
+        bookingId: booking.id,
+        code,
+        pickupAddress,
+        dropAddress,
+        fare: q.totalAmount,
+        distanceKm: PORTER_DEFAULT_DISTANCE_KM,
+      },
+      OFFER_WINDOW_SECONDS,
+    );
+    this.offered.set(booking.id, offered);
+    await this.scheduler.scheduleExpiry(booking.id, DriverService.PORTER);
+
+    this.logger.log(`porter ${code} searching: offered to ${offered.length} partner(s)`);
+    return toPorterBookingJson((await this.bookings.findById(booking.id))!);
+  }
+
+  // ─── the partner's side ────────────────────────────────────────────────────
+
+  /** A partner takes the job. First one through wins. */
+  async acceptJob(user: AuthUser, id: string): Promise<Record<string, unknown>> {
+    const requested = await this.bookings.findById(id);
+    if (!requested) {
+      throw new ResourceNotFoundException('Booking');
+    }
+    if (requested.userId === user.id) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'CANNOT_DELIVER_YOURSELF',
+        'You cannot accept your own delivery',
+      );
+    }
+
+    const driver = await this.dispatch.claim(user, DriverService.PORTER, id);
+    const assigned = await this.bookings.assignDriver(id, {
+      driverId: driver.id,
+      driverName: driver.user.name ?? 'ELK partner',
+      vehicleLabel: driver.vehicleLabel,
+      plateNumber: driver.plateNumber,
+      otpCode: this.dispatch.pickupOtp(),
+    });
+    if (!assigned) {
+      await this.dispatch.release(driver.id);
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'JOB_ALREADY_TAKEN',
+        'Another partner accepted this delivery first',
+      );
+    }
+
+    const booking = (await this.bookings.findById(id))!;
+    this.gateway.emitTrip(id, 'trip:accepted', {
+      driverName: booking.driverName,
+      vehicleLabel: booking.vehicleLabel,
+      plateNumber: booking.plateNumber,
+      otpCode: booking.otpCode,
+      etaMinutes: booking.etaMinutes,
+    });
+    this.dispatch.closeOffers(this.offered.get(id) ?? [], id);
+    this.offered.delete(id);
+
+    this.logger.log(`porter ${booking.code} accepted by driver=${driver.id}`);
     return toPorterBookingJson(booking);
+  }
+
+  /** The job this partner is working — what their app opens onto. */
+  async driverActiveJob(user: AuthUser): Promise<Record<string, unknown> | null> {
+    const profile = await this.dispatch.profileFor(user, DriverService.PORTER);
+    const booking = await this.bookings.findForDriver(profile.id);
+    return booking ? toPorterBookingJson(booking) : null;
+  }
+
+  /** Collected, against the code the sender shows — proof the partner is there. */
+  async driverPickUp(
+    user: AuthUser,
+    id: string,
+    otpCode: string,
+  ): Promise<Record<string, unknown>> {
+    const profile = await this.dispatch.profileFor(user, DriverService.PORTER);
+    const booking = await this.assertDriverBooking(profile.id, id);
+    if (booking.otpCode !== otpCode) {
+      throw new ValidationFailedException([{ field: 'otpCode', message: 'Incorrect OTP' }]);
+    }
+    const ok = await this.bookings.pickUpByDriver(id, profile.id);
+    if (!ok) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'INVALID_TRANSITION',
+        'Pickup can only be confirmed for an accepted delivery',
+      );
+    }
+    this.gateway.emitTrip(id, 'trip:picked_up', {});
+    this.logger.log(`porter picked up by partner: ${booking.code}`);
+    return toPorterBookingJson((await this.bookings.findById(id))!);
+  }
+
+  /** Delivered — and the partner is available again. */
+  async driverDeliver(user: AuthUser, id: string): Promise<Record<string, unknown>> {
+    const profile = await this.dispatch.profileFor(user, DriverService.PORTER);
+    const booking = await this.assertDriverBooking(profile.id, id);
+    const ok = await this.bookings.deliverByDriver(id, profile.id);
+    if (!ok) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'INVALID_TRANSITION',
+        'Delivery can only be confirmed once the parcel has been collected',
+      );
+    }
+    await this.dispatch.release(profile.id);
+    this.gateway.emitTrip(id, 'trip:delivered', {});
+    this.logger.log(`porter delivered by partner: ${booking.code}`);
+    return toPorterBookingJson((await this.bookings.findById(id))!);
+  }
+
+  /**
+   * A saved address (looked up scoped to the caller — a mismatched owner
+   * behaves like "not found") takes priority over freeform text, which covers
+   * the map-pick and current-location options that carry no saved address id.
+   *
+   * The coordinate comes back alongside it: dispatch needs somewhere to search
+   * around, and a saved address was pinned on a map when it was saved.
+   */
+  private async resolvePlace(
+    user: AuthUser,
+    addressId: string | undefined,
+    freeText: string | undefined,
+    lat?: number,
+    lng?: number,
+  ): Promise<{ address: string; lat: number | null; lng: number | null }> {
+    if (!addressId) {
+      return { address: freeText!, lat: lat ?? null, lng: lng ?? null };
+    }
+    const address = await this.locations.findByIdForUser(addressId, user.id);
+    if (!address) {
+      throw new ResourceNotFoundException('Address');
+    }
+    return { address: address.formattedAddress, lat: address.lat, lng: address.lng };
+  }
+
+  private async assertDriverBooking(driverId: string, id: string) {
+    const booking = await this.bookings.findById(id);
+    if (!booking || booking.driverId !== driverId) {
+      throw new ResourceNotFoundException('Booking');
+    }
+    return booking;
   }
 
   async listBookings(user: AuthUser): Promise<Record<string, unknown>[]> {
@@ -190,6 +369,8 @@ export class PorterService {
         'Deliveries can only be cancelled before pickup',
       );
     }
+    await this.dispatch.release(booking.driverId);
+    this.gateway.emitTrip(id, 'trip:cancelled', {});
     this.logger.log(`porter booking cancelled (mock refund): ${booking.code}`);
   }
 
@@ -224,27 +405,6 @@ export class PorterService {
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────
-
-  /**
-   * A saved address (looked up scoped to the caller — a mismatched owner
-   * behaves like "not found") takes priority over freeform text, which
-   * covers the map-pick / current-location picker options that have no
-   * saved address id.
-   */
-  private async resolveAddress(
-    user: AuthUser,
-    addressId: string | undefined,
-    freeText: string | undefined,
-  ): Promise<string> {
-    if (!addressId) {
-      return freeText!;
-    }
-    const address = await this.locations.findByIdForUser(addressId, user.id);
-    if (!address) {
-      throw new ResourceNotFoundException('Address');
-    }
-    return address.formattedAddress;
-  }
 
   private async assertBookingExists(id: string) {
     const booking = await this.bookings.findById(id);

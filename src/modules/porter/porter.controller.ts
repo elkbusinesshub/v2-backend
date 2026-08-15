@@ -14,7 +14,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
-import { CreatePorterBookingDto, PorterQuoteDto } from './porter.dto';
+import { CreatePorterBookingDto, PorterOtpDto, PorterQuoteDto } from './porter.dto';
 import { PorterService } from './porter.service';
 
 /**
@@ -98,5 +98,49 @@ export class PorterController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ApiResponse<Record<string, unknown>>> {
     return ApiResponse.of(await this.service.confirmDelivery(id), 'Delivery confirmed');
+  }
+
+  // ─── the partner's side ────────────────────────────────────────────────────
+
+  @Get('driver/active')
+  @ApiOperation({ summary: 'The delivery this partner is working, if any' })
+  async driverActive(
+    @CurrentUser() user: AuthUser,
+  ): Promise<ApiResponse<Record<string, unknown> | null>> {
+    return ApiResponse.of(await this.service.driverActiveJob(user));
+  }
+
+  @Post('bookings/:id/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partner accepts an offered delivery (first one wins)' })
+  async accept(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(await this.service.acceptJob(user, id), 'Delivery accepted');
+  }
+
+  @Post('bookings/:id/driver-pickup')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Partner collects the parcel with the sender's code" })
+  async driverPickup(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PorterOtpDto,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(
+      await this.service.driverPickUp(user, id, dto.otpCode),
+      'Parcel collected',
+    );
+  }
+
+  @Post('bookings/:id/driver-deliver')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partner marks it delivered and becomes available again' })
+  async driverDeliver(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return ApiResponse.of(await this.service.driverDeliver(user, id), 'Delivered');
   }
 }
