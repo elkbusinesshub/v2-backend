@@ -406,6 +406,10 @@ model DriverProfile {
   fullName      String?
   dateOfBirth   DateTime? @db.Date
   licenceNumber String?
+  /// When the licence stops being valid. A licence is only proof while it is
+  /// in date, so this is checked at registration and is what a future expiry
+  /// sweep would read.
+  licenceExpiry DateTime? @db.Date
   /// Storage keys from `POST /uploads/image` (purpose `provider-docs`), not
   /// URLs: a URL expires, and the document has to outlive the link.
   licenceFrontKey String?

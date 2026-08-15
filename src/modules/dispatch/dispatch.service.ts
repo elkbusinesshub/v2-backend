@@ -12,6 +12,7 @@ import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 import {
   DISPATCH_RADIUS_KM,
   MAX_DRIVER_AGE_YEARS,
+  MAX_LICENCE_YEARS_AHEAD,
   MAX_OFFERS_PER_REQUEST,
   MILLISECONDS_PER_YEAR,
   MIN_DRIVER_AGE_YEARS,
@@ -74,6 +75,7 @@ export class DispatchService {
   async register(user: AuthUser, dto: RegisterDriverDto): Promise<Record<string, unknown>> {
     await this.assertVehicleClass(dto.service, dto.vehicleSlug);
     const dateOfBirth = this.assertOldEnough(dto.dateOfBirth);
+    const licenceExpiry = this.assertLicenceInDate(dto.licenceExpiry);
     const profile = await this.drivers.upsertProfile(user.id, dto.service, {
       vehicleSlug: dto.vehicleSlug,
       vehicleLabel: dto.vehicleLabel,
@@ -81,6 +83,7 @@ export class DispatchService {
       fullName: dto.fullName.trim(),
       dateOfBirth,
       licenceNumber: dto.licenceNumber.toUpperCase().replace(/\s+/g, ''),
+      licenceExpiry,
       licenceFrontKey: dto.licenceFrontKey,
       licenceBackKey: dto.licenceBackKey,
       vehicleDocKey: dto.vehicleDocKey,
@@ -119,6 +122,35 @@ export class DispatchService {
       ]);
     }
     return dateOfBirth;
+  }
+
+  /**
+   * The licence expiry, once it is a real date that has not passed.
+   *
+   * Refusing an expired licence at the door is the point of collecting it: a
+   * document that stopped being valid last year proves nothing, and storing it
+   * as though it did would leave the check to nobody.
+   */
+  private assertLicenceInDate(value: string): Date {
+    const expiry = new Date(value);
+    if (Number.isNaN(expiry.getTime())) {
+      throw new ValidationFailedException([
+        { field: 'licenceExpiry', message: 'licenceExpiry is not a real date' },
+      ]);
+    }
+    const now = new Date();
+    if (expiry.getTime() <= now.getTime()) {
+      throw new ValidationFailedException([
+        { field: 'licenceExpiry', message: 'this licence has expired' },
+      ]);
+    }
+    const yearsAhead = (expiry.getTime() - now.getTime()) / MILLISECONDS_PER_YEAR;
+    if (yearsAhead > MAX_LICENCE_YEARS_AHEAD) {
+      throw new ValidationFailedException([
+        { field: 'licenceExpiry', message: 'licenceExpiry does not look right' },
+      ]);
+    }
+    return expiry;
   }
 
   async listProfiles(user: AuthUser): Promise<Record<string, unknown>[]> {
@@ -333,6 +365,7 @@ export class DispatchService {
       fullName: profile.fullName,
       dateOfBirth: profile.dateOfBirth?.toISOString().slice(0, 10) ?? null,
       licenceNumber: profile.licenceNumber,
+      licenceExpiry: profile.licenceExpiry?.toISOString().slice(0, 10) ?? null,
       /// Whether the paperwork has been checked, so the app can say so.
       verification: profile.verification,
       hasDocuments: Boolean(

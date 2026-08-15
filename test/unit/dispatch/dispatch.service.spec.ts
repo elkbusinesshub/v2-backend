@@ -13,6 +13,15 @@ import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 
 const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
 
+/** Today, shifted by whole years — negative goes back. */
+function yearsFromNow(years: number): string {
+  const at = new Date();
+  at.setFullYear(at.getFullYear() + years);
+  return at.toISOString().slice(0, 10);
+}
+
+const yearsAgo = (years: number): string => yearsFromNow(-years);
+
 /** A registration as the app sends it, once the three uploads have returned. */
 const registration = {
   service: DriverService.RIDE,
@@ -22,17 +31,11 @@ const registration = {
   fullName: '  Ravi Kumar  ',
   dateOfBirth: '1992-04-17',
   licenceNumber: 'ka05 2011 0001234',
+  licenceExpiry: yearsFromNow(5),
   licenceFrontKey: 'provider-docs/2026/front.jpg',
   licenceBackKey: 'provider-docs/2026/back.jpg',
   vehicleDocKey: 'provider-docs/2026/rc.jpg',
 };
-
-/** Today, shifted back by whole years. */
-function yearsAgo(years: number): string {
-  const at = new Date();
-  at.setFullYear(at.getFullYear() - years);
-  return at.toISOString().slice(0, 10);
-}
 
 describe('DispatchService.register', () => {
   let service: DispatchService;
@@ -158,6 +161,29 @@ describe('DispatchService.register', () => {
     await expect(
       service.register(user, { ...registration, dateOfBirth: '1850-01-01' }),
     ).rejects.toBeInstanceOf(ValidationFailedException);
+  });
+
+  it('refuses a licence that has already expired', async () => {
+    // The reason for asking at all: a document that stopped being valid last
+    // year proves nothing, and storing it as though it did leaves the check to
+    // nobody.
+    await expect(
+      service.register(user, { ...registration, licenceExpiry: yearsAgo(1) }),
+    ).rejects.toBeInstanceOf(ValidationFailedException);
+    expect(drivers.upsertProfile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a licence dated absurdly far ahead', async () => {
+    await expect(
+      service.register(user, { ...registration, licenceExpiry: yearsFromNow(60) }),
+    ).rejects.toBeInstanceOf(ValidationFailedException);
+  });
+
+  it('stores an expiry that is still in the future', async () => {
+    await service.register(user, { ...registration, licenceExpiry: yearsFromNow(3) });
+
+    const [, , stored] = drivers.upsertProfile.mock.calls[0]!;
+    expect(stored.licenceExpiry).toBeInstanceOf(Date);
   });
 
   it('still refuses a vehicle class dispatch never searches for', async () => {

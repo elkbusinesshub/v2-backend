@@ -45,3 +45,11 @@ export const MAX_DRIVER_AGE_YEARS = 100;
 
 /** Average year, leap years included — this is an age check, not a diary. */
 export const MILLISECONDS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+/**
+ * How far ahead a licence may be dated before the date is a typo.
+ *
+ * No licence anywhere runs for three decades, so a year beyond this was
+ * mistyped rather than issued.
+ */
+export const MAX_LICENCE_YEARS_AHEAD = 30;

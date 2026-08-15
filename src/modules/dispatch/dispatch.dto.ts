@@ -70,6 +70,14 @@ export class RegisterDriverDto {
   })
   licenceNumber!: string;
 
+  /**
+   * `YYYY-MM-DD`. Must still be in the future — an expired licence is not
+   * proof of anything, which is the whole reason for asking. Checked in the
+   * service, where "in the future" can actually be expressed.
+   */
+  @IsDateString()
+  licenceExpiry!: string;
+
   /** Storage keys from `POST /uploads/image` with purpose `provider-docs`. */
   @IsString()
   @IsNotEmpty()
