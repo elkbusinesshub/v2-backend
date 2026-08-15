@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { DriverService, Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
@@ -763,6 +763,227 @@ async function seedDemoRecords(): Promise<void> {
   });
 }
 
+// ─── QA test accounts ────────────────────────────────────────────────────────
+
+/**
+ * Five fixed-code accounts for manual testing, created only when
+ * SEED_TEST_ACCOUNTS is set.
+ *
+ * Their numbers are listed in `OTP_TEST_PHONES`, so signing in as any of them
+ * always takes `OTP_TEST_CODE` and never sends an SMS. `env.validation.ts`
+ * refuses to boot with that list non-empty under NODE_ENV=production, which is
+ * what keeps these out of a real deployment.
+ *
+ * Two drive, three sell — between them they cover every screen the app has.
+ */
+const TEST_ACCOUNTS = [
+  { phone: '+919999999999', name: 'Test Driver', role: 'RIDE' as const },
+  { phone: '+918888888888', name: 'Test Porter', role: 'PORTER' as const },
+  { phone: '+917777777777', name: 'Test Seller One', role: 'SELLER' as const },
+  { phone: '+916666666666', name: 'Test Seller Two', role: 'SELLER' as const },
+  { phone: '+915555555555', name: 'Test Seller Three', role: 'SELLER' as const },
+];
+
+/** The vehicle each driving account runs. */
+const TEST_VEHICLES = {
+  RIDE: { vehicleSlug: 'auto', vehicleLabel: 'Bajaj RE · Yellow', plateNumber: 'KA05TA1111' },
+  PORTER: { vehicleSlug: 'bike', vehicleLabel: 'Hero Splendor · Black', plateNumber: 'KA05PT2222' },
+};
+
+/**
+ * Two listings in each of the four seller categories, per selling account.
+ *
+ * Taxi and porter are absent by design: they are dispatch products served by
+ * the two driving accounts, and nobody posts an ad for them.
+ */
+const TEST_AD_TEMPLATES: AdFixture[] = [
+  {
+    title: 'Full Home Deep Cleaning',
+    categorySlug: 'cleaning',
+    icon: '🧹',
+    price: 200,
+    priceUnit: '/ visit',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Whole-house deep clean: kitchen degreasing, bathroom descaling, floor scrubbing and balcony wash. Team of two, materials included.',
+    attributes: {
+      subCategory: 'deep',
+      durationLabel: '3-4 hrs',
+      includes: ['Kitchen', 'Bathrooms', 'Floors'],
+    },
+  },
+  {
+    title: 'Sofa & Carpet Shampooing',
+    categorySlug: 'cleaning',
+    icon: '🛋️',
+    price: 130,
+    priceUnit: '/ set',
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    description:
+      'Wet shampoo and extraction for upholstery and rugs. Fabric-safe solutions, dries in 4-6 hours.',
+    attributes: { subCategory: 'sof', durationLabel: '2-3 hrs' },
+  },
+  {
+    title: 'AC Service & Gas Refill',
+    categorySlug: 'repairing',
+    icon: '❄️',
+    price: 95,
+    priceUnit: 'starting',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'Split and window AC servicing, coil cleaning, gas top-up and leak check by certified technicians.',
+    attributes: { subCategory: 'ac', durationLabel: '1-2 hrs', warrantyLabel: '30-day warranty' },
+  },
+  {
+    title: 'Plumbing & Leak Repair',
+    categorySlug: 'repairing',
+    icon: '🚿',
+    price: 90,
+    priceUnit: '/ visit',
+    locality: 'Jayanagar',
+    city: 'Bengaluru',
+    description:
+      'Tap and mixer replacement, blocked drains, concealed leak detection and pipe repair. Same-day slots.',
+    attributes: { subCategory: 'plm', durationLabel: '1-2 hrs', warrantyLabel: '15-day warranty' },
+  },
+  {
+    title: 'Honda City · Automatic',
+    categorySlug: 'car_rental',
+    icon: '🚗',
+    price: 2200,
+    priceUnit: '/ day',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description: 'Comfortable sedan with boot space for four bags. Automatic, fuel not included.',
+    attributes: { subCategory: 'SEDAN', seats: 5, transmission: 'AUTOMATIC', fuel: 'PETROL' },
+  },
+  {
+    title: 'Toyota Innova · 7 Seater',
+    categorySlug: 'car_rental',
+    icon: '🚐',
+    price: 3500,
+    priceUnit: '/ day',
+    locality: 'Whitefield',
+    city: 'Bengaluru',
+    description:
+      'Seven-seater for family trips and outstation runs. Diesel, roof carrier on request.',
+    attributes: { subCategory: 'SUV', seats: 7, transmission: 'MANUAL', fuel: 'DIESEL' },
+  },
+  {
+    title: 'Furnished PG · Single Room',
+    categorySlug: 'elkstay',
+    icon: '🏨',
+    price: 12000,
+    priceUnit: '/ month',
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    description:
+      'Furnished single room in a co-living house. Wi-Fi, housekeeping twice a week, meals on a separate plan.',
+    attributes: {
+      roomType: 'Single occupancy',
+      stayType: 'PG',
+      depositAmount: 12000,
+      furnished: true,
+    },
+  },
+  {
+    title: 'Independent 1BHK Homestay',
+    categorySlug: 'elkstay',
+    icon: '🏡',
+    price: 19000,
+    priceUnit: '/ month',
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    description:
+      'First-floor 1BHK in a family home. Private entrance, kitchen and covered parking.',
+    attributes: { roomType: '1BHK', stayType: 'HOMESTAY', depositAmount: 38000, furnished: false },
+  },
+];
+
+async function seedTestAccounts(): Promise<void> {
+  if (process.env.SEED_TEST_ACCOUNTS !== 'true') return;
+
+  let ads = 0;
+  for (const account of TEST_ACCOUNTS) {
+    const user = await prisma.user.upsert({
+      where: { phone: account.phone },
+      update: { name: account.name },
+      create: { phone: account.phone, name: account.name, roles: ['USER'] },
+    });
+
+    // Authoritative: a test account ends up exactly as described here, even
+    // if earlier manual testing left it registered for something else.
+    const intended =
+      account.role === 'RIDE'
+        ? DriverService.RIDE
+        : account.role === 'PORTER'
+          ? DriverService.PORTER
+          : null;
+    await prisma.driverProfile.deleteMany({
+      where: { userId: user.id, ...(intended ? { service: { not: intended } } : {}) },
+    });
+
+    if (account.role === 'SELLER') {
+      // Each selling account gets its own copy of all eight, so the four
+      // category screens have several sellers to choose between rather than
+      // one seller's list repeated.
+      for (const template of TEST_AD_TEMPLATES) {
+        const coords = LOCALITY_COORDS[template.locality];
+        const data = {
+          ...template,
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+        };
+        const existing = await prisma.ad.findFirst({
+          where: { title: data.title, sellerId: user.id },
+        });
+        if (existing) {
+          await prisma.ad.update({ where: { id: existing.id }, data });
+        } else {
+          await prisma.ad.create({ data: { ...data, sellerId: user.id } });
+        }
+        ads += 1;
+      }
+      continue;
+    }
+
+    // A driving account: registered, on duty, and placed in the middle of the
+    // seeded localities so it is immediately dispatchable. `lastSeenAt` is set
+    // to now — the app's own heartbeat keeps it fresh from there.
+    const service = intended!;
+    await prisma.driverProfile.upsert({
+      where: { userId_service: { userId: user.id, service } },
+      // The vehicle is rewritten too: a profile left over from earlier manual
+      // testing must end up as described here, not keep whatever it had.
+      update: {
+        ...TEST_VEHICLES[account.role],
+        isOnline: true,
+        lat: 12.9352,
+        lng: 77.6245,
+        lastSeenAt: new Date(),
+        activeBookingId: null,
+      },
+      create: {
+        userId: user.id,
+        service,
+        ...TEST_VEHICLES[account.role],
+        isOnline: true,
+        lat: 12.9352,
+        lng: 77.6245,
+        lastSeenAt: new Date(),
+      },
+    });
+  }
+
+  console.log(
+    `Seeded ${TEST_ACCOUNTS.length} test accounts (SEED_TEST_ACCOUNTS=true): ` +
+      `1 taxi driver, 1 delivery partner, 3 sellers with ${ads} listings`,
+  );
+}
+
 async function main(): Promise<void> {
   // Before the listings: they need an owner, and the demo provider is it.
   const demoUsers = await seedDemoUsers();
@@ -780,6 +1001,7 @@ async function main(): Promise<void> {
   const withListings = process.env.SEED_LISTINGS !== 'false';
   const adCount = withListings ? await seedAds(await seedSellerId()) : 0;
   if (withListings) await seedDemoRecords();
+  await seedTestAccounts();
 
   console.log(
     !withListings
