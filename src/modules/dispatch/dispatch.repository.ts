@@ -45,7 +45,7 @@ export class DispatchRepository {
   async upsertProfile(
     userId: string,
     service: DriverService,
-    data: { vehicleSlug: string; vehicleLabel: string; plateNumber: string },
+    data: Omit<Prisma.DriverProfileUncheckedCreateInput, 'userId' | 'service'>,
   ): Promise<DriverProfile> {
     return this.db.driverProfile.upsert({
       where: { userId_service: { userId, service } },

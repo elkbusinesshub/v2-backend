@@ -1,4 +1,4 @@
-import { DriverService, Prisma, PrismaClient } from '@prisma/client';
+import { DriverService, DriverVerification, Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
@@ -784,10 +784,37 @@ const TEST_ACCOUNTS = [
   { phone: '+915555555555', name: 'Test Seller Three', role: 'SELLER' as const },
 ];
 
-/** The vehicle each driving account runs. */
+/**
+ * The vehicle each driving account runs, and the paperwork behind it.
+ *
+ * Registration requires identity and three documents, so a seeded partner
+ * carries them too — otherwise the test accounts would sit in a state the app
+ * can no longer produce. The document keys point at nothing in storage: they
+ * are what an upload would have returned, which is all any of this reads.
+ */
 const TEST_VEHICLES = {
-  RIDE: { vehicleSlug: 'auto', vehicleLabel: 'Bajaj RE · Yellow', plateNumber: 'KA05TA1111' },
-  PORTER: { vehicleSlug: 'bike', vehicleLabel: 'Hero Splendor · Black', plateNumber: 'KA05PT2222' },
+  RIDE: {
+    vehicleSlug: 'auto',
+    vehicleLabel: 'Bajaj RE · Yellow',
+    plateNumber: 'KA05TA1111',
+    fullName: 'Test Driver',
+    dateOfBirth: new Date('1992-04-17'),
+    licenceNumber: 'KA0520110001234',
+    licenceFrontKey: 'provider-docs/seed/test-driver-licence-front.jpg',
+    licenceBackKey: 'provider-docs/seed/test-driver-licence-back.jpg',
+    vehicleDocKey: 'provider-docs/seed/test-driver-rc.jpg',
+  },
+  PORTER: {
+    vehicleSlug: 'bike',
+    vehicleLabel: 'Hero Splendor · Black',
+    plateNumber: 'KA05PT2222',
+    fullName: 'Test Porter',
+    dateOfBirth: new Date('1995-11-02'),
+    licenceNumber: 'KA0520140005678',
+    licenceFrontKey: 'provider-docs/seed/test-porter-licence-front.jpg',
+    licenceBackKey: 'provider-docs/seed/test-porter-licence-back.jpg',
+    vehicleDocKey: 'provider-docs/seed/test-porter-rc.jpg',
+  },
 };
 
 /**
@@ -1136,6 +1163,9 @@ async function seedTestAccounts(): Promise<void> {
       // testing must end up as described here, not keep whatever it had.
       update: {
         ...TEST_VEHICLES[account.role],
+        // A test account is meant to be immediately usable, so its paperwork
+        // is treated as already checked. A real registration lands PENDING.
+        verification: DriverVerification.VERIFIED,
         isOnline: true,
         lat: 12.9352,
         lng: 77.6245,
@@ -1146,6 +1176,7 @@ async function seedTestAccounts(): Promise<void> {
         userId: user.id,
         service,
         ...TEST_VEHICLES[account.role],
+        verification: DriverVerification.VERIFIED,
         isOnline: true,
         lat: 12.9352,
         lng: 77.6245,

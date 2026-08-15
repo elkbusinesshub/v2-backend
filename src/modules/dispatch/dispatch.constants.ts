@@ -30,3 +30,18 @@ export const MAX_OFFERS_PER_REQUEST = 10;
 
 /** Length of the pickup OTP the rider reads out to the driver. */
 export const PICKUP_OTP_LENGTH = 4;
+
+/**
+ * The youngest a partner may be.
+ *
+ * A commercial licence in India is 20; a private one is 18. This is the floor
+ * for taking a registration at all, not a substitute for reading the licence —
+ * that is what verification is for.
+ */
+export const MIN_DRIVER_AGE_YEARS = 18;
+
+/** Beyond this the date is a typo, not a birthday. */
+export const MAX_DRIVER_AGE_YEARS = 100;
+
+/** Average year, leap years included — this is an age check, not a diary. */
+export const MILLISECONDS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;

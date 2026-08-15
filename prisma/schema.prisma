@@ -365,6 +365,14 @@ enum DriverService {
   PORTER
 }
 
+/// Where a partner's paperwork has got to.
+enum DriverVerification {
+  /// Documents are on file and nobody has looked at them yet.
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 /// A driver or delivery partner, and where they are right now.
 ///
 /// Position lives on this row rather than in a history table: dispatch and the
@@ -384,6 +392,33 @@ model DriverProfile {
   /// "Honda Activa · White" — shown to the rider once assigned.
   vehicleLabel String
   plateNumber  String
+
+  /// Who is actually driving, and the paperwork that says they may.
+  ///
+  /// Registration used to take a name and a plate, which proves nothing: the
+  /// person a rider gets into a car with was self-declared. These are the
+  /// licence holder's own details as printed on the licence, so they are held
+  /// here rather than on `User` — an account name is whatever somebody typed.
+  ///
+  /// Nullable only because profiles registered before this existed still have
+  /// rows; the API requires every one of them, and `verification` is what says
+  /// whether a profile is complete. Nothing is backfilled with a guess.
+  fullName      String?
+  dateOfBirth   DateTime? @db.Date
+  licenceNumber String?
+  /// Storage keys from `POST /uploads/image` (purpose `provider-docs`), not
+  /// URLs: a URL expires, and the document has to outlive the link.
+  licenceFrontKey String?
+  licenceBackKey  String?
+  /// Registration certificate or equivalent — the document tying this vehicle
+  /// to this driver. A licence says they can drive; this says it is theirs.
+  vehicleDocKey   String?
+
+  /// Whether a human has checked the documents against the details.
+  ///
+  /// Set on registration to PENDING and moved by an admin. It does **not**
+  /// gate going on duty today — see the note in dispatch.service.ts.
+  verification DriverVerification @default(PENDING)
 
   /// Only an online partner is offered work. Going offline does not abandon a
   /// trip already accepted; `activeBookingId` is what says they are busy.

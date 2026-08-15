@@ -2,15 +2,26 @@ import { DriverService } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsLatitude,
   IsLongitude,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 
+/**
+ * Signing up to drive or to deliver.
+ *
+ * Registration used to be a name and a plate, which proves nothing about the
+ * person a rider is about to get into a car with. Everything here is required:
+ * the licence holder's own details, and photographs of the licence and of the
+ * document tying the vehicle to them.
+ */
 export class RegisterDriverDto {
   @IsEnum(DriverService)
   service!: DriverService;
@@ -30,6 +41,51 @@ export class RegisterDriverDto {
   @IsNotEmpty()
   @MaxLength(20)
   plateNumber!: string;
+
+  /** As printed on the licence, which is not necessarily the account name. */
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(80)
+  fullName!: string;
+
+  /**
+   * `YYYY-MM-DD`. Checked against a minimum age in the service — a date alone
+   * cannot express "old enough to hold a licence".
+   */
+  @IsDateString()
+  dateOfBirth!: string;
+
+  /**
+   * Licence number. Formats differ by state and by country, so this checks a
+   * plausible length and character set rather than pretending to know them
+   * all — a wrong regex rejects real drivers.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(5)
+  @MaxLength(30)
+  @Matches(/^[A-Za-z0-9 -]+$/, {
+    message: 'licenceNumber may contain only letters, numbers, spaces and hyphens',
+  })
+  licenceNumber!: string;
+
+  /** Storage keys from `POST /uploads/image` with purpose `provider-docs`. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  licenceFrontKey!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  licenceBackKey!: string;
+
+  /** Registration certificate, or whatever proves the vehicle is theirs. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  vehicleDocKey!: string;
 }
 
 export class SetOnlineDto {

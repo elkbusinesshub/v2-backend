@@ -1,13 +1,20 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { DriverService, type DriverProfile } from '@prisma/client';
-import { DomainException, ResourceNotFoundException } from '@/common/errors/domain.exceptions';
+import { DriverService, DriverVerification, type DriverProfile } from '@prisma/client';
+import {
+  DomainException,
+  ResourceNotFoundException,
+  ValidationFailedException,
+} from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 import {
   DISPATCH_RADIUS_KM,
+  MAX_DRIVER_AGE_YEARS,
   MAX_OFFERS_PER_REQUEST,
+  MILLISECONDS_PER_YEAR,
+  MIN_DRIVER_AGE_YEARS,
   PICKUP_OTP_LENGTH,
 } from './dispatch.constants';
 import type {
@@ -48,21 +55,70 @@ export class DispatchService {
   // ─── the partner's own profile ─────────────────────────────────────────────
 
   /**
-   * Registers, or updates, the vehicle a partner runs.
+   * Registers, or updates, a partner: who they are, what they drive, and the
+   * documents behind both.
    *
    * The class is checked against the live catalogue rather than trusted: a
    * partner registered under a slug no dispatch will ever search for would sit
    * online forever and never be offered anything.
+   *
+   * Re-registering resets `verification` to PENDING. A partner who changes
+   * their licence number or swaps the photographs has not been checked against
+   * the new ones, and carrying a VERIFIED flag across that would make the flag
+   * mean nothing.
+   *
+   * **Duty is not gated on verification today.** A PENDING partner can still go
+   * online and be dispatched; the status is recorded and shown, and the check
+   * is one condition in `setOnline` if that is wanted.
    */
   async register(user: AuthUser, dto: RegisterDriverDto): Promise<Record<string, unknown>> {
     await this.assertVehicleClass(dto.service, dto.vehicleSlug);
+    const dateOfBirth = this.assertOldEnough(dto.dateOfBirth);
     const profile = await this.drivers.upsertProfile(user.id, dto.service, {
       vehicleSlug: dto.vehicleSlug,
       vehicleLabel: dto.vehicleLabel,
       plateNumber: dto.plateNumber.toUpperCase(),
+      fullName: dto.fullName.trim(),
+      dateOfBirth,
+      licenceNumber: dto.licenceNumber.toUpperCase().replace(/\s+/g, ''),
+      licenceFrontKey: dto.licenceFrontKey,
+      licenceBackKey: dto.licenceBackKey,
+      vehicleDocKey: dto.vehicleDocKey,
+      verification: DriverVerification.PENDING,
     });
-    this.logger.log(`driver registered: user=${user.id} service=${dto.service}`);
+    this.logger.log(`driver registered: user=${user.id} service=${dto.service} (pending review)`);
     return this.toProfileJson(profile);
+  }
+
+  /**
+   * The date of birth, once it is a real date and old enough to hold a licence.
+   *
+   * `@IsDateString` proves it is a date, not that it is a *possible* one — it
+   * accepts tomorrow, and it accepts 1850.
+   */
+  private assertOldEnough(value: string): Date {
+    const dateOfBirth = new Date(value);
+    if (Number.isNaN(dateOfBirth.getTime())) {
+      throw new ValidationFailedException([
+        { field: 'dateOfBirth', message: 'dateOfBirth is not a real date' },
+      ]);
+    }
+    const now = new Date();
+    const age = (now.getTime() - dateOfBirth.getTime()) / MILLISECONDS_PER_YEAR;
+    if (age < MIN_DRIVER_AGE_YEARS) {
+      throw new ValidationFailedException([
+        {
+          field: 'dateOfBirth',
+          message: `a partner must be at least ${MIN_DRIVER_AGE_YEARS} years old`,
+        },
+      ]);
+    }
+    if (age > MAX_DRIVER_AGE_YEARS) {
+      throw new ValidationFailedException([
+        { field: 'dateOfBirth', message: 'dateOfBirth does not look right' },
+      ]);
+    }
+    return dateOfBirth;
   }
 
   async listProfiles(user: AuthUser): Promise<Record<string, unknown>[]> {
@@ -271,6 +327,17 @@ export class DispatchService {
       vehicleSlug: profile.vehicleSlug,
       vehicleLabel: profile.vehicleLabel,
       plateNumber: profile.plateNumber,
+      // Identity, for the partner's own screen. The document keys are
+      // deliberately absent: the partner has no use for them and a key is one
+      // step from the file, so it stays server-side.
+      fullName: profile.fullName,
+      dateOfBirth: profile.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      licenceNumber: profile.licenceNumber,
+      /// Whether the paperwork has been checked, so the app can say so.
+      verification: profile.verification,
+      hasDocuments: Boolean(
+        profile.licenceFrontKey && profile.licenceBackKey && profile.vehicleDocKey,
+      ),
       isOnline: profile.isOnline,
       lat: profile.lat === null ? null : Number(profile.lat),
       lng: profile.lng === null ? null : Number(profile.lng),

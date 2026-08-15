@@ -33,12 +33,23 @@ export class DispatchController {
   }
 
   @Post('register')
-  @ApiOperation({ summary: 'Register (or update) the vehicle this partner runs' })
+  @ApiOperation({
+    summary: 'Register a partner: identity, vehicle and documents',
+    description:
+      'Every field is required. The three document fields are storage keys from ' +
+      'POST /uploads/image with purpose provider-docs. Re-registering returns the ' +
+      'profile to PENDING review.',
+  })
   async register(
     @CurrentUser() user: AuthUser,
     @Body() dto: RegisterDriverDto,
   ): Promise<ApiResponse<Record<string, unknown>>> {
-    return ApiResponse.of(await this.service.register(user, dto), 'Vehicle saved');
+    // Not "saved": it is submitted, and a human still has to look at the
+    // documents. The app repeats this back to the partner.
+    return ApiResponse.of(
+      await this.service.register(user, dto),
+      'Registration submitted for review',
+    );
   }
 
   @Post('online')
