@@ -12,19 +12,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
-import {
-  CreateRideBookingDto,
-  DriverOtpDto,
-  RateRideDto,
-  RideRequestPreviewDto,
-  StartRideDto,
-} from './rides.dto';
+import { CreateRideBookingDto, DriverOtpDto, RateRideDto, StartRideDto } from './rides.dto';
 import { RidesService } from './rides.service';
 
 /**
- * `/rides/types`, `/rides/current-estimate` and `/rides/request` are the
- * exact paths `RideRepository` already calls; `/rides/bookings/...` is what
- * `ride_booking_flow.dart`'s full trip lifecycle needs to go live.
+ * The rider's side of taxi: the catalogue, the route estimate, and the trip
+ * lifecycle. The partner's side is at the bottom; who is on duty and where
+ * lives in the dispatch module.
  */
 @ApiTags('rides')
 @ApiBearerAuth()
@@ -44,15 +38,8 @@ export class RidesController {
     return this.service.getCurrentEstimate();
   }
 
-  @Post('request')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Driver-match preview — no booking is created' })
-  async request(@Body() dto: RideRequestPreviewDto): Promise<Record<string, unknown>> {
-    return this.service.previewDriverMatch(dto);
-  }
-
   @Post('bookings')
-  @ApiOperation({ summary: 'Book a ride (driver assigned + OTP issued, mock payment)' })
+  @ApiOperation({ summary: 'Request a ride — goes out to nearby partners (mock payment)' })
   async createBooking(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateRideBookingDto,

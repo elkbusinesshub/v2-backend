@@ -147,21 +147,6 @@ describe('RidesService', () => {
       const estimate = service.getCurrentEstimate();
       expect(estimate).toMatchObject({ etaMinutes: 14, distanceKm: 8.2 });
     });
-
-    it('previews the class ETA without naming a driver or booking anything', async () => {
-      // Who comes is decided by whoever accepts; naming somebody here would
-      // be a promise dispatch cannot keep.
-      const match = await service.previewDriverMatch({ rideTypeId: 'auto' });
-      expect(match).toEqual({ etaMinutes: 4 });
-      expect(bookings.create).not.toHaveBeenCalled();
-    });
-
-    it('rejects an unknown ride type on preview', async () => {
-      rideTypes.findActiveBySlug.mockResolvedValue(null);
-      await expect(service.previewDriverMatch({ rideTypeId: 'jet' })).rejects.toBeInstanceOf(
-        ValidationFailedException,
-      );
-    });
   });
 
   describe('createBooking', () => {
@@ -173,8 +158,8 @@ describe('RidesService', () => {
     };
 
     it('opens as a search with no driver yet, and charges the fare', async () => {
-      // Nobody is assigned at booking time any more: the trip goes out to
-      // nearby partners and belongs to whoever accepts it first.
+      // Nobody is assigned at booking time: the trip goes out to nearby
+      // partners and belongs to whoever accepts it first.
       const booking = await service.createBooking(user, {
         ...dto,
         pickupLat: 12.9352,

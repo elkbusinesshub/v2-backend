@@ -15,12 +15,7 @@ import {
   RIDE_DEFAULT_ESTIMATE,
   RIDE_DEFAULT_ETA_MINUTES,
 } from './rides.constants';
-import type {
-  CreateRideBookingDto,
-  RateRideDto,
-  RideRequestPreviewDto,
-  StartRideDto,
-} from './rides.dto';
+import type { CreateRideBookingDto, RateRideDto, StartRideDto } from './rides.dto';
 import { toRideBookingJson, toRideTypeJson } from './rides.mapper';
 import { RideBookingsRepository } from './ride-bookings.repository';
 import { RideTypesRepository } from './ride-types.repository';
@@ -65,18 +60,6 @@ export class RidesService {
       etaMinutes: RIDE_DEFAULT_ETA_MINUTES,
       distanceKm: RIDE_DEFAULT_DISTANCE_KM,
     };
-  }
-
-  /** Driver-match preview — no booking is created (matches the legacy find-drivers UX). */
-  async previewDriverMatch(dto: RideRequestPreviewDto): Promise<Record<string, unknown>> {
-    const rideType = await this.rideTypes.findActiveBySlug(dto.rideTypeId);
-    if (!rideType) {
-      throw new ValidationFailedException([{ field: 'rideTypeId', message: 'Unknown ride type' }]);
-    }
-    // No driver is named here any more: who comes is decided by whoever
-    // accepts the request, and inventing one would be a promise the dispatch
-    // cannot keep. The screen shows how long a car of this class takes.
-    return { etaMinutes: rideType.etaMinutes };
   }
 
   // ─── bookings (the full flow behind ride_booking_flow.dart) ─────────────────

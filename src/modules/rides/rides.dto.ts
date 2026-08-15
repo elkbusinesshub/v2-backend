@@ -105,13 +105,3 @@ export class RateRideDto {
   @IsOptional()
   tip?: number;
 }
-
-/** Legacy /rides/request body — a driver-match preview, no booking created. */
-export class RideRequestPreviewDto {
-  @ApiProperty({ example: 'auto' })
-  @Transform(lower)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  rideTypeId!: string;
-}
