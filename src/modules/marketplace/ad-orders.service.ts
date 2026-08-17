@@ -66,6 +66,17 @@ export class AdOrdersService {
       );
     }
 
+    // An enquiry is a conversation, and a buyer has one conversation with a
+    // seller about a listing — not one per tap. Without this, every tap of
+    // Chat opened a fresh empty thread and the messages already sent looked
+    // like they had vanished.
+    if (dto.isEnquiry) {
+      const existing = await this.orders.findOpenEnquiry(ad.id, user.id);
+      if (existing) {
+        return this.toJson(existing);
+      }
+    }
+
     const quantity = dto.quantity ?? 1;
     const order = await this.orders.create({
       code: `ELK-A-${this.randomCode()}`,
@@ -78,6 +89,7 @@ export class AdOrdersService {
       // not get to say what it owes. An enquiry costs nothing: asking to view
       // a room is not the same as taking it for a month.
       amount: dto.isEnquiry ? 0 : Number(ad.price) * quantity,
+      isEnquiry: dto.isEnquiry ?? false,
       quantity,
       serviceName: ad.title,
       addressText: dto.addressText,
@@ -100,8 +112,12 @@ export class AdOrdersService {
         userId: ad.sellerId,
         icon: ad.icon,
         colorHex: ORDER_NOTIFICATION_COLOR,
-        title: 'New order',
-        message: `${order.buyer.name ?? 'A customer'} ordered ${ad.title}.`,
+        // An enquiry is a question, not a sale — telling a seller they have an
+        // order when nobody has bought anything sends them to the wrong screen.
+        title: dto.isEnquiry ? 'New enquiry' : 'New order',
+        message: dto.isEnquiry
+          ? `${order.buyer.name ?? 'A customer'} asked about ${ad.title}.`
+          : `${order.buyer.name ?? 'A customer'} ordered ${ad.title}.`,
       });
     } catch (err) {
       this.logger.warn({ err, orderId: order.id }, 'could not notify seller of new order');

@@ -685,6 +685,12 @@ model AdOrder {
 
   status AdOrderStatus @default(NEW)
 
+  /// A question rather than a purchase: "is this still available", a request
+  /// to view a room. Priced at zero and, unlike a real order, **reused** —
+  /// tapping Chat a second time must reopen the same conversation, not start
+  /// an empty one beside it.
+  isEnquiry Boolean @default(false)
+
   /// What the buyer is charged in total — the listing's price × `quantity`,
   /// snapshotted because the seller may reprice the listing later.
   amount      Decimal @db.Decimal(10, 2)
@@ -731,6 +737,9 @@ model AdOrder {
   @@index([sellerId, status])
   @@index([buyerId])
   @@index([adId])
+  /// Finding the buyer's existing conversation about a listing, on every tap
+  /// of Chat.
+  @@index([adId, buyerId, isEnquiry])
   @@map("ad_orders")
 }
 

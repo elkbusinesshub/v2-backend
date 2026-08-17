@@ -54,6 +54,7 @@ function order(overrides: Partial<AdOrderRow> = {}): AdOrderRow {
     buyerId: 'u-buyer',
     sellerId: 'u-seller',
     status: AdOrderStatus.NEW,
+    isEnquiry: false,
     amount: 899 as never,
     quantity: 1,
     feesAmount: 0 as never,
@@ -96,6 +97,7 @@ describe('AdOrdersService', () => {
             findForSeller: jest.fn().mockResolvedValue([order()]),
             findForBuyer: jest.fn().mockResolvedValue([order()]),
             findById: jest.fn().mockResolvedValue(order()),
+            findOpenEnquiry: jest.fn().mockResolvedValue(null),
             updateStatus: jest
               .fn()
               .mockImplementation((id, status) => Promise.resolve(order({ id, status }))),
@@ -170,7 +172,55 @@ describe('AdOrdersService', () => {
         isEnquiry: true,
       });
 
-      expect(orders.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 0 }));
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 0, isEnquiry: true }),
+      );
+    });
+
+    it('reopens the buyer’s existing enquiry instead of starting a second one', async () => {
+      // Every tap of Chat used to place a fresh order, so the buyer came back
+      // to an empty thread and the messages they had already sent looked
+      // like they had been lost. They were on the previous order.
+      orders.findOpenEnquiry.mockResolvedValue(order({ id: 'o-existing', isEnquiry: true }));
+
+      const reopened = await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        isEnquiry: true,
+      });
+
+      expect(orders.findOpenEnquiry).toHaveBeenCalledWith('ad-1', 'u-buyer');
+      expect(orders.create).not.toHaveBeenCalled();
+      expect(reopened.id).toBe('o-existing');
+    });
+
+    it('does not renotify the seller when an enquiry is merely reopened', async () => {
+      // Otherwise the seller is pinged every time the buyer opens the chat.
+      orders.findOpenEnquiry.mockResolvedValue(order({ id: 'o-existing', isEnquiry: true }));
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        isEnquiry: true,
+      });
+
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+
+    it('a real purchase is never folded into an existing enquiry', async () => {
+      // Buying the thing you asked about is a separate event, and it has a
+      // price. Only the lookup is skipped; the order is placed as normal.
+      orders.findOpenEnquiry.mockResolvedValue(order({ id: 'o-existing', isEnquiry: true }));
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+      });
+
+      expect(orders.findOpenEnquiry).not.toHaveBeenCalled();
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 899, isEnquiry: false }),
+      );
     });
 
     it('records the fees and tax the buyer was shown', async () => {

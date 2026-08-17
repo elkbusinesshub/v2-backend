@@ -43,6 +43,25 @@ export class AdOrdersRepository {
     return this.db.adOrder.findUnique({ where: { id }, include: withParties });
   }
 
+  /**
+   * The buyer's live conversation about [adId], if they already have one.
+   *
+   * A cancelled enquiry is not reused — that thread was closed on purpose, and
+   * asking again months later deserves a fresh one.
+   */
+  async findOpenEnquiry(adId: string, buyerId: string): Promise<AdOrderRow | null> {
+    return this.db.adOrder.findFirst({
+      where: {
+        adId,
+        buyerId,
+        isEnquiry: true,
+        status: { not: AdOrderStatus.CANCELLED },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: withParties,
+    });
+  }
+
   async updateStatus(
     id: string,
     status: AdOrderStatus,
