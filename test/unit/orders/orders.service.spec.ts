@@ -36,6 +36,8 @@ describe('OrdersService', () => {
               id: 'ao-1',
               contactName: 'Bright Spark',
               createdAt: new Date('2026-05-19T05:15:00.000Z'),
+              viewerIsSeller: false,
+              viewerName: 'Asha Menon',
             }),
             listMessages: jest.fn().mockResolvedValue([sellerMessage]),
             create: jest.fn().mockImplementation((data) =>
@@ -79,6 +81,27 @@ describe('OrdersService', () => {
       expect(messages[0]).toMatchObject({ isOutgoing: false, senderInitials: 'BS' });
     });
 
+    it('the same message is outgoing to the seller who wrote it', async () => {
+      // `isOutgoing` was `!fromProvider` — a fact about the message rather
+      // than about the reader — so both sides saw the whole conversation as
+      // their own, and a thread that worked looked like one that never
+      // replied.
+      chat.findThreadOwner.mockResolvedValue({
+        id: 'ao-1',
+        contactName: 'Asha Menon',
+        createdAt: new Date('2026-05-19T05:15:00.000Z'),
+        viewerIsSeller: true,
+        viewerName: 'Bright Spark',
+      });
+
+      const thread = await orders.getThread(user, 'ao-1');
+
+      const messages = thread.messages as Record<string, unknown>[];
+      expect(messages[0]).toMatchObject({ isOutgoing: true, senderInitials: null });
+      // And the header calls the other party what they are.
+      expect(thread.contactStatus).toBe('● Online · Customer');
+    });
+
     it('404s an order that is not the caller’s', async () => {
       chat.findThreadOwner.mockResolvedValue(null);
       await expect(orders.getThread(user, 'ao-x')).rejects.toBeInstanceOf(
@@ -88,6 +111,16 @@ describe('OrdersService', () => {
   });
 
   describe('sendMessage', () => {
+    /** The same thread, read from the seller's side. */
+    const asSeller = () =>
+      chat.findThreadOwner.mockResolvedValue({
+        id: 'ao-1',
+        contactName: 'Asha Menon',
+        createdAt: new Date('2026-05-19T05:15:00.000Z'),
+        viewerIsSeller: true,
+        viewerName: 'Bright Spark',
+      });
+
     it('persists an outgoing message and broadcasts it', async () => {
       const message = await orders.sendMessage(user, 'ao-1', { text: 'Ring the bell' });
 
@@ -97,7 +130,35 @@ describe('OrdersService', () => {
         text: 'Ring the bell',
       });
       expect(message).toMatchObject({ isOutgoing: true, senderInitials: null });
-      expect(gateway.emitMessage).toHaveBeenCalledWith('ao-1', message);
+    });
+
+    it('records a seller’s reply as the seller’s, not the buyer’s', async () => {
+      // `fromProvider` was hardcoded false, so a reply was stored as though
+      // the buyer had written it and the thread read as one person talking
+      // to themselves.
+      asSeller();
+
+      await orders.sendMessage(user, 'ao-1', { text: 'On my way' });
+
+      expect(chat.create).toHaveBeenCalledWith({
+        adOrderId: 'ao-1',
+        fromProvider: true,
+        text: 'On my way',
+      });
+    });
+
+    it('broadcasts the other side’s view, not the sender’s', async () => {
+      // The socket payload used to be the sender's own render, so the person
+      // receiving a message saw it arrive as their own bubble.
+      const mine = await orders.sendMessage(user, 'ao-1', { text: 'Ring the bell' });
+
+      const [orderId, broadcast, senderId] = gateway.emitMessage.mock.calls[0]!;
+      expect(orderId).toBe('ao-1');
+      expect(senderId).toBe('u-1');
+      expect(mine).toMatchObject({ isOutgoing: true, senderInitials: null });
+      // Same message, opposite side: incoming, labelled with who sent it.
+      expect(broadcast).toMatchObject({ isOutgoing: false, senderInitials: 'AM' });
+      expect(broadcast.id).toBe(mine.id);
     });
   });
 

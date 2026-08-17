@@ -82,9 +82,16 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
     }
   }
 
-  /** Fan a persisted message out to everyone watching the order thread. */
-  emitMessage(bookingId: string, message: Record<string, unknown>): void {
-    this.server.to(orderRoom(bookingId)).emit('message', message);
+  /**
+   * Fan a persisted message out to the *other* side of the thread.
+   *
+   * [message] is rendered as incoming — a thread has exactly two parties, so
+   * anybody in the room who is not [senderId] is by definition the other one.
+   * The sender is excluded rather than sent a payload built for someone else:
+   * they already have their own copy from the POST response.
+   */
+  emitMessage(bookingId: string, message: Record<string, unknown>, senderId: string): void {
+    this.server.to(orderRoom(bookingId)).except(`user:${senderId}`).emit('message', message);
     this.logger.debug(`chat message emitted: order=${bookingId}`);
   }
 }

@@ -88,6 +88,24 @@ describe('ChatGateway', () => {
     });
   });
 
+  describe('emitMessage', () => {
+    it('reaches the other side of the thread and not the sender', () => {
+      // The payload is rendered from the recipient's point of view, so
+      // delivering it back to the sender would show them their own message
+      // as an incoming one. They already have their copy from the POST.
+      const emit = jest.fn();
+      const except = jest.fn().mockReturnValue({ emit });
+      const to = jest.fn().mockReturnValue({ except });
+      (gateway as unknown as { server: unknown }).server = { to };
+
+      gateway.emitMessage('b-1', { id: 'm-1', isOutgoing: false }, 'u-1');
+
+      expect(to).toHaveBeenCalledWith(orderRoom('b-1'));
+      expect(except).toHaveBeenCalledWith('user:u-1');
+      expect(emit).toHaveBeenCalledWith('message', { id: 'm-1', isOutgoing: false });
+    });
+  });
+
   describe('order:leave', () => {
     it('leaves the room without an ownership check', () => {
       // Leaving a room you were never in is a no-op, so there is nothing to guard.

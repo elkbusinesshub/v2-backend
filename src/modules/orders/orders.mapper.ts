@@ -12,6 +12,7 @@ import {
   AD_ORDER_STEP_NAMES,
   AD_ORDER_STEP_STATES,
   CHAT_CONTACT_STATUS,
+  CHAT_CUSTOMER_STATUS,
   ORDERS_DISPLAY_TIMEZONE,
 } from './orders.constants';
 
@@ -38,16 +39,30 @@ function dateHeader(date: Date): string {
   return `${day}, ${time}`;
 }
 
+/**
+ * One message, as the side reading it sees it.
+ *
+ * `isOutgoing` used to be `!fromProvider` — an absolute fact about the
+ * message rather than a fact about the reader. Every message therefore came
+ * back outgoing for everybody: the buyer saw the seller's reply rendered as
+ * their own bubble, so a working conversation looked like a chat that never
+ * answered.
+ *
+ * [contactInitials] belongs to the *other* side, which is who an incoming
+ * message is from by definition.
+ */
 export function toMessageJson(
   message: ChatMessage,
-  providerInitials: string,
+  contactInitials: string,
+  viewerIsSeller: boolean,
 ): Record<string, unknown> {
+  const isOutgoing = message.fromProvider === viewerIsSeller;
   return {
     id: message.id,
     text: message.text,
     time: clockTime(message.createdAt),
-    isOutgoing: !message.fromProvider,
-    senderInitials: message.fromProvider ? providerInitials : null,
+    isOutgoing,
+    senderInitials: isOutgoing ? null : contactInitials,
   };
 }
 
@@ -59,9 +74,10 @@ export function toThreadJson(
   return {
     contactName: owner.contactName,
     contactInitials,
-    contactStatus: CHAT_CONTACT_STATUS,
+    // The seller's counterpart is a customer, not a "Service Provider".
+    contactStatus: owner.viewerIsSeller ? CHAT_CUSTOMER_STATUS : CHAT_CONTACT_STATUS,
     dateLabel: dateHeader(messages[0]?.createdAt ?? owner.createdAt),
-    messages: messages.map((m) => toMessageJson(m, contactInitials)),
+    messages: messages.map((m) => toMessageJson(m, contactInitials, owner.viewerIsSeller)),
   };
 }
 

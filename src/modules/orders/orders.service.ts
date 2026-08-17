@@ -24,7 +24,7 @@ export class OrdersService {
     return toThreadJson(owner, await this.chat.listMessages(owner));
   }
 
-  /** Persists a customer message, then fans it out over the /chat gateway. */
+  /** Persists a message from either side, then fans it out over the /chat gateway. */
   async sendMessage(
     user: AuthUser,
     orderId: string,
@@ -33,11 +33,17 @@ export class OrdersService {
     const owner = await this.assertThread(user, orderId);
     const message = await this.chat.create({
       adOrderId: owner.id,
-      fromProvider: false,
+      // Was hardcoded false, so a seller's reply was stored as the buyer's
+      // own message and the thread read as one person talking to themselves.
+      fromProvider: owner.viewerIsSeller,
       text: dto.text,
     });
-    const json = toMessageJson(message, initialsOf(owner.contactName));
-    this.gateway.emitMessage(orderId, json);
+    // The same message renders differently for each side, so the reply to the
+    // sender and the broadcast to the other party are not the same payload:
+    // one is outgoing, the other incoming and labelled with who sent it.
+    const json = toMessageJson(message, initialsOf(owner.contactName), owner.viewerIsSeller);
+    const incoming = toMessageJson(message, initialsOf(owner.viewerName), !owner.viewerIsSeller);
+    this.gateway.emitMessage(orderId, incoming, user.id);
     return json;
   }
 

@@ -14,6 +14,15 @@ export interface ChatThreadOwner {
   /** Whoever the customer is talking to. */
   contactName: string;
   createdAt: Date;
+  /**
+   * Which side of the order is reading it.
+   *
+   * A message is "mine" or "theirs" only relative to whoever is looking, so
+   * nothing downstream can render a thread without knowing this.
+   */
+  viewerIsSeller: boolean;
+  /** The reader's own name — what the *other* side sees above their messages. */
+  viewerName: string;
 }
 
 @Injectable()
@@ -30,15 +39,17 @@ export class ChatRepository {
     });
     if (!order) return null;
 
+    const viewerIsSeller = order.sellerId === userId;
+    const buyerName = order.buyer.name ?? 'ELK customer';
+    const sellerName = order.seller.name ?? 'ELK Seller';
     return {
       id: order.id,
       // Each side sees the other, rather than the customer always seeing a
       // "provider" and the seller seeing themselves.
-      contactName:
-        order.sellerId === userId
-          ? (order.buyer.name ?? 'ELK customer')
-          : (order.seller.name ?? 'ELK Seller'),
+      contactName: viewerIsSeller ? buyerName : sellerName,
       createdAt: order.createdAt,
+      viewerIsSeller,
+      viewerName: viewerIsSeller ? sellerName : buyerName,
     };
   }
 

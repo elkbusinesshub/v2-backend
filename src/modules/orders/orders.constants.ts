@@ -9,6 +9,9 @@ export const CHAT_NAMESPACE = '/chat';
 /** Provider-side presence line on the chat header (static until real presence exists). */
 export const CHAT_CONTACT_STATUS = '● Online · Service Provider';
 
+/** The same header seen from the seller's side, where the other party is a buyer. */
+export const CHAT_CUSTOMER_STATUS = '● Online · Customer';
+
 type StepStatus = 'done' | 'active' | 'pending';
 
 /**
