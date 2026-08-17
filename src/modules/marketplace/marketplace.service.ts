@@ -233,6 +233,9 @@ export class MarketplaceService {
         // The business name is what a buyer recognises; the personal name is
         // the fallback for a seller who never completed a provider profile.
         sellerName: ad.seller.providerProfile?.businessName ?? ad.seller.name ?? 'ELK Seller',
+        // Who to open a conversation with. Safe on the list read: it is an
+        // opaque id, not a phone number or an address.
+        sellerId: ad.sellerId,
         categorySlug: ad.categorySlug,
         icon: ad.icon,
         price: Number(ad.price),

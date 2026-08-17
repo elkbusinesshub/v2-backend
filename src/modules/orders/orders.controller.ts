@@ -1,40 +1,24 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
-import { SendMessageDto } from './orders.dto';
 import { OrdersService } from './orders.service';
 
 /**
- * `/orders/:id/chat`, `/orders/:id/tracking`, `/orders/:id/cancel` — the
- * exact paths ChatRepository / TrackingRepository already call. An "order"
- * is a home-services booking (referenced by its id).
+ * `/orders/:id/tracking` and `/orders/:id/cancel` — an "order" here is a
+ * booking placed against a listing.
+ *
+ * Chat used to live here too, as `/orders/:id/chat`. It does not any more:
+ * conversations are between accounts, so they are at `/chat/threads/:contactId`
+ * and the tracking screen asks `/chat/order/:orderId/contact` for the person
+ * to open one with.
  */
 @ApiTags('orders')
 @ApiBearerAuth()
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly service: OrdersService) {}
-
-  @Get(':id/chat')
-  @ApiOperation({ summary: 'Chat thread for an order' })
-  async chatThread(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-  ): Promise<Record<string, unknown>> {
-    return this.service.getThread(user, id);
-  }
-
-  @Post(':id/chat')
-  @ApiOperation({ summary: 'Send a message (persisted + broadcast over /chat)' })
-  async sendMessage(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: SendMessageDto,
-  ): Promise<ApiResponse<Record<string, unknown>>> {
-    return ApiResponse.of(await this.service.sendMessage(user, id, dto), 'Message sent');
-  }
 
   @Get(':id/tracking')
   @ApiOperation({ summary: 'Order tracking timeline (derived from status)' })

@@ -567,8 +567,9 @@ async function seedDemoRecords(): Promise<void> {
     where: { title: 'Deep Home Cleaning', sellerId: seller.id },
   });
   if (listing) {
-    // An in-progress order with a chat thread — what the orders spec tracks.
-    const order = await prisma.adOrder.upsert({
+    // An in-progress order for the tracking screen. Its conversation is no
+    // longer attached to it — see the thread seeded below.
+    await prisma.adOrder.upsert({
       where: { code: 'ELK-A-SEED1' },
       update: {},
       create: {
@@ -589,18 +590,27 @@ async function seedDemoRecords(): Promise<void> {
       },
     });
 
-    if ((await prisma.chatMessage.count({ where: { adOrderId: order.id } })) === 0) {
+    // A conversation between the two accounts — not attached to the order.
+    // The same thread is what the listing page and the tracking screen open.
+    const [userAId, userBId] = buyer.id < seller.id ? [buyer.id, seller.id] : [seller.id, buyer.id];
+    const thread = await prisma.chatThread.upsert({
+      where: { userAId_userBId: { userAId, userBId } },
+      update: {},
+      create: { userAId, userBId },
+    });
+
+    if ((await prisma.chatMessage.count({ where: { threadId: thread.id } })) === 0) {
       // Order matters: seller first, so the thread opens with an incoming
       // message carrying the seller's initials.
       await prisma.chatMessage.createMany({
         data: [
           {
-            adOrderId: order.id,
-            fromProvider: true,
+            threadId: thread.id,
+            senderId: seller.id,
             text: 'On my way, should reach in 20 minutes.',
           },
-          { adOrderId: order.id, fromProvider: false, text: 'Great, the gate code is 4471.' },
-          { adOrderId: order.id, fromProvider: true, text: 'Noted, thank you.' },
+          { threadId: thread.id, senderId: buyer.id, text: 'Great, the gate code is 4471.' },
+          { threadId: thread.id, senderId: seller.id, text: 'Noted, thank you.' },
         ],
       });
     }

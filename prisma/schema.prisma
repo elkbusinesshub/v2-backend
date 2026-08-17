@@ -49,6 +49,9 @@ model User {
   addresses          Address[]
   adOrdersPlaced     AdOrder[]           @relation("AdOrdersPlaced")
   adOrdersReceived   AdOrder[]           @relation("AdOrdersReceived")
+  chatThreadsAsA     ChatThread[]        @relation("ChatThreadsAsA")
+  chatThreadsAsB     ChatThread[]        @relation("ChatThreadsAsB")
+  chatMessagesSent   ChatMessage[]       @relation("ChatMessagesSent")
   porterBookings     PorterBooking[]
   rideBookings       RideBooking[]
   driverProfiles     DriverProfile[]
@@ -598,21 +601,75 @@ model WalletTransaction {
 /// no distinct provider identity yet, so the provider is represented by the
 /// booking's seeded `service.providerName`. Delivered in realtime via the
 /// /chat Socket.IO gateway and persisted here for history.
-model ChatMessage {
+/// A conversation between two accounts.
+///
+/// Chat used to hang off an order, which meant a buyer had to buy something —
+/// or have a zero-value "enquiry" order invented for them — before they could
+/// ask a question, and every new order started a conversation from scratch
+/// beside the one that already had the messages in it. People talk to people.
+///
+/// The pair is stored sorted (`userAId < userBId`) so one row is found from
+/// either side with a single lookup, and the unique constraint makes a
+/// duplicate thread impossible rather than merely unlikely.
+model ChatThread {
   id String @id @default(uuid(7)) @db.Char(36)
 
-  /// The order this thread belongs to. Deleting the order takes its messages
-  /// with it — a thread with no job on the other end is not worth keeping.
-  adOrderId String  @db.Char(36)
-  adOrder   AdOrder @relation(fields: [adOrderId], references: [id], onDelete: Cascade)
+  userAId String @db.Char(36)
+  userA   User   @relation("ChatThreadsAsA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId String @db.Char(36)
+  userB   User   @relation("ChatThreadsAsB", fields: [userBId], references: [id], onDelete: Cascade)
 
-  fromProvider Boolean
-  text         String  @db.Text
+  /// Denormalised so the inbox sorts without touching the messages table.
+  lastMessageAt DateTime @default(now())
+
+  messages ChatMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([adOrderId])
+  @@unique([userAId, userBId])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id String @id @default(uuid(7)) @db.Char(36)
+
+  /// The conversation this belongs to.
+  threadId String     @db.Char(36)
+  thread   ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  /// Who wrote it. Replaces `fromProvider`, which recorded a role rather than
+  /// a person and could not say which of two accounts had spoken.
+  senderId String @db.Char(36)
+  sender   User   @relation("ChatMessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+
+  text String @db.Text
+
+  /// When the other side opened the thread and saw it. Null while unread,
+  /// which is what the inbox badge counts.
+  readAt DateTime?
+
+  /// Legacy, write-once: the order a message predating account threads was
+  /// sent against. Nothing reads it — `threadId` and `senderId` were
+  /// backfilled from it — but it is the only record of what an old
+  /// conversation was about, so it is kept rather than dropped. Safe to
+  /// remove in a later migration.
+  adOrderId String?  @db.Char(36)
+  adOrder   AdOrder? @relation(fields: [adOrderId], references: [id], onDelete: SetNull)
+
+  /// Legacy, superseded by `senderId`. It recorded a *role* — "the provider
+  /// said this" — which could not name which of two accounts had spoken, and
+  /// was the reason both sides saw the whole thread as their own.
+  fromProvider Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([threadId, createdAt])
+  /// Counting what a reader has not seen yet, per thread.
+  @@index([threadId, senderId, readAt])
   @@map("chat_messages")
 }
 
@@ -731,8 +788,9 @@ model AdOrder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  chatMessages ChatMessage[]
   review       Review?
+  /// Legacy link from before chat moved to account threads; see ChatMessage.
+  chatMessages ChatMessage[]
 
   @@index([sellerId, status])
   @@index([buyerId])

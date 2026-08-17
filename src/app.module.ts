@@ -25,6 +25,7 @@ import { LocationsModule } from '@/modules/locations/locations.module';
 import { MarketplaceModule } from '@/modules/marketplace/marketplace.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { OffersModule } from '@/modules/offers/offers.module';
+import { ChatModule } from '@/modules/chat/chat.module';
 import { OrdersModule } from '@/modules/orders/orders.module';
 import { PlacesModule } from '@/modules/places/places.module';
 import { PorterModule } from '@/modules/porter/porter.module';
@@ -126,6 +127,7 @@ import { StorageModule } from '@/storage/storage.module';
     OffersModule,
     AppConfigModule,
     WalletModule,
+    ChatModule,
     OrdersModule,
     ProviderModule,
     UploadsModule,

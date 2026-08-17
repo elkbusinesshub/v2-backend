@@ -1,88 +1,22 @@
-import type { AdOrder, ChatMessage } from '@prisma/client';
-
-/** An ad order with the two joins the tracking screen labels it by. */
-export type AdOrderTrackable = AdOrder & {
-  ad: { icon: string };
-  seller: { name: string | null };
-};
-import { initialsOf } from '@/common/utils/initials';
-import type { ChatThreadOwner } from './chat.repository';
+import type { AdOrder } from '@prisma/client';
 import {
   AD_ORDER_STATUS_LABEL,
   AD_ORDER_STEP_NAMES,
   AD_ORDER_STEP_STATES,
-  CHAT_CONTACT_STATUS,
-  CHAT_CUSTOMER_STATUS,
   ORDERS_DISPLAY_TIMEZONE,
 } from './orders.constants';
 
-/** "9:16 AM" in the display timezone — the chat/tracking time label format. */
-function clockTime(date: Date): string {
-  return date.toLocaleString('en-US', {
-    timeZone: ORDERS_DISPLAY_TIMEZONE,
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
-/** "Today, 9:15 AM" — the chat thread's date header. */
-function dateHeader(date: Date): string {
-  const time = clockTime(date);
-  const today = new Date().toDateString() === date.toDateString();
-  if (today) return `Today, ${time}`;
-  const day = date.toLocaleString('en-US', {
-    timeZone: ORDERS_DISPLAY_TIMEZONE,
-    day: 'numeric',
-    month: 'short',
-  });
-  return `${day}, ${time}`;
-}
-
-/**
- * One message, as the side reading it sees it.
- *
- * `isOutgoing` used to be `!fromProvider` — an absolute fact about the
- * message rather than a fact about the reader. Every message therefore came
- * back outgoing for everybody: the buyer saw the seller's reply rendered as
- * their own bubble, so a working conversation looked like a chat that never
- * answered.
- *
- * [contactInitials] belongs to the *other* side, which is who an incoming
- * message is from by definition.
- */
-export function toMessageJson(
-  message: ChatMessage,
-  contactInitials: string,
-  viewerIsSeller: boolean,
-): Record<string, unknown> {
-  const isOutgoing = message.fromProvider === viewerIsSeller;
-  return {
-    id: message.id,
-    text: message.text,
-    time: clockTime(message.createdAt),
-    isOutgoing,
-    senderInitials: isOutgoing ? null : contactInitials,
-  };
-}
-
-export function toThreadJson(
-  owner: ChatThreadOwner,
-  messages: ChatMessage[],
-): Record<string, unknown> {
-  const contactInitials = initialsOf(owner.contactName);
-  return {
-    contactName: owner.contactName,
-    contactInitials,
-    // The seller's counterpart is a customer, not a "Service Provider".
-    contactStatus: owner.viewerIsSeller ? CHAT_CUSTOMER_STATUS : CHAT_CONTACT_STATUS,
-    dateLabel: dateHeader(messages[0]?.createdAt ?? owner.createdAt),
-    messages: messages.map((m) => toMessageJson(m, contactInitials, owner.viewerIsSeller)),
-  };
-}
+/** An ad order with the two joins the tracking screen labels it by. */
+export type AdOrderTrackable = AdOrder & {
+  ad: { icon: string };
+  seller: { id: string; name: string | null };
+};
 
 /** One order against a listing, as the tracking screen's timeline. */
-export function toAdOrderTrackingJson(order: AdOrderTrackable): Record<string, unknown> {
+export function toAdOrderTrackingJson(
+  order: AdOrderTrackable,
+  viewerId: string,
+): Record<string, unknown> {
   const states = AD_ORDER_STEP_STATES[order.status];
   // The instant each milestone actually happened, index-aligned with the step
   // names. A step with no stamp has not been reached.
@@ -93,6 +27,9 @@ export function toAdOrderTrackingJson(order: AdOrderTrackable): Record<string, u
     serviceName: order.serviceName,
     serviceIcon: order.ad.icon,
     providerName: order.seller.name ?? 'ELK Seller',
+    // Who to open a conversation with from this screen. Chat is between
+    // accounts, so the screen needs a person, not an order.
+    contactId: order.sellerId === viewerId ? order.buyerId : order.sellerId,
     statusLabel: AD_ORDER_STATUS_LABEL[order.status],
     addressText: order.addressText,
     // Null when the buyer typed the address instead of picking it; the screen
@@ -105,6 +42,23 @@ export function toAdOrderTrackingJson(order: AdOrderTrackable): Record<string, u
       status: states[i]!,
     })),
   };
+}
+
+/** "Today, 9:15 AM" — the label a completed step carries. */
+function dateHeader(date: Date): string {
+  const time = date.toLocaleString('en-US', {
+    timeZone: ORDERS_DISPLAY_TIMEZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  if (new Date().toDateString() === date.toDateString()) return `Today, ${time}`;
+  const day = date.toLocaleString('en-US', {
+    timeZone: ORDERS_DISPLAY_TIMEZONE,
+    day: 'numeric',
+    month: 'short',
+  });
+  return `${day}, ${time}`;
 }
 
 /** Real times for reached steps; "—" for pending, "ETA: soon" for the active one. */

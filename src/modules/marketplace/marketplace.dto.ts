@@ -49,6 +49,14 @@ export class AdDto {
   title!: string;
   description!: string;
   sellerName!: string;
+
+  /**
+   * The account behind the listing.
+   *
+   * Chat is between accounts, so a listing page needs the person to open a
+   * conversation with — not an order placed just to have somewhere to talk.
+   */
+  sellerId!: string;
   categorySlug!: string;
   icon!: string;
   price!: number;

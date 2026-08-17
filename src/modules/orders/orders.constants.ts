@@ -1,16 +1,7 @@
 import { AdOrderStatus } from '@prisma/client';
 
-/** Display timezone for chat timestamps and tracking step times. */
+/** Display timezone for tracking step times. */
 export const ORDERS_DISPLAY_TIMEZONE = 'Asia/Kolkata';
-
-/** Socket.IO namespace for realtime order chat. */
-export const CHAT_NAMESPACE = '/chat';
-
-/** Provider-side presence line on the chat header (static until real presence exists). */
-export const CHAT_CONTACT_STATUS = '● Online · Service Provider';
-
-/** The same header seen from the seller's side, where the other party is a buyer. */
-export const CHAT_CUSTOMER_STATUS = '● Online · Customer';
 
 type StepStatus = 'done' | 'active' | 'pending';
 

@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MarketplaceModule } from '@/modules/marketplace/marketplace.module';
-import { ChatGateway } from './chat.gateway';
-import { ChatRepository } from './chat.repository';
 import { OrdersController } from './orders.controller';
+import { OrdersRepository } from './orders.repository';
 import { OrdersService } from './orders.service';
 
 @Module({
@@ -10,6 +9,6 @@ import { OrdersService } from './orders.service';
   // transition rules as the marketplace endpoint rather than its own
   imports: [MarketplaceModule],
   controllers: [OrdersController],
-  providers: [OrdersService, ChatRepository, ChatGateway],
+  providers: [OrdersService, OrdersRepository],
 })
 export class OrdersModule {}
