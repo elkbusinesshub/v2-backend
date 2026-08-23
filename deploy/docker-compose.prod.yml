@@ -1,0 +1,70 @@
+# Production stack for a single EC2 host: Redis + the API.
+#
+# MySQL is NOT here — it lives in RDS, for automated snapshots and
+# point-in-time recovery. Redis stays local because everything it holds is
+# short-lived (OTP codes, JWT denylist, rate-limit counters, Socket.IO pub/sub,
+# BullMQ jobs) and a restart costs seconds.
+#
+# nginx runs on the host and proxies to the API — see nginx/elk-api.conf.
+#
+#   cd deploy && docker compose -f docker-compose.prod.yml up -d
+#
+# Redis publishes NO host port on purpose: it is reachable only on this compose
+# network, so it is off the internet and cannot collide with anything already
+# installed on the instance.
+name: elk-api
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *logging
+    # noeviction is required by BullMQ — Redis must never drop job keys under
+    # memory pressure. AOF so queued jobs and the JWT denylist survive restarts.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    # Bound to loopback: nginx on the host is the only route in, and :3000
+    # stays clear of the app already on :8000.
+    ports:
+      - '127.0.0.1:${API_HOST_PORT:-3000}:3000'
+    volumes:
+      # FCM service-account JSON — mounted read-only, never baked into the image
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # One-off migration runner (`docker compose --profile tools run --rm migrate`).
+  # Separate from `api` because the runner image prunes dev deps, so the prisma
+  # CLI only exists in the `migrator` stage. Connects to RDS via DATABASE_URL.
+  migrate:
+    profiles: ['tools']
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: migrator
+    env_file: .env
+
+volumes:
+  redisdata:

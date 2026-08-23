@@ -1,0 +1,6 @@
+# Files consumed by Linux tooling must keep LF regardless of the checkout
+# platform. A CRLF shell script fails on the server with the unhelpful
+# `bad interpreter: /usr/bin/env bash^M`.
+*.sh       text eol=lf
+Dockerfile text eol=lf
+*.conf     text eol=lf

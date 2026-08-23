@@ -93,6 +93,8 @@ docker compose --profile full up   # full stack locally
 
 Migrations run as a deploy step (`npm run db:deploy`), never at container start.
 
+Deploying to a server: [docs/deployment.md](docs/deployment.md).
+
 ## Testing strategy
 
 - **Unit** (`test/unit`): services with repositories/infrastructure mocked at

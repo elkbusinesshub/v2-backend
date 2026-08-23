@@ -14,6 +14,14 @@ FROM deps AS build
 COPY . .
 RUN npx prisma generate && npm run build && npm prune --omit=dev
 
+# ── migrator: prisma CLI + schema, for the `db:deploy` step ──────────────────
+# The runner prunes dev deps, so the prisma CLI does not exist there. This
+# stage keeps the full install and is run as a one-off container by the deploy
+# script, never as a long-lived service.
+FROM deps AS migrator
+COPY prisma ./prisma
+CMD ["npx", "prisma", "migrate", "deploy"]
+
 # ── runner: minimal, non-root ────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
