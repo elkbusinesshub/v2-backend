@@ -369,6 +369,13 @@ enum DriverService {
 }
 
 /// Where a partner's paperwork has got to.
+/// Self-declared, matched against the licence during document review.
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
 enum DriverVerification {
   /// Documents are on file and nobody has looked at them yet.
   PENDING
@@ -408,6 +415,11 @@ model DriverProfile {
   /// whether a profile is complete. Nothing is backfilled with a guess.
   fullName      String?
   dateOfBirth   DateTime? @db.Date
+  /// As printed on the licence. Collected because a rider may ask for a
+  /// driver of a particular gender — an option several markets require — and
+  /// because a document check cannot be made against a detail nobody holds.
+  /// `OTHER` exists so the form never forces a wrong answer.
+  gender        Gender?
   licenceNumber String?
   /// When the licence stops being valid. A licence is only proof while it is
   /// in date, so this is checked at registration and is what a future expiry

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { DriverService, DriverVerification, Role } from '@prisma/client';
+import { DriverService, DriverVerification, Gender, Role } from '@prisma/client';
 import {
   ResourceNotFoundException,
   ValidationFailedException,
@@ -31,6 +31,7 @@ const registration = {
   plateNumber: 'ka05ta1111',
   fullName: '  Ravi Kumar  ',
   dateOfBirth: '1992-04-17',
+  gender: Gender.MALE,
   licenceNumber: 'ka05 2011 0001234',
   licenceExpiry: yearsFromNow(5),
   licenceFrontKey: 'provider-docs/2026/front.jpg',
@@ -49,6 +50,7 @@ function profile(overrides: Record<string, unknown> = {}) {
     plateNumber: 'KA05TA1111',
     fullName: 'Ravi Kumar',
     dateOfBirth: new Date('1992-04-17'),
+    gender: Gender.MALE,
     licenceNumber: 'KA0520110001234',
     licenceExpiry: new Date(yearsFromNow(5)),
     licenceFrontKey: 'k1',
@@ -90,9 +92,20 @@ describe('DispatchService.register', () => {
                 ...data,
               }),
             ),
+            findProfile: jest.fn().mockResolvedValue({
+              id: 'dp-1',
+              service: DriverService.RIDE,
+              activeBookingId: null,
+            }),
+            findProfilesForUser: jest
+              .fn()
+              .mockResolvedValue([
+                { id: 'dp-1', service: DriverService.RIDE, activeBookingId: null },
+              ]),
+            update: jest.fn().mockImplementation((id, data) => Promise.resolve({ id, ...data })),
           },
         },
-        { provide: DispatchGateway, useValue: {} },
+        { provide: DispatchGateway, useValue: { emitDriverPosition: jest.fn() } },
         {
           provide: RideTypesRepository,
           useValue: {
@@ -129,6 +142,65 @@ describe('DispatchService.register', () => {
         vehicleDocKey: 'provider-docs/2026/rc.jpg',
       }),
     );
+  });
+
+  describe('updateLocation', () => {
+    it('updates the named service when the heartbeat says which', async () => {
+      await service.updateLocation(user, {
+        service: DriverService.RIDE,
+        lat: 12.9352,
+        lng: 77.6245,
+      });
+
+      expect(drivers.update).toHaveBeenCalledWith(
+        'dp-1',
+        expect.objectContaining({ lat: 12.9352, lng: 77.6245 }),
+      );
+    });
+
+    it('updates every registration when no service is named', async () => {
+      // What the app sends when it opens: here is where this account is, for
+      // whatever it drives for.
+      drivers.findProfilesForUser.mockResolvedValue([
+        profile({ id: 'dp-ride', service: DriverService.RIDE }),
+        profile({ id: 'dp-porter', service: DriverService.PORTER }),
+      ] as never);
+
+      const result = await service.updateLocation(user, { lat: 12.9, lng: 77.6 });
+
+      expect(result).toEqual({ ok: true, updated: 2 });
+      expect(drivers.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('is quiet for an account that drives for nothing', async () => {
+      // Every user's app calls this on open, and almost none are partners —
+      // so nothing to update is a result, not an error.
+      drivers.findProfilesForUser.mockResolvedValue([]);
+
+      await expect(service.updateLocation(user, { lat: 12.9, lng: 77.6 })).resolves.toEqual({
+        ok: true,
+        updated: 0,
+      });
+      expect(drivers.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('stores the gender the partner declared', async () => {
+    // Checked against the licence during review, so it has to be held rather
+    // than merely asked for.
+    await service.register(user, { ...registration, gender: Gender.FEMALE });
+
+    expect(drivers.upsertProfile).toHaveBeenCalledWith(
+      'u-1',
+      DriverService.RIDE,
+      expect.objectContaining({ gender: Gender.FEMALE }),
+    );
+  });
+
+  it('gives the partner their gender back on their own profile', async () => {
+    const result = await service.register(user, registration);
+
+    expect(result.gender).toBe(Gender.MALE);
   });
 
   it('normalises the plate and the licence number', async () => {
@@ -246,6 +318,7 @@ describe('DispatchService.setOnline', () => {
           provide: DispatchRepository,
           useValue: {
             findProfile: jest.fn().mockResolvedValue({ ...stored, user: { name: 'Ravi K' } }),
+            findProfilesForUser: jest.fn().mockResolvedValue([stored]),
             update: jest
               .fn()
               .mockImplementation((_id, data) => Promise.resolve({ ...stored, ...data })),

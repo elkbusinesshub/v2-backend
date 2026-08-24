@@ -1,4 +1,4 @@
-import { DriverService, DriverVerification, Prisma, PrismaClient } from '@prisma/client';
+import { DriverService, DriverVerification, Gender, Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
@@ -809,6 +809,7 @@ const TEST_VEHICLES = {
     plateNumber: 'KA05TA1111',
     fullName: 'Test Driver',
     dateOfBirth: new Date('1992-04-17'),
+    gender: Gender.MALE,
     licenceNumber: 'KA0520110001234',
     licenceExpiry: new Date('2032-04-16'),
     licenceFrontKey: 'provider-docs/seed/test-driver-licence-front.jpg',
@@ -821,6 +822,7 @@ const TEST_VEHICLES = {
     plateNumber: 'KA05PT2222',
     fullName: 'Test Porter',
     dateOfBirth: new Date('1995-11-02'),
+    gender: Gender.FEMALE,
     licenceNumber: 'KA0520140005678',
     licenceExpiry: new Date('2034-11-01'),
     licenceFrontKey: 'provider-docs/seed/test-porter-licence-front.jpg',

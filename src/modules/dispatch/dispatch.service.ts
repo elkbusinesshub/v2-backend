@@ -82,6 +82,7 @@ export class DispatchService {
       plateNumber: dto.plateNumber.toUpperCase(),
       fullName: dto.fullName.trim(),
       dateOfBirth,
+      gender: dto.gender,
       licenceNumber: dto.licenceNumber.toUpperCase().replace(/\s+/g, ''),
       licenceExpiry,
       licenceFrontKey: dto.licenceFrontKey,
@@ -217,19 +218,31 @@ export class DispatchService {
    * Also the heartbeat: a partner whose app has been killed stops sending
    * these, and dispatch stops considering them without needing to be told.
    */
-  async updateLocation(user: AuthUser, dto: DriverLocationDto): Promise<{ ok: true }> {
-    const profile = await this.assertProfile(user.id, dto.service);
-    await this.drivers.update(profile.id, {
-      lat: dto.lat,
-      lng: dto.lng,
-      lastSeenAt: new Date(),
-    });
+  async updateLocation(
+    user: AuthUser,
+    dto: DriverLocationDto,
+  ): Promise<{ ok: true; updated: number }> {
+    // Named service: the heartbeat from a partner working that product.
+    // Omitted: the app has just opened and is saying where this account is,
+    // for whichever products it drives for — none of them, usually, which is
+    // why this reports rather than throwing.
+    const profiles = dto.service
+      ? [await this.assertProfile(user.id, dto.service)]
+      : await this.drivers.findProfilesForUser(user.id);
 
-    // While on a job, the rider's map follows the partner in real time.
-    if (profile.activeBookingId) {
-      this.gateway.emitDriverPosition(profile.activeBookingId, dto.lat, dto.lng);
+    for (const profile of profiles) {
+      await this.drivers.update(profile.id, {
+        lat: dto.lat,
+        lng: dto.lng,
+        lastSeenAt: new Date(),
+      });
+
+      // While on a job, the rider's map follows the partner in real time.
+      if (profile.activeBookingId) {
+        this.gateway.emitDriverPosition(profile.activeBookingId, dto.lat, dto.lng);
+      }
     }
-    return { ok: true };
+    return { ok: true, updated: profiles.length };
   }
 
   // ─── what the rider's map shows ────────────────────────────────────────────
@@ -398,6 +411,7 @@ export class DispatchService {
       // step from the file, so it stays server-side.
       fullName: profile.fullName,
       dateOfBirth: profile.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      gender: profile.gender,
       licenceNumber: profile.licenceNumber,
       licenceExpiry: profile.licenceExpiry?.toISOString().slice(0, 10) ?? null,
       /// Whether the paperwork has been checked, so the app can say so.

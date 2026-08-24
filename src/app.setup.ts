@@ -13,8 +13,6 @@ import type { AppConfig } from '@/config/configuration';
 export function configureApp(app: NestExpressApplication): void {
   const config = app.get(ConfigService<AppConfig, true>);
 
-  // Behind ALB/nginx: derive client IP from X-Forwarded-For (rate limiting,
-  // session metadata) — trust exactly one proxy hop.
   app.set('trust proxy', 1);
 
   app.use(helmet());

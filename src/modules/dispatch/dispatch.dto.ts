@@ -1,4 +1,4 @@
-import { DriverService } from '@prisma/client';
+import { DriverService, Gender } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -55,6 +55,16 @@ export class RegisterDriverDto {
    */
   @IsDateString()
   dateOfBirth!: string;
+
+  /**
+   * As printed on the licence.
+   *
+   * Required rather than optional: it is checked against the document during
+   * review, and a field that may be skipped is one nobody fills, which makes
+   * the check impossible for exactly the profiles that most need it.
+   */
+  @IsEnum(Gender)
+  gender!: Gender;
 
   /**
    * Licence number. Formats differ by state and by country, so this checks a
@@ -118,8 +128,17 @@ export class SetOnlineDto {
 }
 
 export class DriverLocationDto {
+  /**
+   * Which registration this position is for.
+   *
+   * Optional: omitted means *every* service this account drives for. The app
+   * pushes a position when it opens, before it knows or cares whether the
+   * account is a partner at all — asking it to look that up first would be a
+   * round trip to discover there was nothing to do.
+   */
+  @IsOptional()
   @IsEnum(DriverService)
-  service!: DriverService;
+  service?: DriverService;
 
   @IsLatitude()
   lat!: number;
