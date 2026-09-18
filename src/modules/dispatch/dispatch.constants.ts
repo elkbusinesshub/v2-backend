@@ -10,6 +10,18 @@ export const DISPATCH_NAMESPACE = '/dispatch';
 export const DISPATCH_RADIUS_KM = 7;
 
 /**
+ * Side of a map "cell", in degrees, for live vehicle broadcasts.
+ *
+ * A rider watching the map subscribes to the cells around them and a moving
+ * partner publishes into the one they are standing in, so a position reaches
+ * the few people looking at that part of the city instead of everybody. At
+ * 0.05° a cell is roughly 5.5 km north-south — comfortably larger than a
+ * marker needs to travel between heartbeats, and small enough that a busy city
+ * is many rooms rather than one.
+ */
+export const AREA_CELL_DEGREES = 0.05;
+
+/**
  * How long a request stays on offer before it is given up as unanswered.
  *
  * A rider staring at a spinner needs an answer, and a wrong one — "no drivers"

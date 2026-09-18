@@ -182,6 +182,19 @@ export class DispatchService {
         ? { lat: dto.lat, lng: dto.lng, lastSeenAt: new Date() }
         : {}),
     });
+
+    // Going on duty puts the marker up straight away rather than at the next
+    // heartbeat; going off takes it down straight away rather than leaving a
+    // rider looking at somebody who has gone home.
+    const lat = updated.lat === null ? null : Number(updated.lat);
+    const lng = updated.lng === null ? null : Number(updated.lng);
+    if (lat !== null && lng !== null) {
+      if (updated.isOnline && !updated.activeBookingId) {
+        await this.broadcastPosition(updated, lat, lng);
+      } else {
+        this.gateway.emitVehicleGone(updated.service, lat, lng, updated.id);
+      }
+    }
     return this.toProfileJson(updated);
   }
 
@@ -241,8 +254,37 @@ export class DispatchService {
       if (profile.activeBookingId) {
         this.gateway.emitDriverPosition(profile.activeBookingId, dto.lat, dto.lng);
       }
+
+      // And when they are free and on duty, every map open over that part of
+      // the city sees the marker move. The condition matches `findNearby`'s
+      // where clause on purpose: a partner who would not be offered work must
+      // not be drawn as if they were waiting for it.
+      if (profile.isOnline && !profile.activeBookingId) {
+        await this.broadcastPosition(profile, dto.lat, dto.lng);
+      }
     }
     return { ok: true, updated: profiles.length };
+  }
+
+  /**
+   * Puts one partner's new position on the maps watching that area.
+   *
+   * The payload is the same shape `GET /dispatch/nearby/*` returns, so a
+   * client merges a live update into its snapshot without a second parser.
+   * `distanceKm` is the one thing it cannot carry — it depends on where the
+   * rider is, not where the partner is, so the client computes it if it cares.
+   */
+  private async broadcastPosition(profile: DriverProfile, lat: number, lng: number): Promise<void> {
+    const classes = await this.vehicleClasses(profile.service);
+    const known = classes.get(profile.vehicleSlug);
+    this.gateway.emitVehicleMoved(profile.service, lat, lng, {
+      id: profile.id,
+      vehicleSlug: profile.vehicleSlug,
+      emoji: known?.emoji ?? '🚗',
+      lat,
+      lng,
+      etaMinutes: known?.etaMinutes ?? 5,
+    });
   }
 
   // ─── what the rider's map shows ────────────────────────────────────────────
@@ -267,6 +309,7 @@ export class DispatchService {
     return nearby.map((d) => {
       const known = classes.get(d.vehicleSlug);
       return {
+        id: d.id,
         vehicleSlug: d.vehicleSlug,
         emoji: known?.emoji ?? '🚗',
         lat: d.lat,

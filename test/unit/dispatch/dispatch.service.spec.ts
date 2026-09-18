@@ -69,6 +69,7 @@ function profile(overrides: Record<string, unknown> = {}) {
 describe('DispatchService.register', () => {
   let service: DispatchService;
   let drivers: jest.Mocked<DispatchRepository>;
+  let gateway: jest.Mocked<DispatchGateway>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -105,10 +106,18 @@ describe('DispatchService.register', () => {
             update: jest.fn().mockImplementation((id, data) => Promise.resolve({ id, ...data })),
           },
         },
-        { provide: DispatchGateway, useValue: { emitDriverPosition: jest.fn() } },
+        {
+          provide: DispatchGateway,
+          useValue: {
+            emitDriverPosition: jest.fn(),
+            emitVehicleMoved: jest.fn(),
+            emitVehicleGone: jest.fn(),
+          },
+        },
         {
           provide: RideTypesRepository,
           useValue: {
+            listActive: jest.fn().mockResolvedValue([{ slug: 'auto', emoji: '🛺', etaMinutes: 3 }]),
             findActiveBySlug: jest
               .fn()
               .mockImplementation((slug: string) =>
@@ -118,13 +127,19 @@ describe('DispatchService.register', () => {
         },
         {
           provide: PorterCatalogRepository,
-          useValue: { findActiveVehicleBySlug: jest.fn().mockResolvedValue({ slug: 'bike' }) },
+          useValue: {
+            findActiveVehicleBySlug: jest.fn().mockResolvedValue({ slug: 'bike' }),
+            listActiveVehicles: jest
+              .fn()
+              .mockResolvedValue([{ slug: 'bike', emoji: '🏍️', etaMinutes: 4 }]),
+          },
         },
       ],
     }).compile();
 
     service = moduleRef.get(DispatchService);
     drivers = moduleRef.get(DispatchRepository);
+    gateway = moduleRef.get(DispatchGateway);
   });
 
   it('stores the identity and the three document keys', async () => {
@@ -142,6 +157,47 @@ describe('DispatchService.register', () => {
         vehicleDocKey: 'provider-docs/2026/rc.jpg',
       }),
     );
+  });
+
+  describe('live vehicles on the rider map', () => {
+    it('puts a free partner on duty onto the map as they move', async () => {
+      drivers.findProfilesForUser.mockResolvedValue([
+        profile({ id: 'dp-1', isOnline: true, activeBookingId: null }),
+      ] as never);
+
+      await service.updateLocation(user, { lat: 12.93, lng: 77.62 });
+
+      expect(gateway.emitVehicleMoved).toHaveBeenCalledWith(
+        DriverService.RIDE,
+        12.93,
+        77.62,
+        expect.objectContaining({ id: 'dp-1', vehicleSlug: 'auto', lat: 12.93, lng: 77.62 }),
+      );
+    });
+
+    it('does not draw a partner who is off duty', async () => {
+      // The condition mirrors findNearby's: somebody who would not be offered
+      // work must not appear to be waiting for it.
+      drivers.findProfilesForUser.mockResolvedValue([
+        profile({ id: 'dp-1', isOnline: false, activeBookingId: null }),
+      ] as never);
+
+      await service.updateLocation(user, { lat: 12.93, lng: 77.62 });
+
+      expect(gateway.emitVehicleMoved).not.toHaveBeenCalled();
+    });
+
+    it('does not draw a partner already on a job', async () => {
+      drivers.findProfilesForUser.mockResolvedValue([
+        profile({ id: 'dp-1', isOnline: true, activeBookingId: 'b-1' }),
+      ] as never);
+
+      await service.updateLocation(user, { lat: 12.93, lng: 77.62 });
+
+      expect(gateway.emitVehicleMoved).not.toHaveBeenCalled();
+      // The rider on that trip still follows them.
+      expect(gateway.emitDriverPosition).toHaveBeenCalledWith('b-1', 12.93, 77.62);
+    });
   });
 
   describe('updateLocation', () => {

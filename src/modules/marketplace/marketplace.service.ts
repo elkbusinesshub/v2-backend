@@ -214,12 +214,10 @@ export class MarketplaceService {
    * `withContact` is set only by the single-ad read. Contact details are a
    * seller's personal phone and email, so they travel with the one listing a
    * buyer opened rather than with every card in a category.
+   *
+   * Public so the listings module can map its filtered rows to the same card.
    */
-  private async decorate(
-    rows: AdWithSeller[],
-    userId: string,
-    withContact = false,
-  ): Promise<AdDto[]> {
+  async decorate(rows: AdWithSeller[], userId: string, withContact = false): Promise<AdDto[]> {
     const wishlisted = await this.ads.wishlistedIds(
       userId,
       rows.map((r) => r.id),

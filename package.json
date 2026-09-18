@@ -24,6 +24,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:seed:demo": "tsx prisma/seed-demo-flows.ts",
     "db:studio": "prisma studio",
     "prepare": "husky || true"
   },

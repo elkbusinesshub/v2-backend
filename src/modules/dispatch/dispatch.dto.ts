@@ -165,6 +165,16 @@ export class NearbyQueryDto {
 
 /** One vehicle pin on the rider's map. */
 export class NearbyVehicleDto {
+  /**
+   * Stable handle for one partner's marker.
+   *
+   * The map needs to move a marker rather than draw a second one when the
+   * same partner reports again, and live updates arrive with no other way to
+   * say which vehicle they are about. It is the profile's opaque id — it
+   * names no person and reveals nothing a rider could act on.
+   */
+  id!: string;
+
   /** Which class it is, so the map can draw the right emoji. */
   vehicleSlug!: string;
   emoji!: string;

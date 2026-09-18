@@ -22,6 +22,8 @@ import { DispatchModule } from '@/modules/dispatch/dispatch.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
+import { ListingsModule } from '@/modules/listings/listings.module';
+import { ServiceRequestsModule } from '@/modules/service-requests/service-requests.module';
 import { MarketplaceModule } from '@/modules/marketplace/marketplace.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { OffersModule } from '@/modules/offers/offers.module';
@@ -116,6 +118,8 @@ import { StorageModule } from '@/storage/storage.module';
     HealthModule,
     LocationsModule,
     MarketplaceModule,
+    ListingsModule,
+    ServiceRequestsModule,
     DispatchModule,
     PlacesModule,
     HomeModule,
