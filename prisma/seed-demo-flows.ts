@@ -3,16 +3,25 @@ import { PrismaClient, ProviderStatus, Role } from '@prisma/client';
 /**
  * Test data for the listing, cleaning and vehicle-rental flows.
  *
- * Local only, and separate from `seed.ts`, which must not invent users: this
- * one exists to make the phone-OTP test accounts usable as buyer, partners and
- * staff without setting each one up by hand.
+ * Separate from `seed.ts`, which must not invent users: this one exists to make
+ * the phone-OTP test accounts usable as buyer, partners and staff without
+ * setting each one up by hand.
  *
- * Run with: npm run db:seed:demo
+ *   npm run db:seed:demo              # add or refresh the demo data
+ *   npm run db:seed:demo -- --remove  # take it out again
  *
  * Idempotent — every row is keyed on the phone number, the seller and the
  * title, so running it twice changes nothing.
  *
+ * Meant for a local or staging database. On production it refuses to run
+ * unless ALLOW_DEMO_SEED=true is set as well, because it publishes listings
+ * real buyers can see and credits a wallet with money nobody paid in. Set
+ * DEMO_WALLET to change that amount (0 to credit nothing).
+ *
  * The phones are OTP_TEST_PHONES from .env; they all sign in with OTP_TEST_CODE.
+ * A server without those set sends a real SMS instead, which these invented
+ * numbers will never receive — so set them there too, or the demo logins will
+ * not work.
  */
 const prisma = new PrismaClient();
 
@@ -22,7 +31,8 @@ const RENTALS = '+917777777777';
 const STAFF = '+916666666666';
 const CLEANER_2 = '+915555555555';
 
-const BUYER_WALLET = 25_000;
+/** What the demo buyer is credited, so requests can be paid for. */
+const BUYER_WALLET = Number(process.env.DEMO_WALLET ?? 25_000);
 
 interface DemoAccount {
   phone: string;
@@ -390,9 +400,51 @@ async function seedStaff(ids: Map<string, string>): Promise<void> {
   }
 }
 
+/** Takes the demo data out again, leaving everything else alone. */
+async function removeDemoData(): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { phone: { in: ACCOUNTS.map((a) => a.phone) } },
+    select: { id: true },
+  });
+  const sellerIds = users.map((u) => u.id);
+  if (sellerIds.length === 0) {
+    console.log('Nothing to remove.');
+    return;
+  }
+
+  // The listings, and the offer behind the cleaning and rental flows. The
+  // accounts themselves stay: requests and wallet history may point at them.
+  const titles = LISTINGS.map((l) => l.title);
+  const ads = await prisma.ad.deleteMany({
+    where: { sellerId: { in: sellerIds }, title: { in: titles } },
+  });
+  await prisma.partnerDistrict.deleteMany({ where: { sellerId: { in: sellerIds } } });
+  await prisma.cleaningServicePrice.deleteMany({ where: { sellerId: { in: sellerIds } } });
+  await prisma.rentalVehicle.deleteMany({ where: { sellerId: { in: sellerIds } } });
+  await prisma.rentalShop.deleteMany({ where: { sellerId: { in: sellerIds } } });
+  await prisma.sellerStaff.deleteMany({ where: { sellerId: { in: sellerIds } } });
+  // Nobody paid this in, so it must not be withdrawable.
+  await prisma.user.updateMany({ where: { id: { in: sellerIds } }, data: { walletBalance: 0 } });
+
+  console.log(
+    `Removed ${ads.count} demo listings, the partner setup and staff of ${sellerIds.length} accounts.`,
+  );
+  console.log(
+    'The demo accounts themselves were kept — delete them by hand if you want them gone.',
+  );
+}
+
 async function main(): Promise<void> {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('seed-demo-flows is for local testing only — never run it against production');
+  const remove = process.argv.includes('--remove');
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
+    throw new Error(
+      'Refusing to touch a production database: re-run with ALLOW_DEMO_SEED=true if that is really what you want',
+    );
+  }
+
+  if (remove) {
+    await removeDemoData();
+    return;
   }
 
   const ids = await seedAccounts();
