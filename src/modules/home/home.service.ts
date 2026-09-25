@@ -11,15 +11,16 @@ const BEST_SELLER_COUNT = 3;
 const TOP_SELLER_COUNT = 10;
 
 /**
- * Navigation tiles: the four listing-flow categories. Static config, not
- * catalog data — each id is the listing category slug the app opens the
- * marketplace on (see LISTING_CATEGORIES in the listings module).
+ * Navigation tiles for the verticals. Static config, not catalog data — each
+ * id routes to its own app section (and, later, its own backend module).
  */
 const HOME_CATEGORIES: HomeCategoryDto[] = [
-  { id: 'listing_cleaning', name: 'Cleaning', icon: '🧹', colorHex: 0xfffef3c7 },
-  { id: 'listing_stay', name: 'Stay', icon: '🏡', colorHex: 0xffe6efea },
-  { id: 'listing_repair', name: 'Repair', icon: '🔧', colorHex: 0xfffce7f3 },
-  { id: 'listing_tool_rental', name: 'Rentals', icon: '🧰', colorHex: 0xffede9fe },
+  { id: 'taxi', name: 'Taxi / Ride', icon: '🚕', colorHex: 0xffe0f7f5 },
+  { id: 'elkstay', name: 'ELK Stay', icon: '🏨', colorHex: 0xffe6efea },
+  { id: 'cleaning', name: 'Cleaning', icon: '🧹', colorHex: 0xfffef3c7 },
+  { id: 'car_rental', name: 'Car Rental', icon: '🚗', colorHex: 0xffede9fe },
+  { id: 'repair', name: 'Repair', icon: '🔧', colorHex: 0xfffce7f3 },
+  { id: 'porter', name: 'Porter', icon: '📦', colorHex: 0xffd1fae5 },
 ];
 
 /** Static until a promo/campaign engine exists. */

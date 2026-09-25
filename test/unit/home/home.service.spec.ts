@@ -78,12 +78,14 @@ describe('HomeService', () => {
     // which of their saved addresses is selected.
     expect(feed.locationAddress).toBe('Koramangala');
     expect(feed.promo.title).toContain('20% OFF');
-    expect(feed.categories).toHaveLength(4);
+    expect(feed.categories).toHaveLength(6);
     expect(feed.categories.map((c) => c.id)).toEqual([
-      'listing_cleaning',
-      'listing_stay',
-      'listing_repair',
-      'listing_tool_rental',
+      'taxi',
+      'elkstay',
+      'cleaning',
+      'car_rental',
+      'repair',
+      'porter',
     ]);
     // Both rails read the same ranking now. They used to disagree — this one
     // read the seeded catalogue while the rail below it read seller listings.
