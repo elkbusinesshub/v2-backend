@@ -1,15 +1,22 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { AdOrderStatus, Role } from '@prisma/client';
+import { type Ad, AdOrderStatus, Role } from '@prisma/client';
 import {
   DomainException,
   ForbiddenResourceException,
   ResourceNotFoundException,
+  ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { displayDate } from '@/common/utils/display-date';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { AdOrdersRepository, type AdOrderRow } from './ad-orders.repository';
+import {
+  type HourlyQuote,
+  CleaningPricingService,
+  DEFAULT_CLEANING_SUB_CATEGORY,
+} from './cleaning-pricing.service';
+import { DEFAULT_REPAIR_SUB_CATEGORY, RepairPricingService } from './repair-pricing.service';
 import type { AdOrderDto, CreateAdOrderDto } from './marketplace.dto';
 import { MarketplaceRepository } from './marketplace.repository';
 
@@ -48,6 +55,8 @@ export class AdOrdersService {
     private readonly orders: AdOrdersRepository,
     private readonly ads: MarketplaceRepository,
     private readonly notifications: NotificationsService,
+    private readonly cleaningPricing: CleaningPricingService,
+    private readonly repairPricing: RepairPricingService,
   ) {}
 
   /** A buyer orders a listing. */
@@ -78,6 +87,7 @@ export class AdOrdersService {
     }
 
     const quantity = dto.quantity ?? 1;
+    const hourly = await this.hourlyQuote(ad, dto);
     const order = await this.orders.create({
       code: `ELK-A-${this.randomCode()}`,
       adId: ad.id,
@@ -88,7 +98,7 @@ export class AdOrdersService {
       // Computed here, never taken from the client — the buyer's device does
       // not get to say what it owes. An enquiry costs nothing: asking to view
       // a room is not the same as taking it for a month.
-      amount: dto.isEnquiry ? 0 : Number(ad.price) * quantity,
+      amount: dto.isEnquiry ? 0 : (hourly?.amount ?? Number(ad.price) * quantity),
       isEnquiry: dto.isEnquiry ?? false,
       quantity,
       serviceName: ad.title,
@@ -100,7 +110,12 @@ export class AdOrdersService {
       endAt: dto.endAt ? new Date(dto.endAt) : null,
       durationMonths: dto.durationMonths ?? null,
       depositAmount: dto.depositAmount ?? null,
-      feesAmount: dto.feesAmount ?? 0,
+      feesAmount: hourly?.feesAmount ?? dto.feesAmount ?? 0,
+      hours: hourly ? dto.hours : null,
+      professionals: hourly ? dto.professionals : null,
+      withMaterials:
+        hourly && ad.categorySlug === 'cleaning' ? (dto.withMaterials ?? false) : false,
+      withParts: hourly && ad.categorySlug === 'repairing' ? (dto.withParts ?? false) : false,
       taxAmount: dto.taxAmount ?? 0,
       note: dto.note ?? null,
     });
@@ -124,6 +139,45 @@ export class AdOrdersService {
     }
 
     return this.toJson(order);
+  }
+
+  /**
+   * The admin price of a cleaning or repair job, when the buyer booked one by
+   * the hour.
+   *
+   * Null for anything else — other categories, an enquiry, or an older app
+   * that does not send hours — which keeps the listing-price path unchanged.
+   */
+  private async hourlyQuote(ad: Ad, dto: CreateAdOrderDto): Promise<HourlyQuote | null> {
+    const hourlyCategory = ad.categorySlug === 'cleaning' || ad.categorySlug === 'repairing';
+    if (!hourlyCategory || dto.isEnquiry || dto.hours === undefined) {
+      return null;
+    }
+    if (dto.professionals === undefined) {
+      throw new ValidationFailedException([
+        { field: 'professionals', message: 'professionals is required with hours' },
+      ]);
+    }
+    const attributes = (ad.attributes ?? {}) as Record<string, unknown>;
+    const tile = typeof attributes.subCategory === 'string' ? attributes.subCategory : null;
+
+    if (ad.categorySlug === 'repairing') {
+      const quote = await this.repairPricing.quote(
+        tile ?? DEFAULT_REPAIR_SUB_CATEGORY,
+        dto.hours,
+        dto.professionals,
+        dto.withParts ?? false,
+      );
+      // The visit fee is still the screen's to add, once per visit; the parts
+      // fee is priced here and added to it.
+      return { ...quote, feesAmount: quote.feesAmount + (dto.feesAmount ?? 0) };
+    }
+    return this.cleaningPricing.quote(
+      tile ?? DEFAULT_CLEANING_SUB_CATEGORY,
+      dto.hours,
+      dto.professionals,
+      dto.withMaterials ?? false,
+    );
   }
 
   async listForSeller(user: AuthUser, status?: AdOrderStatus): Promise<AdOrderDto[]> {
@@ -210,6 +264,10 @@ export class AdOrdersService {
       endAt: order.endAt?.toISOString() ?? null,
       durationMonths: order.durationMonths,
       depositAmount: order.depositAmount === null ? null : Number(order.depositAmount),
+      hours: order.hours,
+      professionals: order.professionals,
+      withMaterials: order.withMaterials,
+      withParts: order.withParts,
       createdAt: order.createdAt.toISOString(),
     };
   }

@@ -302,6 +302,37 @@ export class CreateAdOrderDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  /**
+   * Cleaning and repair jobs: how many hours the crew stays and how many come
+   * (cleaners or technicians). Sent together; when present, the order is
+   * priced from the admin's rates for the tile rather than the listing price.
+   * For cleaning `feesAmount` is ignored; for repair it still carries the
+   * visit fee the screen adds, and the parts fee is added to it.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  hours?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  professionals?: number;
+
+  /** Cleaning jobs: the crew brings the cleaning materials, for the materials fee. */
+  @IsOptional()
+  @IsBoolean()
+  withMaterials?: boolean;
+
+  /** Repair jobs: the technician brings the spare parts, for the parts fee. */
+  @IsOptional()
+  @IsBoolean()
+  withParts?: boolean;
 }
 
 export class AdOrdersQueryDto {
@@ -347,5 +378,54 @@ export class AdOrderDto {
   endAt!: string | null;
   durationMonths!: number | null;
   depositAmount!: number | null;
+  /** Cleaning and repair jobs: hours booked and crew size; null otherwise. */
+  hours!: number | null;
+  professionals!: number | null;
+  withMaterials!: boolean;
+  withParts!: boolean;
   createdAt!: string;
+}
+
+/** One cleaning tile's admin-set price. */
+export class CleaningPriceDto {
+  subCategory!: string;
+  /** Per professional, per hour. */
+  hourlyRate!: number;
+  materialsFee!: number;
+}
+
+/** One repair tile's admin-set price. */
+export class RepairPriceDto {
+  subCategory!: string;
+  /** Per technician, per hour. */
+  hourlyRate!: number;
+  partsFee!: number;
+}
+
+export class UpdateRepairPriceDto {
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(1_000_000)
+  hourlyRate!: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000)
+  partsFee!: number;
+}
+
+export class UpdateCleaningPriceDto {
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(1_000_000)
+  hourlyRate!: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000)
+  materialsFee!: number;
 }

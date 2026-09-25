@@ -104,6 +104,11 @@ model Address {
   lat              Float
   lng              Float
   isDefault        Boolean @default(false)
+  /// What the pin alone cannot say: which building, which door, how to find
+  /// it. All optional — an address picked on the map still saves without them.
+  building         String?
+  flatNumber       String?
+  directions       String? @db.Text
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -762,18 +767,27 @@ model AdOrder {
 
   /// What the buyer is charged in total — the listing's price × `quantity`,
   /// snapshotted because the seller may reprice the listing later.
-  amount      Decimal @db.Decimal(10, 2)
+  amount        Decimal @db.Decimal(10, 2)
   /// Units ordered — seats shampooed, rooms cleaned. One for a job priced per
   /// visit, which is most of them.
-  quantity    Int     @default(1)
+  quantity      Int     @default(1)
+  /// Cleaning jobs only: how long the crew stays, how many come, and whether
+  /// they bring the cleaning materials. The seller needs all three to turn up
+  /// ready; `amount` and `feesAmount` are priced from them.
+  hours         Int?
+  professionals Int?
+  withMaterials Boolean @default(false)
+  /// Repair jobs only: the technician brings the spare parts, priced into
+  /// `feesAmount`.
+  withParts     Boolean @default(false)
   /// Charges on top of `amount` that the buyer was shown: a supply fee, a
   /// call-out fee, a rental delivery. Without these the screen's total and the
   /// order's disagreed, and the order was the one that was wrong.
-  feesAmount  Decimal @default(0) @db.Decimal(10, 2)
+  feesAmount    Decimal @default(0) @db.Decimal(10, 2)
   /// Tax on `amount + feesAmount`. Separate from the fees so a receipt can
   /// show what it always showed.
-  taxAmount   Decimal @default(0) @db.Decimal(10, 2)
-  serviceName String
+  taxAmount     Decimal @default(0) @db.Decimal(10, 2)
+  serviceName   String
 
   scheduledAt    DateTime?
   /// End of a booked period: a rental's return, a stay's move-out. Null for
@@ -892,6 +906,37 @@ model Ad {
   @@index([status, wishlistCount, viewCount])
   @@index([deletedAt])
   @@map("ads")
+}
+
+/// What a cleaning job costs, per tile on the cleaning grid. Set by an admin,
+/// not by sellers: a buyer picks hours and professionals, and the price is
+/// `hourlyRate × hours × professionals`, plus `materialsFee` when the crew
+/// brings the materials.
+model CleaningPrice {
+  /// The listing's `subCategory` attribute — cln, deep, tnk, sof, crp, kit, bth, lndr.
+  subCategory  String  @id @db.VarChar(20)
+  /// Per professional, per hour.
+  hourlyRate   Decimal @db.Decimal(10, 2)
+  materialsFee Decimal @db.Decimal(10, 2)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("cleaning_prices")
+}
+
+/// What a repair visit costs, per tile on the repair grid — the same shape as
+/// [CleaningPrice]: `hourlyRate × hours × technicians`, plus `partsFee` when
+/// the technician brings the spare parts. Set by an admin.
+model RepairPrice {
+  /// The listing's `subCategory` attribute — ac, plm, elc, cpt, pnt, gen.
+  subCategory String  @id @db.VarChar(20)
+  /// Per technician, per hour.
+  hourlyRate  Decimal @db.Decimal(10, 2)
+  partsFee    Decimal @db.Decimal(10, 2)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("repair_prices")
 }
 
 /// An uploaded photo. `key` is the S3 object key from POST /uploads/image;

@@ -4,11 +4,14 @@ import {
   DomainException,
   ForbiddenResourceException,
   ResourceNotFoundException,
+  ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { AdOrdersRepository, type AdOrderRow } from '@/modules/marketplace/ad-orders.repository';
 import { AdOrdersService } from '@/modules/marketplace/ad-orders.service';
+import { CleaningPricingService } from '@/modules/marketplace/cleaning-pricing.service';
+import { RepairPricingService } from '@/modules/marketplace/repair-pricing.service';
 import {
   MarketplaceRepository,
   type AdWithSeller,
@@ -66,6 +69,10 @@ function order(overrides: Partial<AdOrderRow> = {}): AdOrderRow {
     endAt: null,
     durationMonths: null,
     depositAmount: null,
+    hours: null,
+    professionals: null,
+    withMaterials: false,
+    withParts: false,
     addressText: '12, 5th Block',
     contactPhone: '+919000000001',
     note: null,
@@ -85,6 +92,8 @@ describe('AdOrdersService', () => {
   let orders: jest.Mocked<AdOrdersRepository>;
   let ads: jest.Mocked<MarketplaceRepository>;
   let notifications: jest.Mocked<NotificationsService>;
+  let cleaningPricing: jest.Mocked<CleaningPricingService>;
+  let repairPricing: jest.Mocked<RepairPricingService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -112,6 +121,14 @@ describe('AdOrdersService', () => {
           provide: NotificationsService,
           useValue: { create: jest.fn().mockResolvedValue({}) },
         },
+        {
+          provide: CleaningPricingService,
+          useValue: { quote: jest.fn() },
+        },
+        {
+          provide: RepairPricingService,
+          useValue: { quote: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -119,6 +136,8 @@ describe('AdOrdersService', () => {
     orders = moduleRef.get(AdOrdersRepository);
     ads = moduleRef.get(MarketplaceRepository);
     notifications = moduleRef.get(NotificationsService);
+    cleaningPricing = moduleRef.get(CleaningPricingService);
+    repairPricing = moduleRef.get(RepairPricingService);
   });
 
   describe('placing an order', () => {
@@ -161,6 +180,110 @@ describe('AdOrdersService', () => {
 
       expect(orders.create).toHaveBeenCalledWith(
         expect.objectContaining({ quantity: 3, amount: 2697 }),
+      );
+    });
+
+    it('prices a cleaning job by the hour from the admin rates, not the listing price', async () => {
+      ads.findById.mockResolvedValue(ad({ attributes: { subCategory: 'bth' } }));
+      cleaningPricing.quote.mockResolvedValue({ amount: 316, feesAmount: 20 });
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        hours: 2,
+        professionals: 2,
+        withMaterials: true,
+        // What the client claims is ignored once the server can price it.
+        feesAmount: 1,
+      });
+
+      expect(cleaningPricing.quote).toHaveBeenCalledWith('bth', 2, 2, true);
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 316,
+          feesAmount: 20,
+          hours: 2,
+          professionals: 2,
+          withMaterials: true,
+        }),
+      );
+    });
+
+    it('prices a cleaning listing with no tile as Home Cleaning', async () => {
+      cleaningPricing.quote.mockResolvedValue({ amount: 79, feesAmount: 0 });
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        hours: 1,
+        professionals: 1,
+      });
+
+      expect(cleaningPricing.quote).toHaveBeenCalledWith('cln', 1, 1, false);
+    });
+
+    it('prices a repair visit from the admin rates, keeping the screen’s visit fee', async () => {
+      ads.findById.mockResolvedValue(
+        ad({ categorySlug: 'repairing', attributes: { subCategory: 'plm' } }),
+      );
+      repairPricing.quote.mockResolvedValue({ amount: 258, feesAmount: 79 });
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        hours: 2,
+        professionals: 1,
+        withParts: true,
+        feesAmount: 15,
+      });
+
+      expect(repairPricing.quote).toHaveBeenCalledWith('plm', 2, 1, true);
+      expect(cleaningPricing.quote).not.toHaveBeenCalled();
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 258,
+          feesAmount: 94,
+          hours: 2,
+          professionals: 1,
+          withParts: true,
+          withMaterials: false,
+        }),
+      );
+    });
+
+    it('prices a repair listing with no tile as General', async () => {
+      ads.findById.mockResolvedValue(ad({ categorySlug: 'repairing' }));
+      repairPricing.quote.mockResolvedValue({ amount: 99, feesAmount: 0 });
+
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        hours: 1,
+        professionals: 1,
+      });
+
+      expect(repairPricing.quote).toHaveBeenCalledWith('gen', 1, 1, false);
+    });
+
+    it('rejects hours without professionals', async () => {
+      await expect(
+        service.place(buyer, 'ad-1', {
+          addressText: '12, 5th Block',
+          contactPhone: '+919000000001',
+          hours: 2,
+        }),
+      ).rejects.toBeInstanceOf(ValidationFailedException);
+    });
+
+    it('keeps the listing price for a cleaning order sent without hours', async () => {
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+      });
+
+      expect(cleaningPricing.quote).not.toHaveBeenCalled();
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 899, hours: null, withMaterials: false }),
       );
     });
 

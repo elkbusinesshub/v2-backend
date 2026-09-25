@@ -29,6 +29,23 @@ export class CreateAddressDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  /** Building or community name — what the pin alone does not say. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  building?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  flatNumber?: string;
+
+  /** Free-text directions for the crew: landmarks, gate, floor. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  directions?: string;
 }
 
 export class UpdateAddressDto {
@@ -55,6 +72,23 @@ export class UpdateAddressDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  /** Building or community name — what the pin alone does not say. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  building?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  flatNumber?: string;
+
+  /** Free-text directions for the crew: landmarks, gate, floor. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  directions?: string;
 }
 
 export class AddressDto {
@@ -64,4 +98,7 @@ export class AddressDto {
   lat!: number;
   lng!: number;
   isDefault!: boolean;
+  building!: string | null;
+  flatNumber!: string | null;
+  directions!: string | null;
 }

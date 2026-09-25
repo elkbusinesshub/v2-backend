@@ -9,6 +9,9 @@ export interface AddressInput {
   lat: number;
   lng: number;
   isDefault?: boolean;
+  building?: string;
+  flatNumber?: string;
+  directions?: string;
 }
 
 @Injectable()
@@ -49,6 +52,9 @@ export class LocationsRepository {
           lat: input.lat,
           lng: input.lng,
           isDefault: input.isDefault ?? false,
+          building: input.building ?? null,
+          flatNumber: input.flatNumber ?? null,
+          directions: input.directions ?? null,
         },
       });
     });

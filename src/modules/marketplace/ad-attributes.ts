@@ -43,7 +43,7 @@ type FieldSpec =
  * and a slug nobody has drawn would appear blank. Tiles with no listings are
  * simply not shown, so the grid always reflects what sellers actually offer.
  */
-const CLEANING_SUB_CATEGORIES = [
+export const CLEANING_SUB_CATEGORIES = [
   'cln', // Home Cleaning
   'deep', // Deep Cleaning
   'tnk', // Water Tank
@@ -54,7 +54,7 @@ const CLEANING_SUB_CATEGORIES = [
   'lndr', // Laundry & Iron
 ] as const;
 
-const REPAIR_SUB_CATEGORIES = [
+export const REPAIR_SUB_CATEGORIES = [
   'ac', // AC & Cooling
   'plm', // Plumbing
   'elc', // Electrical
