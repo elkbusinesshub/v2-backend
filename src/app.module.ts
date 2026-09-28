@@ -15,12 +15,14 @@ import { validateEnv } from '@/config/env.validation';
 import { RedisModule } from '@/cache/redis.module';
 import { PrismaModule } from '@/database/prisma.module';
 import { JobsModule } from '@/jobs/jobs.module';
+import { AdminModule } from '@/modules/admin/admin.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
 import { AppConfigModule } from '@/modules/config/config.module';
 import { DispatchModule } from '@/modules/dispatch/dispatch.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
+import { HomeServicesModule } from '@/modules/home-services/home-services.module';
 import { LocationsModule } from '@/modules/locations/locations.module';
 import { MarketplaceModule } from '@/modules/marketplace/marketplace.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
@@ -131,6 +133,8 @@ import { StorageModule } from '@/storage/storage.module';
     OrdersModule,
     ProviderModule,
     UploadsModule,
+    HomeServicesModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

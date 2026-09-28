@@ -17,6 +17,12 @@ export const BOOKING_VERTICALS = [
    * cancel lives on the marketplace endpoint rather than a per-vertical one.
    */
   'marketplace',
+  /**
+   * ELK's own cleaning and repair services, booked from the admin's catalogue
+   * and fulfilled by a professional the admin assigns. Cancelled through
+   * `POST /service-bookings/:id/cancel`.
+   */
+  'service',
 ] as const;
 export type BookingVertical = (typeof BOOKING_VERTICALS)[number];
 
@@ -58,7 +64,7 @@ export class UnifiedBookingsRepository {
   async findAllByUser(userId: string): Promise<UnifiedBooking[]> {
     const where = { userId };
 
-    const [porters, rides, adOrders] = await Promise.all([
+    const [porters, rides, adOrders, serviceBookings] = await Promise.all([
       this.db.porterBooking.findMany({ where, include: { vehicle: true } }),
       this.db.rideBooking.findMany({ where, include: { rideType: true } }),
       // Scoped to the buyer: a seller's own listings appear in their Orders
@@ -69,6 +75,10 @@ export class UnifiedBookingsRepository {
           ad: { select: { icon: true, categorySlug: true } },
           seller: { select: { name: true } },
         },
+      }),
+      this.db.serviceBooking.findMany({
+        where: { userId },
+        include: { professional: { select: { name: true } } },
       }),
     ]);
 
@@ -117,6 +127,25 @@ export class UnifiedBookingsRepository {
         addressText: o.addressText,
         total: Number(o.amount),
         createdAt: o.createdAt,
+      })),
+      ...serviceBookings.map((b) => ({
+        id: b.id,
+        vertical: 'service' as const,
+        reference: b.code,
+        serviceName: b.serviceName,
+        serviceIcon: b.vertical === 'REPAIR' ? '🔧' : '🧹',
+        // Named once the admin assigns someone.
+        providerName:
+          b.professional?.name ?? (b.vertical === 'REPAIR' ? 'ELK Repair' : 'ELK Clean'),
+        status: b.status,
+        // The same slugs the listings use, so My Bookings groups them alike.
+        categorySlug: b.vertical === 'REPAIR' ? 'repairing' : 'cleaning',
+        scheduledAt: new Date(
+          `${b.scheduledDate.toISOString().slice(0, 10)}T${b.timeSlot}:00+05:30`,
+        ),
+        addressText: b.addressText,
+        total: Number(b.totalAmount),
+        createdAt: b.createdAt,
       })),
     ];
 

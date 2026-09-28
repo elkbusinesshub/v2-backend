@@ -63,6 +63,7 @@ model User {
   adWishlists        AdWishlist[]
   walletTransactions WalletTransaction[]
   providerProfile    ProviderProfile?
+  serviceBookings    ServiceBooking[]
 
   @@index([deletedAt])
   @@map("users")
@@ -980,4 +981,174 @@ model AdWishlist {
   @@unique([adId, userId])
   @@index([userId])
   @@map("ad_wishlists")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Home services (cleaning, repair) — run by ELK, managed in the admin panel
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum ServiceVertical {
+  CLEANING
+  REPAIR
+}
+
+/// A service ELK offers directly, priced by the hour. Unlike a seller's
+/// listing, nobody owns it: the admin sets the price and assigns one of ELK's
+/// own professionals to each booking.
+///
+/// Price = hourlyRate × hours + extraProRate × hours × (professionals − 1),
+/// plus materialsFee when the customer asks for materials (spare parts, for
+/// repair). "From" in the app is hourlyRate × minHours.
+model HomeService {
+  id           String          @id @default(uuid(7)) @db.Char(36)
+  vertical     ServiceVertical
+  /// The app tile it sits under — cln, bth, kit, … for cleaning; ac, plm, … for repair.
+  category     String          @db.VarChar(20)
+  name         String
+  description  String          @db.Text
+  minHours     Int
+  hourlyRate   Decimal         @db.Decimal(10, 2)
+  /// Per hour, for each professional after the first.
+  extraProRate Decimal         @db.Decimal(10, 2)
+  /// Cleaning materials, or spare parts for repair. Zero means not offered.
+  materialsFee Decimal         @default(0) @db.Decimal(10, 2)
+  /// Offered at all. An inactive service is also offline.
+  active       Boolean         @default(false)
+  /// Shown in the customer app.
+  online       Boolean         @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings ServiceBooking[]
+
+  @@index([vertical, active, online])
+  @@map("home_services")
+}
+
+/// An area customers can book in. A booking is matched to the nearest active
+/// area whose radius covers the address, or whose pincode the address carries.
+model ServiceLocation {
+  id       String  @id @default(uuid(7)) @db.Char(36)
+  area     String
+  district String
+  pincode  String  @db.VarChar(10)
+  radiusKm Int     @default(5)
+  /// Centre of the area, geocoded when the admin saves it. Null when that
+  /// failed, in which case only the pincode matches.
+  lat      Float?
+  lng      Float?
+  active   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  professionals Professional[]
+  bookings      ServiceBooking[]
+
+  @@map("service_locations")
+}
+
+/// One of ELK's own cleaners or technicians. Not an app account: the admin
+/// assigns them to bookings and calls them.
+model Professional {
+  id              String           @id @default(uuid(7)) @db.Char(36)
+  name            String
+  phone           String           @db.VarChar(20)
+  experienceYears Int              @default(0)
+  skills          String           @default("")
+  locationId      String?          @db.Char(36)
+  location        ServiceLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  onDuty          Boolean          @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings ServiceBooking[]
+
+  @@index([locationId])
+  @@map("professionals")
+}
+
+/// A percentage discount a customer enters at checkout.
+model PromoCode {
+  id          String   @id @default(uuid(7)) @db.Char(36)
+  code        String   @unique @db.VarChar(20)
+  percent     Int
+  /// The most it takes off, in rupees. Zero means no cap.
+  maxDiscount Decimal  @default(0) @db.Decimal(10, 2)
+  minOrder    Decimal  @default(0) @db.Decimal(10, 2)
+  /// Last day it can be used, inclusive.
+  validTill   DateTime @db.Date
+  active      Boolean  @default(true)
+  /// Internal note — who the code is for.
+  description String   @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("promo_codes")
+}
+
+enum ServiceBookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// A customer's booking of a [HomeService]. Arrives PENDING and is confirmed
+/// when the admin assigns a professional. Prices are snapshotted: the admin
+/// may reprice the service later.
+model ServiceBooking {
+  id     String @id @default(uuid(7)) @db.Char(36)
+  /// Human-facing reference, e.g. ELK-S-4T29K.
+  code   String @unique
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  serviceId     String?         @db.Char(36)
+  service       HomeService?    @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceName   String
+  vertical      ServiceVertical
+  category      String          @db.VarChar(20)
+  hours         Int
+  professionals Int
+  withMaterials Boolean         @default(false)
+
+  /// Calendar day (IST) and arrival window, e.g. 2026-10-02 / "11:00".
+  scheduledDate DateTime @db.Date
+  timeSlot      String   @db.VarChar(5)
+
+  addressLabel String
+  addressText  String   @db.VarChar(500)
+  lat          Float?
+  lng          Float?
+  directions   String?          @db.Text
+  contactPhone String           @db.VarChar(20)
+  locationId   String?          @db.Char(36)
+  location     ServiceLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  professionalId String?       @db.Char(36)
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+
+  status          ServiceBookingStatus @default(PENDING)
+  baseAmount      Decimal              @db.Decimal(10, 2)
+  materialsAmount Decimal              @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal              @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal              @db.Decimal(10, 2)
+  promoCode       String?              @db.VarChar(20)
+
+  confirmedAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status, scheduledDate])
+  @@index([professionalId])
+  @@map("service_bookings")
 }
