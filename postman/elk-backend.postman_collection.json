@@ -2,7 +2,7 @@
   "info": {
     "name": "ELK Backend",
     "_postman_id": "elk-backend-collection",
-    "description": "Every route the NestJS controllers actually declare \u2014 generated from them, so it cannot drift into listing endpoints that do not exist.\n\nGlobal prefix `api` with URI versioning `v1`, so paths are `/api/v1/...`. The two exceptions are `/health/live` and `/health/ready`, which are excluded from the prefix.\n\n**Start here:** Auth > \"Send a one-time passcode\", then \"Verify a phone OTP\". The verify request saves `accessToken` and `refreshToken` into the environment, and every other request reads the token from there.\n\nResponses are wrapped: the payload is under `data`.\n\nBodies show the *required* fields with sample values; optional ones are left out. Query parameters are listed with the optional ones disabled.",
+    "description": "Every route the NestJS controllers actually declare \u2014 generated from them, so it cannot drift into listing endpoints that do not exist.\n\nGlobal prefix `api` with URI versioning `v1`, so paths are `/api/v1/...`. The two exceptions are `/health/live` and `/health/ready`, which are excluded from the prefix.\n\n**Start here:** Auth > \"Send a one-time passcode\", then \"Verify a phone OTP\". The verify request saves `accessToken` and `refreshToken` into the environment, and every other request reads the token from there.\n\nResponses are wrapped: the payload is under `data`.\n\nBodies show the *required* fields with sample values; optional ones are left out. Query parameters are listed with the optional ones disabled.\n\n**Added 28 Sep 2026:** 'Home services (Cleaning & Repair)' \u2014 the app's booking endpoints for ELK's own services; 'Admin' \u2014 the admin panel's API (sign in with the admin phone first; it saves adminAccessToken); 'Tile pricing (superseded)'. The address request now carries building, flatNumber and directions. GET /bookings now also lists service bookings with vertical \"service\".",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -363,14 +363,30 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"label\": \"Home\",\n  \"formattedAddress\": \"12, 5th Block, Koramangala, Bengaluru\",\n  \"lat\": 12.9352,\n  \"lng\": 77.6245\n}",
+              "raw": "{\n  \"label\": \"Home\",\n  \"formattedAddress\": \"80 Feet Rd, Koramangala, Bengaluru, Karnataka 560034, India\",\n  \"lat\": 12.9352,\n  \"lng\": 77.6245,\n  \"building\": \"Prestige Tower\",\n  \"flatNumber\": \"12B\",\n  \"directions\": \"Gate 2, take the lift\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            },
+            "description": "building, flatNumber and directions are optional (added 25 Sep 2026). Home/Work/Other is sent as `label`. Saves addressId \u2014 service bookings use it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) {",
+                  "  const v = pm.response.json().data.id;",
+                  "  if (v) pm.environment.set('addressId', v);",
+                  "}"
+                ]
+              }
             }
-          }
+          ]
         },
         {
           "name": "Remove a saved address",
@@ -1060,6 +1076,195 @@
               "path": ["api", "v1", "bookings"]
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "Home services (Cleaning & Repair)",
+      "description": "ELK's own cleaning and repair services, as the mobile app uses them. The admin sets them up in the admin panel. A booking is priced on the server: hourlyRate \u00d7 hours + extraProRate \u00d7 hours \u00d7 (professionals \u2212 1), plus materialsFee when withMaterials is true, minus the promo discount. It starts PENDING until the admin assigns a professional. The address must fall inside an active service location, otherwise 422 AREA_NOT_SERVED.",
+      "item": [
+        {
+          "name": "Cleaning services live in the app",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services?vertical=CLEANING",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "services"],
+              "query": [
+                {
+                  "key": "vertical",
+                  "value": "CLEANING"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const v = pm.response.json().data[0] && pm.response.json().data[0].id;",
+                  "  if (v) pm.environment.set('serviceId', v);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repair services live in the app",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services?vertical=REPAIR",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "services"],
+              "query": [
+                {
+                  "key": "vertical",
+                  "value": "REPAIR"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check a promo code against a subtotal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/promo-codes/check",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "promo-codes", "check"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{promoCode}}\",\n  \"subtotal\": 1944\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Returns { ok, discount, message }. message is written for the customer \u2014 show it as it is."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Book a service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/service-bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "service-bookings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"hours\": 3,\n  \"professionals\": 2,\n  \"withMaterials\": true,\n  \"date\": \"2026-10-02\",\n  \"timeSlot\": \"11:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"promoCode\": \"{{promoCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "date is YYYY-MM-DD (India), today or later; timeSlot HH:MM. hours \u2265 the service's minHours, \u2264 12; professionals 1\u20134. promoCode is optional; a code that does not apply rejects the booking (422 PROMO_REJECTED) rather than being dropped silently."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) {",
+                  "  const v = pm.response.json().data.id;",
+                  "  if (v) pm.environment.set('serviceBookingId', v);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel my booking (before the job starts)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/service-bookings/{{serviceBookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "service-bookings", "{{serviceBookingId}}", "cancel"]
+            },
+            "description": "Allowed while PENDING or CONFIRMED; 409 once IN_PROGRESS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
         }
       ]
     },
@@ -2319,6 +2524,1013 @@
               ]
             },
             "description": "multipart/form-data. Attach a file to the `file` key; Postman sets the boundary, so do not add a Content-Type header by hand."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "The admin panel's API. Every route needs a token with the ADMIN role \u2014 granted at login to the phones in the server's ADMIN_PHONES. Sign in with the two requests in 'Sign in' first: they save adminAccessToken, separate from the customer's accessToken, so both can be used side by side. A non-admin token gets 403.",
+      "item": [
+        {
+          "name": "Sign in",
+          "item": [
+            {
+              "name": "Send OTP to the admin phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/otp/request",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "otp", "request"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{adminPhone}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify admin OTP (saves adminAccessToken)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/otp/verify",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "otp", "verify"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"otp\": \"{{otp}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "In production the OTP arrives by SMS \u2014 put it in the otp variable first. Locally, test phones use 123456."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code === 200) {",
+                      "  const d = pm.response.json().data;",
+                      "  pm.environment.set('adminAccessToken', d.accessToken);",
+                      "  pm.environment.set('adminRefreshToken', d.refreshToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Check the ADMIN role",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/me",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "me"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('is an admin', () => pm.expect(pm.response.json().data.roles).to.include('ADMIN'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "dashboard"]
+            },
+            "description": "Bookings and revenue this month, pending bookings (oldest day first), today's jobs, team on duty."
+          }
+        },
+        {
+          "name": "Services & pricing",
+          "item": [
+            {
+              "name": "All services (live or not)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/services",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "services"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data[0] && pm.response.json().data[0].id;",
+                      "  if (v) pm.environment.set('adminServiceId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Add a service",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/services",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "services"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"vertical\": \"CLEANING\",\n  \"category\": \"bth\",\n  \"name\": \"Balcony & window clean\",\n  \"description\": \"Glass, frames, grills and balcony floor.\",\n  \"minHours\": 2,\n  \"hourlyRate\": 299,\n  \"extraProRate\": 249,\n  \"materialsFee\": 99,\n  \"active\": true,\n  \"online\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "category must be an app tile of the vertical \u2014 CLEANING: cln deep tnk sof crp kit bth lndr; REPAIR: ac plm elc cpt pnt gen. Goes live immediately when active and online."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data.id;",
+                      "  if (v) pm.environment.set('adminServiceId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Change a price",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/services/{{adminServiceId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "services", "{{adminServiceId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"hourlyRate\": 329,\n  \"extraProRate\": 279\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Take a service offline",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/services/{{adminServiceId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "services", "{{adminServiceId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"online\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Inactive also forces offline."
+              }
+            },
+            {
+              "name": "Delete a service",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/services/{{adminServiceId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "services", "{{adminServiceId}}"]
+                },
+                "description": "Existing bookings keep their snapshot of the name and price and still go ahead."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 204', () => pm.response.to.have.status(204));"]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Locations",
+          "item": [
+            {
+              "name": "All service locations",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/locations",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "locations"]
+                }
+              }
+            },
+            {
+              "name": "Add a location",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/locations",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "locations"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"area\": \"Koramangala\",\n  \"district\": \"Bengaluru\",\n  \"pincode\": \"560034\",\n  \"radiusKm\": 6\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "The area's centre is found on Google Maps when saved (mapped: true). If it cannot be found it still saves, and matches bookings by pincode only."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data.id;",
+                      "  if (v) pm.environment.set('serviceLocationId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Edit a location",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/locations/{{serviceLocationId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "locations", "{{serviceLocationId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"radiusKm\": 8\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Pause a location (stops new bookings there)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/locations/{{serviceLocationId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "locations", "{{serviceLocationId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"active\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Professionals",
+          "item": [
+            {
+              "name": "All professionals",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/professionals",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "professionals"]
+                }
+              }
+            },
+            {
+              "name": "Add a professional",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/professionals",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "professionals"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Anil Kumar\",\n  \"phone\": \"+91 98470 21456\",\n  \"experienceYears\": 5,\n  \"skills\": \"Home, Bathroom\",\n  \"locationId\": \"{{serviceLocationId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data.id;",
+                      "  if (v) pm.environment.set('professionalId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Edit a professional",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/professionals/{{professionalId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "professionals", "{{professionalId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"skills\": \"Home, Bathroom, Kitchen\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Set off duty",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/professionals/{{professionalId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "professionals", "{{professionalId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"onDuty\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Remove a professional",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/professionals/{{professionalId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "professionals", "{{professionalId}}"]
+                },
+                "description": "409 while they have CONFIRMED or IN_PROGRESS bookings."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Promo codes",
+          "item": [
+            {
+              "name": "All promo codes",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/promo-codes",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "promo-codes"]
+                }
+              }
+            },
+            {
+              "name": "Create a promo code",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/promo-codes",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "promo-codes"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"WELCOME15\",\n  \"percent\": 15,\n  \"maxDiscount\": 300,\n  \"minOrder\": 499,\n  \"validTill\": \"2026-12-31\",\n  \"active\": true,\n  \"description\": \"First booking\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "code: 4\u201315 letters/digits, stored upper-case, unique. maxDiscount 0 = no cap. validTill is the last usable day."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data.id;",
+                      "  if (v) pm.environment.set('promoCodeId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Edit a promo code",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/promo-codes/{{promoCodeId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "promo-codes", "{{promoCodeId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"percent\": 20,\n  \"maxDiscount\": 500\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Switch a code off",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/promo-codes/{{promoCodeId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "promo-codes", "{{promoCodeId}}"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"active\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete a promo code",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/promo-codes/{{promoCodeId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "promo-codes", "{{promoCodeId}}"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bookings",
+          "item": [
+            {
+              "name": "All bookings (latest 500)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings"]
+                }
+              }
+            },
+            {
+              "name": "Pending bookings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings?status=PENDING",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings"],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "PENDING"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data[0] && pm.response.json().data[0].id;",
+                      "  if (v) pm.environment.set('serviceBookingId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Assign a professional (confirms the booking)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/assign",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings", "{{serviceBookingId}}", "assign"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"professionalId\": \"{{professionalId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "PENDING \u2192 CONFIRMED; can reassign while CONFIRMED. The professional must be on duty. The customer is notified."
+              }
+            },
+            {
+              "name": "Start the job",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings", "{{serviceBookingId}}", "status"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Only from CONFIRMED, and only with a professional assigned."
+              }
+            },
+            {
+              "name": "Mark completed",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings", "{{serviceBookingId}}", "status"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"COMPLETED\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Cancel a booking",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings", "{{serviceBookingId}}", "status"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"CANCELLED\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "From PENDING or CONFIRMED."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tile pricing (superseded)",
+      "description": "Per-tile hourly prices added on 25\u201326 Sep 2026. Still served, but the app no longer uses them: cleaning and repair are now booked through 'Home services' and priced from the admin's service catalogue. Kept here so the endpoints are documented.",
+      "item": [
+        {
+          "name": "Cleaning prices per tile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cleaning/pricing",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cleaning", "pricing"]
+            }
+          }
+        },
+        {
+          "name": "Set a cleaning tile price (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cleaning/pricing/bth",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cleaning", "pricing", "bth"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hourlyRate\": 99,\n  \"materialsFee\": 25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Repair prices per tile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/repair/pricing",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "repair", "pricing"]
+            }
+          }
+        },
+        {
+          "name": "Set a repair tile price (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/repair/pricing/plm",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "repair", "pricing", "plm"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hourlyRate\": 149,\n  \"partsFee\": 99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
