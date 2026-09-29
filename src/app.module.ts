@@ -16,6 +16,7 @@ import { RedisModule } from '@/cache/redis.module';
 import { PrismaModule } from '@/database/prisma.module';
 import { JobsModule } from '@/jobs/jobs.module';
 import { AdminModule } from '@/modules/admin/admin.module';
+import { ProModule } from '@/modules/pro/pro.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
 import { AppConfigModule } from '@/modules/config/config.module';
@@ -135,6 +136,7 @@ import { StorageModule } from '@/storage/storage.module';
     UploadsModule,
     HomeServicesModule,
     AdminModule,
+    ProModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

@@ -1,19 +1,18 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role, UserType } from '@prisma/client';
+import { Prisma, UserType } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { OffersRepository } from '@/modules/offers/offers.repository';
 import { OffersService } from '@/modules/offers/offers.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 const account = {
   id: 'u-1',
   phone: '+971500000001',
   email: null,
   name: 'Demo User',
-  roles: [Role.USER],
   userType: UserType.USER,
   language: 'en',
   rewardPoints: 150,

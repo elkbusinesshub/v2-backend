@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { DomainException, ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { ChatGateway } from '@/modules/chat/chat.gateway';
 import { ChatRepository } from '@/modules/chat/chat.repository';
 import { ChatService } from '@/modules/chat/chat.service';
 
-const asha: AuthUser = { id: 'u-asha', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const asha: AuthUser = { id: 'u-asha', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 /** userA/userB are stored sorted, so 'u-asha' lands in A and 'u-bright' in B. */
 const thread = {

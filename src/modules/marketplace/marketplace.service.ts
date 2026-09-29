@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AdStatus, Prisma, Role } from '@prisma/client';
+import { AdStatus, Prisma, UserType } from '@prisma/client';
 import {
   ForbiddenResourceException,
   ResourceNotFoundException,
@@ -200,7 +200,7 @@ export class MarketplaceService {
     if (!ad) {
       throw new ResourceNotFoundException('Ad');
     }
-    if (!user.roles.includes(Role.ADMIN) && ad.sellerId !== user.id) {
+    if (user.role !== UserType.ADMIN && ad.sellerId !== user.id) {
       throw new ForbiddenResourceException('You can only manage your own listings');
     }
     // Returned so an update can read the ad's current category without a

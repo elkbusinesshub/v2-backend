@@ -207,13 +207,13 @@ describe('Provider (integration)', () => {
       .expect(200);
     expect(verify.body.data.status).toBe('verified');
 
-    // the role grant is persisted — /users/me reads roles fresh from the DB
-    // (the existing access token still carries the old roles until re-login)
+    // the role is persisted — /users/me reads userType fresh from the DB
+    // (the existing access token still carries the old role until re-login)
     const me = await request(http())
       .get('/api/v1/users/me')
       .set('Authorization', bearer(userToken))
       .expect(200);
-    expect(me.body.data.roles).toEqual(expect.arrayContaining(['USER', 'PROVIDER']));
+    expect(me.body.data.userType).toBe('PROVIDER');
   });
 
   it('requires auth on every route', async () => {

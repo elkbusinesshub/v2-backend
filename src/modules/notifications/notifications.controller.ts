@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
@@ -29,7 +29,7 @@ export class NotificationsController {
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(UserType.ADMIN)
   @ApiOperation({ summary: 'Raise a notification for a user (ops/admin)' })
   async create(@Body() dto: CreateNotificationDto): Promise<ApiResponse<Record<string, unknown>>> {
     return ApiResponse.of(await this.service.create(dto), 'Notification created');

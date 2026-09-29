@@ -2,10 +2,9 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import type { Prisma, Role, UserType } from '@prisma/client';
+import type { UserType } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
-import { userRoles } from '@/common/utils/roles';
 import type { AppConfig } from '@/config/configuration';
 import { UsersRepository } from '@/modules/users/users.repository';
 import type { TokenPairDto } from './auth.dto';
@@ -63,7 +62,7 @@ export class AuthService {
   }
 
   async issueTokenPair(
-    user: { id: string; roles: Prisma.JsonValue; userType: UserType },
+    user: { id: string; userType: UserType },
     meta: SessionMeta,
     familyId: string = randomUUID(),
   ): Promise<TokenPairDto> {
@@ -79,7 +78,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, userRoles(user)),
+      accessToken: await this.signAccessToken(user.id, user.userType),
       refreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,
@@ -129,7 +128,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, userRoles(user)),
+      accessToken: await this.signAccessToken(user.id, user.userType),
       refreshToken: newRefreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,
@@ -146,9 +145,9 @@ export class AuthService {
     await this.denylist.revoke(user.jti, user.exp);
   }
 
-  private async signAccessToken(userId: string, roles: Role[]): Promise<string> {
+  private async signAccessToken(userId: string, role: UserType): Promise<string> {
     return this.jwtService.signAsync(
-      { sub: userId, roles, jti: randomUUID(), type: 'access' },
+      { sub: userId, role, jti: randomUUID(), type: 'access' },
       { expiresIn: this.accessTtlSeconds },
     );
   }

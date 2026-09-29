@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
-import { DevicePlatform, Role } from '@prisma/client';
+import { DevicePlatform, UserType } from '@prisma/client';
 import type { AuthUser } from '@/common/types/auth.types';
 import { DeviceTokensRepository } from '@/modules/notifications/device-tokens.repository';
 import { NotificationsRepository } from '@/modules/notifications/notifications.repository';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { PushService } from '@/push/push.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 const notification = {
   id: 'n-1',

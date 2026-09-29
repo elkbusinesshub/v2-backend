@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import type { Request } from 'express';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { ForbiddenResourceException, UnauthenticatedException } from '../errors/domain.exceptions';
@@ -14,7 +14,7 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [
+    const required = this.reflector.getAllAndOverride<UserType[] | undefined>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -27,7 +27,7 @@ export class RolesGuard implements CanActivate {
       // @Roles on a @Public route is a programming error — fail closed
       throw new UnauthenticatedException();
     }
-    if (!user.roles.some((role) => required.includes(role))) {
+    if (!required.includes(user.role)) {
       throw new ForbiddenResourceException();
     }
     return true;

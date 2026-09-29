@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { DriverService, DriverVerification, Gender, Role } from '@prisma/client';
+import { DriverService, DriverVerification, Gender, UserType } from '@prisma/client';
 import {
   ResourceNotFoundException,
   ValidationFailedException,
@@ -12,7 +12,7 @@ import { DispatchService } from '@/modules/dispatch/dispatch.service';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 /** Today, shifted by whole years — negative goes back. */
 function yearsFromNow(years: number): string {

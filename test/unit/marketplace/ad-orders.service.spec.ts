@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { AdOrderStatus, AdStatus, Role } from '@prisma/client';
+import { AdOrderStatus, AdStatus, UserType } from '@prisma/client';
 import {
   DomainException,
   ForbiddenResourceException,
@@ -17,8 +17,8 @@ import {
   type AdWithSeller,
 } from '@/modules/marketplace/marketplace.repository';
 
-const seller: AuthUser = { id: 'u-seller', roles: [Role.USER], jti: 'j', exp: 9999999999 };
-const buyer: AuthUser = { id: 'u-buyer', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const seller: AuthUser = { id: 'u-seller', role: UserType.USER, jti: 'j', exp: 9999999999 };
+const buyer: AuthUser = { id: 'u-buyer', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 function ad(overrides: Partial<AdWithSeller> = {}): AdWithSeller {
   return {

@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
-import { AdOrderStatus, Role } from '@prisma/client';
+import { AdOrderStatus, UserType } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { AdOrdersService } from '@/modules/marketplace/ad-orders.service';
 import { OrdersRepository } from '@/modules/orders/orders.repository';
 import { OrdersService } from '@/modules/orders/orders.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 describe('OrdersService', () => {
   let service: OrdersService;

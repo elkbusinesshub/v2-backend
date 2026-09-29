@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role, UserType, type User } from '@prisma/client';
+import { Prisma, UserType, type User } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { UsersService } from '@/modules/users/users.service';
@@ -9,7 +9,6 @@ const user: User = {
   phone: '+971500000001',
   email: null,
   name: null,
-  roles: [Role.USER],
   userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
@@ -42,7 +41,7 @@ describe('UsersService', () => {
   });
 
   describe('getProfile', () => {
-    it('maps the user row to the profile shape with narrowed roles', async () => {
+    it('maps the user row to the profile shape with its role', async () => {
       const profile = await service.getProfile('u-1');
 
       expect(profile).toEqual({
@@ -51,17 +50,15 @@ describe('UsersService', () => {
         email: null,
         name: null,
         language: 'en',
-        roles: [Role.USER],
         userType: UserType.USER,
       });
     });
 
-    it('adds ADMIN to the roles of an ADMIN userType', async () => {
+    it('reports an admin by their userType', async () => {
       repo.findById.mockResolvedValue({ ...user, userType: UserType.ADMIN });
 
       const profile = await service.getProfile('u-1');
 
-      expect(profile.roles).toEqual([Role.USER, Role.ADMIN]);
       expect(profile.userType).toBe(UserType.ADMIN);
     });
 

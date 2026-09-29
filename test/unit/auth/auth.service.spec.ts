@@ -1,7 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { Prisma, Role, UserType } from '@prisma/client';
+import { Prisma, UserType } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import { AuthService } from '@/modules/auth/auth.service';
 import { OtpService } from '@/modules/auth/otp.service';
@@ -17,7 +17,6 @@ const user = {
   phone: '+971500000001',
   email: null,
   name: 'Test User',
-  roles: [Role.USER],
   userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
@@ -128,22 +127,13 @@ describe('AuthService', () => {
       expect(pair.accessToken).toBe('signed.jwt');
     });
 
-    it('signs ADMIN into the token of a user whose userType is ADMIN', async () => {
+    it("signs the account's one role into the token", async () => {
       const jwt = (service as unknown as { jwtService: { signAsync: jest.Mock } }).jwtService;
       users.findByPhone.mockResolvedValue({ ...user, userType: UserType.ADMIN });
 
       await service.loginWithPhone(user.phone, '1234', {});
 
-      expect(jwt.signAsync.mock.calls[0]![0]).toMatchObject({ roles: [Role.USER, Role.ADMIN] });
-    });
-
-    it('ignores ADMIN in the roles column when userType is USER', async () => {
-      const jwt = (service as unknown as { jwtService: { signAsync: jest.Mock } }).jwtService;
-      users.findByPhone.mockResolvedValue({ ...user, roles: [Role.USER, Role.ADMIN] });
-
-      await service.loginWithPhone(user.phone, '1234', {});
-
-      expect(jwt.signAsync.mock.calls[0]![0]).toMatchObject({ roles: [Role.USER] });
+      expect(jwt.signAsync.mock.calls[0]![0]).toMatchObject({ role: UserType.ADMIN });
     });
 
     it('propagates OTP verification failure without touching users', async () => {
@@ -236,7 +226,7 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    const principal = { id: user.id, roles: [Role.USER], jti: 'jti-1', exp: 9999999999 };
+    const principal = { id: user.id, role: UserType.USER, jti: 'jti-1', exp: 9999999999 };
 
     it('revokes the session and denylists the access token', async () => {
       sessions.findByTokenHash.mockResolvedValue(makeSession());

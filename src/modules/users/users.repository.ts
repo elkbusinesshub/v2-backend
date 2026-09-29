@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Role, type User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
@@ -18,7 +18,7 @@ export class UsersRepository {
 
   /** Creates a bare user for a first-time phone/OTP login — no name collected yet. */
   async createByPhone(phone: string): Promise<User> {
-    return this.db.user.create({ data: { phone, roles: [Role.USER] } });
+    return this.db.user.create({ data: { phone } });
   }
 
   async updateProfile(

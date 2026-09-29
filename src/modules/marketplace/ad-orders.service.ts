@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { type Ad, AdOrderStatus, Role } from '@prisma/client';
+import { type Ad, AdOrderStatus, UserType } from '@prisma/client';
 import {
   DomainException,
   ForbiddenResourceException,
@@ -198,7 +198,7 @@ export class AdOrdersService {
       throw new ResourceNotFoundException('Order');
     }
 
-    const isAdmin = user.roles.includes(Role.ADMIN);
+    const isAdmin = user.role === UserType.ADMIN;
     const isSeller = order.sellerId === user.id;
     const isBuyer = order.buyerId === user.id;
     if (!isAdmin && !isSeller && !isBuyer) {

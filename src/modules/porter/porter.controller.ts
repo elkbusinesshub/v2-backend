@@ -9,7 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
@@ -81,7 +81,7 @@ export class PorterController {
   // ─── fulfilment (ops/admin until rider assignment exists) ──────────────────
 
   @Post('bookings/:id/pickup')
-  @Roles(Role.ADMIN)
+  @Roles(UserType.ADMIN)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirm package handover → PICKED_UP (ops/admin)' })
   async confirmPickup(
@@ -91,7 +91,7 @@ export class PorterController {
   }
 
   @Post('bookings/:id/deliver')
-  @Roles(Role.ADMIN)
+  @Roles(UserType.ADMIN)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirm drop-off → DELIVERED (ops/admin)' })
   async confirmDelivery(

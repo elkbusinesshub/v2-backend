@@ -1,11 +1,11 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, UserType } from '@prisma/client';
 import { DomainException, ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { WalletRepository } from '@/modules/wallet/wallet.repository';
 import { WalletService } from '@/modules/wallet/wallet.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 const transaction = {
   id: 't-1',

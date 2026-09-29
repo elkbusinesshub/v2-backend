@@ -2635,7 +2635,7 @@
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('is an admin', () => pm.expect(pm.response.json().data.roles).to.include('ADMIN'));"
+                      "pm.test('is an admin', () => pm.expect(pm.response.json().data.role).to.eql('ADMIN'));"
                     ]
                   }
                 }

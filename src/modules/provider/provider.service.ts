@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ProviderStatus, Role, type ProviderProfile } from '@prisma/client';
+import { ProviderStatus, UserType, type ProviderProfile } from '@prisma/client';
 import {
   DuplicateResourceException,
   ForbiddenResourceException,
   ResourceNotFoundException,
 } from '@/common/errors/domain.exceptions';
-import { toRoles } from '@/common/utils/roles';
 import type { AuthUser } from '@/common/types/auth.types';
 import { UsersRepository } from '@/modules/users/users.repository';
 import type { RegisterProviderDto, SetAvailabilityDto, VerifyProviderDto } from './provider.dto';
@@ -103,8 +102,9 @@ export class ProviderService {
     if (!account) {
       throw new ResourceNotFoundException('User');
     }
-    const roles = Array.from(new Set([...toRoles(account.roles), Role.PROVIDER]));
-    const verified = await this.providers.setStatusAndRole(profile.id, userId, 'VERIFIED', roles);
+    // A customer becomes a PROVIDER; an admin or professional keeps their role.
+    const role = account.userType === UserType.USER ? UserType.PROVIDER : account.userType;
+    const verified = await this.providers.setStatusAndRole(profile.id, userId, 'VERIFIED', role);
     this.logger.log(`provider verified, PROVIDER role granted: user=${userId}`);
     return toProfileJson(verified);
   }

@@ -15,17 +15,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
+/// The one role an account has. USER is a customer; PROVIDER is a verified
+/// seller; ADMIN opens the admin panel; PROFESSIONAL opens the job screens and
+/// is set when an admin adds the phone as a professional.
+enum UserType {
   USER
   PROVIDER
   ADMIN
-}
-
-/// Who the account belongs to. ADMIN opens the admin panel; it is the only
-/// source of the ADMIN role (see userRoles in src/common/utils/roles.ts).
-enum UserType {
-  USER
-  ADMIN
+  PROFESSIONAL
 }
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
@@ -36,10 +33,8 @@ model User {
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
   name          String?
-  /// JSON array of `Role` values — MySQL has no enum arrays. Narrowed back to
-  /// Role[] at the auth boundary (see src/common/utils/roles.ts).
-  roles         Json     @default("[\"USER\"]")
-  /// USER or ADMIN. Set in the database (or by a migration/seed), never by the API.
+  /// The account's role. ADMIN and PROFESSIONAL are set in the database or
+  /// the admin panel; PROVIDER when a seller is verified.
   userType      UserType @default(USER)
   /// ISO 639-1 code of the user's preferred app language
   language      String   @default("en")
@@ -73,6 +68,7 @@ model User {
   walletTransactions WalletTransaction[]
   providerProfile    ProviderProfile?
   serviceBookings    ServiceBooking[]
+  professional       Professional?
 
   @@index([deletedAt])
   @@map("users")
@@ -1069,6 +1065,9 @@ model Professional {
   locationId      String?          @db.Char(36)
   location        ServiceLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   onDuty          Boolean          @default(true)
+  /// The app account that signs in with this phone.
+  userId          String?          @unique @db.Char(36)
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

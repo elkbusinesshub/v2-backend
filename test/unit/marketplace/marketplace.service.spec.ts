@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { AdStatus, Prisma, Role } from '@prisma/client';
+import { AdStatus, Prisma, UserType } from '@prisma/client';
 import {
   ForbiddenResourceException,
   ResourceNotFoundException,
@@ -248,7 +248,7 @@ describe('MarketplaceService', () => {
   describe('seller-owned listings', () => {
     const seller: AuthUser = {
       id: 'u-9',
-      roles: [Role.USER],
+      role: UserType.USER,
       jti: 'j',
       exp: 9999999999,
     };
@@ -343,7 +343,7 @@ describe('MarketplaceService', () => {
 
     it('lets an admin manage a listing they do not own', async () => {
       repo.findOwned.mockResolvedValue(ad({ sellerId: 'someone-else' }));
-      const admin: AuthUser = { ...seller, roles: [Role.ADMIN] };
+      const admin: AuthUser = { ...seller, role: UserType.ADMIN };
 
       await service.remove(admin, 'ad-1');
 
@@ -360,7 +360,7 @@ describe('MarketplaceService', () => {
   });
 
   describe('category attributes', () => {
-    const seller: AuthUser = { id: 'u-9', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+    const seller: AuthUser = { id: 'u-9', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
     it('stores validated attributes on create', async () => {
       await service.create(seller, {
@@ -452,7 +452,7 @@ describe('MarketplaceService', () => {
   });
 
   describe('default icon', () => {
-    const seller: AuthUser = { id: 'u-9', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+    const seller: AuthUser = { id: 'u-9', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
     it('sets the fallback icon itself rather than leaving it to the column', async () => {
       // The MySQL column default is stored as `?` — the emoji does not survive

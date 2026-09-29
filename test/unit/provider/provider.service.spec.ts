@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ProviderStatus, Role } from '@prisma/client';
+import { ProviderStatus, UserType } from '@prisma/client';
 import {
   DuplicateResourceException,
   ResourceNotFoundException,
@@ -9,7 +9,7 @@ import { UsersRepository } from '@/modules/users/users.repository';
 import { ProviderRepository } from '@/modules/provider/provider.repository';
 import { ProviderService } from '@/modules/provider/provider.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 const profile = {
   id: 'pp-1',
@@ -84,14 +84,12 @@ describe('ProviderService', () => {
         {
           provide: UsersRepository,
           useValue: {
-            findById: jest
-              .fn()
-              .mockResolvedValue({
-                id: 'u-1',
-                name: 'Ravi K',
-                phone: '+919876500011',
-                roles: [Role.USER],
-              }),
+            findById: jest.fn().mockResolvedValue({
+              id: 'u-1',
+              name: 'Ravi K',
+              phone: '+919876500011',
+              userType: UserType.USER,
+            }),
           },
         },
       ],
@@ -240,7 +238,7 @@ describe('ProviderService', () => {
         'pp-1',
         'u-1',
         'VERIFIED',
-        expect.arrayContaining([Role.USER, Role.PROVIDER]),
+        UserType.PROVIDER,
       );
     });
 

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, UserType } from '@prisma/client';
 import {
   DomainException,
   ResourceNotFoundException,
@@ -14,7 +14,7 @@ import { DispatchGateway } from '@/modules/dispatch/dispatch.gateway';
 import { DispatchScheduler } from '@/modules/dispatch/dispatch.queue';
 import { DispatchService } from '@/modules/dispatch/dispatch.service';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 
 const bike = {
   id: 'veh-bike',

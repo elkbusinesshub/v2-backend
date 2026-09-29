@@ -1,7 +1,7 @@
 import { SetMetadata } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 
 export const ROLES_KEY = 'roles';
 
-/** Restricts a route to users holding at least one of the given roles. */
-export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+/** Restricts a route to users whose role is one of the given ones. */
+export const Roles = (...roles: UserType[]) => SetMetadata(ROLES_KEY, roles);

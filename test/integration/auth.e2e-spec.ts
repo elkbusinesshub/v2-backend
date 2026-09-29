@@ -3,7 +3,7 @@ import { MySqlContainer, StartedMySqlContainer } from '@testcontainers/mysql';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import { Role, type User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import type Redis from 'ioredis';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -56,7 +56,7 @@ describe('Auth (integration)', () => {
     redisClient = app.get<Redis>(REDIS_CLIENT);
     const prisma = app.get<import('@/database/prisma.extension').ExtendedPrismaClient>(PRISMA);
     user = await prisma.user.create({
-      data: { phone: '+971509999999', name: 'Integration User', roles: [Role.USER] },
+      data: { phone: '+971509999999', name: 'Integration User' },
     });
   });
 
@@ -121,7 +121,7 @@ describe('Auth (integration)', () => {
     expect(res.body).toMatchObject({
       success: true,
       message: 'OK',
-      data: { id: user.id, roles: [Role.USER] },
+      data: { id: user.id, role: 'USER' },
     });
   });
 

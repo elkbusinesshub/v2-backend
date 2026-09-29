@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
-import { userRoles } from '@/common/utils/roles';
 import { ProfileDto, UpdateProfileDto } from './users.dto';
 import { UsersRepository } from './users.repository';
 
@@ -39,7 +38,6 @@ function toProfile(user: User): ProfileDto {
     email: user.email,
     name: user.name,
     language: user.language,
-    roles: userRoles(user),
     userType: user.userType,
   };
 }

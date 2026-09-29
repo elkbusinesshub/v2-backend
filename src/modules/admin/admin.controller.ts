@@ -12,7 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { Roles } from '@/common/decorators/roles.decorator';
 import type { ServiceBookingDto } from '@/modules/home-services/home-services.dto';
 import { AdminBookingsService, type DashboardDto } from './admin-bookings.service';
@@ -41,7 +41,7 @@ import {
  */
 @ApiTags('admin')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Roles(UserType.ADMIN)
 @Controller('admin')
 export class AdminController {
   constructor(

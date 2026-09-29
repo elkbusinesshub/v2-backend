@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
@@ -21,7 +21,7 @@ export class OffersController {
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(UserType.ADMIN)
   @ApiOperation({ summary: 'Add an offer banner (admin)' })
   async create(@Body() dto: CreateOfferDto): Promise<ApiResponse<Record<string, unknown>>> {
     return ApiResponse.of(await this.service.createOffer(dto), 'Offer created');

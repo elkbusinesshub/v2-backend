@@ -214,18 +214,23 @@ export class AdminCatalogService {
 
   async createProfessional(dto: CreateProfessionalDto): Promise<AdminProfessionalDto> {
     await this.checkLocation(dto.locationId);
-    const created = await this.repo.createProfessional({
-      ...dto,
-      locationId: dto.locationId ?? null,
-      onDuty: dto.onDuty ?? true,
-    });
+    const created = await this.repo.createProfessional(
+      { ...dto, locationId: dto.locationId ?? null, onDuty: dto.onDuty ?? true },
+      accountPhone(dto.phone),
+    );
+    if (created === 'PHONE_TAKEN') throw phoneTaken();
     return this.professionalJson(created, false, 0);
   }
 
   async updateProfessional(id: string, dto: UpdateProfessionalDto): Promise<AdminProfessionalDto> {
     if (!(await this.repo.professional(id))) throw new ResourceNotFoundException('Professional');
     await this.checkLocation(dto.locationId);
-    const updated = await this.repo.updateProfessional(id, dto);
+    const updated = await this.repo.updateProfessional(
+      id,
+      dto,
+      dto.phone === undefined ? undefined : accountPhone(dto.phone),
+    );
+    if (updated === 'PHONE_TAKEN') throw phoneTaken();
     const [onJob, today] = await Promise.all([
       this.repo.professionalsOnJob(),
       this.repo.jobsOnDay(new Date(`${todayInIndia()}T00:00:00.000Z`)),
@@ -345,4 +350,18 @@ export class AdminCatalogService {
       description: p.description,
     };
   }
+}
+
+/** "+91 98765 43210" (as the panel stores it) → "+919876543210", the account's phone. */
+export function accountPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 10 ? `+91${digits}` : `+${digits}`;
+}
+
+function phoneTaken(): DomainException {
+  return new DomainException(
+    HttpStatus.CONFLICT,
+    'CONFLICT',
+    'Another professional already uses this phone number',
+  );
 }

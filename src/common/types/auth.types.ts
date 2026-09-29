@@ -1,10 +1,11 @@
-import { Role } from '@prisma/client';
+import { UserType } from '@prisma/client';
 
 /** Claims carried inside a signed access token. */
 export interface AccessTokenPayload {
   /** user id */
   sub: string;
-  roles: Role[];
+  /** the account's userType */
+  role: UserType;
   /** unique token id — used for the logout denylist */
   jti: string;
   type: 'access';
@@ -15,7 +16,7 @@ export interface AccessTokenPayload {
 /** Attached to req.user / socket.data.user by the auth guard/middleware. */
 export interface AuthUser {
   id: string;
-  roles: Role[];
+  role: UserType;
   jti: string;
   /** access-token expiry (epoch seconds) — needed to TTL the denylist entry */
   exp: number;

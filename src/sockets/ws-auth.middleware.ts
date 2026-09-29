@@ -27,7 +27,7 @@ export function createWsAuthMiddleware(jwtService: JwtService) {
       }
       const user: AuthUser = {
         id: payload.sub,
-        roles: payload.roles,
+        role: payload.role,
         jti: payload.jti,
         exp: payload.exp,
       };

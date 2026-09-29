@@ -7,9 +7,10 @@ unchanged and is covered by the Postman collection (`postman/`).
 - Base URL: `https://api.elkcompany.online/api/v1` (local: `http://localhost:3001/api/v1`)
 - Auth: `Authorization: Bearer <accessToken>` on every endpoint here, from
   `POST /auth/otp/request` then `POST /auth/otp/verify`.
-- Admin endpoints also need the **ADMIN** role. A user has it when their
-  `users.userType` is `ADMIN`; `GET /users/me` returns `userType` and
-  `roles`. A token without the role gets `403 FORBIDDEN`.
+- Admin endpoints also need the **ADMIN** role. Every user has exactly one
+  role, their `users.userType` (`USER`, `PROVIDER`, `ADMIN` or
+  `PROFESSIONAL`); `GET /users/me` returns it as `userType` and `GET /auth/me`
+  as `role`. A token without the ADMIN role gets `403 FORBIDDEN`.
 - Money is in rupees, as numbers. Dates are Indian calendar days, `YYYY-MM-DD`.
 
 ## Response envelope

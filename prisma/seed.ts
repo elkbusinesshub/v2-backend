@@ -4,6 +4,7 @@ import {
   Gender,
   Prisma,
   PrismaClient,
+  ServiceBookingStatus,
   UserType,
 } from '@prisma/client';
 
@@ -544,19 +545,19 @@ async function seedDemoUsers(): Promise<number> {
 
   const demo = [
     // First names matter: the home feeds greet the user by theirs.
-    // Admins are told apart by userType, not roles.
-    { phone: '+971500000000', name: 'Demo Admin', roles: ['USER'], userType: UserType.ADMIN },
-    { phone: '+971500000003', name: 'Asha Menon', roles: ['USER'], userType: UserType.ADMIN },
-    { phone: '+971500000004', name: 'Rahul Nair', roles: ['USER'], userType: UserType.ADMIN },
-    { phone: '+971500000001', name: 'Demo User', roles: ['USER'], userType: UserType.USER },
-    { phone: '+971500000002', name: 'Demo Provider', roles: ['PROVIDER'], userType: UserType.USER },
+    // Each account has one role, its userType.
+    { phone: '+971500000000', name: 'Demo Admin', userType: UserType.ADMIN },
+    { phone: '+971500000003', name: 'Asha Menon', userType: UserType.ADMIN },
+    { phone: '+971500000004', name: 'Rahul Nair', userType: UserType.ADMIN },
+    { phone: '+971500000001', name: 'Demo User', userType: UserType.USER },
+    { phone: '+971500000002', name: 'Demo Provider', userType: UserType.PROVIDER },
   ];
 
-  for (const { phone, name, roles, userType } of demo) {
+  for (const { phone, name, userType } of demo) {
     await prisma.user.upsert({
       where: { phone },
       update: { userType },
-      create: { phone, name, roles, userType },
+      create: { phone, name, userType },
     });
   }
   return demo.length;
@@ -1138,7 +1139,7 @@ async function seedTestAccounts(): Promise<void> {
     const user = await prisma.user.upsert({
       where: { phone: account.phone },
       update: { name: account.name },
-      create: { phone: account.phone, name: account.name, roles: ['USER'] },
+      create: { phone: account.phone, name: account.name },
     });
 
     // Authoritative: a test account ends up exactly as described here, even
@@ -1216,6 +1217,193 @@ async function seedTestAccounts(): Promise<void> {
   );
 }
 
+// ─── Home-services professionals (demo) ──────────────────────────────────────
+
+/**
+ * Two professionals with jobs around today, and the customer who booked them,
+ * so the professional's screens have something on every tab. Their phones are
+ * local test numbers (OTP_TEST_PHONES in .env) — sign in with OTP 123456.
+ * The jobs are rewritten on every run, dated from today, so the demo never
+ * goes stale.
+ */
+const DEMO_PROFESSIONALS = [
+  {
+    phone: '+914444444444',
+    name: 'Suresh Babu',
+    years: 6,
+    skills: 'Home, Kitchen, Bathroom, Sofa',
+  },
+  { phone: '+913333333333', name: 'Meera Joseph', years: 3, skills: 'Plumbing, Electrical, AC' },
+];
+const DEMO_CUSTOMER = { phone: '+912222222222', name: 'Priya Menon' };
+
+async function seedDemoProfessionals(): Promise<void> {
+  if (process.env.SEED_TEST_ACCOUNTS !== 'true') return;
+
+  const location =
+    (await prisma.serviceLocation.findFirst({ where: { active: true } })) ??
+    (await prisma.serviceLocation.create({
+      data: {
+        area: 'Kakkanad',
+        district: 'Ernakulam',
+        pincode: '682030',
+        radiusKm: 8,
+        lat: 10.0159,
+        lng: 76.3419,
+      },
+    }));
+
+  const pros: string[] = [];
+  for (const d of DEMO_PROFESSIONALS) {
+    const user = await prisma.user.upsert({
+      where: { phone: d.phone },
+      update: { name: d.name, userType: UserType.PROFESSIONAL },
+      create: { phone: d.phone, name: d.name, userType: UserType.PROFESSIONAL },
+    });
+    const digits = d.phone.slice(-10);
+    const data = {
+      name: d.name,
+      phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`,
+      experienceYears: d.years,
+      skills: d.skills,
+      locationId: location.id,
+      onDuty: true,
+    };
+    const pro = await prisma.professional.upsert({
+      where: { userId: user.id },
+      update: data,
+      create: { ...data, userId: user.id },
+    });
+    pros.push(pro.id);
+  }
+
+  const customer = await prisma.user.upsert({
+    where: { phone: DEMO_CUSTOMER.phone },
+    update: { name: DEMO_CUSTOMER.name },
+    create: { phone: DEMO_CUSTOMER.phone, name: DEMO_CUSTOMER.name },
+  });
+  const cleaning = await prisma.homeService.findFirst({ where: { category: 'cln' } });
+  const repair = await prisma.homeService.findFirst({ where: { category: 'plm' } });
+  if (!cleaning || !repair) return;
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const day = (offset: number) =>
+    new Date(new Date(`${today}T00:00:00Z`).getTime() + offset * 86_400_000);
+  const [suresh, meera] = pros;
+  const S = ServiceBookingStatus;
+  const jobs = [
+    {
+      code: 'ELK-S-DEMO1',
+      pro: suresh,
+      service: cleaning,
+      offset: -1,
+      slot: '10:00',
+      status: S.COMPLETED,
+      hours: 3,
+      people: 2,
+      materials: true,
+    },
+    {
+      code: 'ELK-S-DEMO2',
+      pro: suresh,
+      service: cleaning,
+      offset: 0,
+      slot: '11:00',
+      status: S.CONFIRMED,
+      hours: 2,
+      people: 1,
+      materials: true,
+    },
+    {
+      code: 'ELK-S-DEMO3',
+      pro: suresh,
+      service: cleaning,
+      offset: 0,
+      slot: '16:00',
+      status: S.CONFIRMED,
+      hours: 3,
+      people: 2,
+      materials: false,
+    },
+    {
+      code: 'ELK-S-DEMO4',
+      pro: suresh,
+      service: cleaning,
+      offset: 2,
+      slot: '09:00',
+      status: S.CONFIRMED,
+      hours: 4,
+      people: 2,
+      materials: true,
+    },
+    {
+      code: 'ELK-S-DEMO5',
+      pro: meera,
+      service: repair,
+      offset: 0,
+      slot: '14:00',
+      status: S.CONFIRMED,
+      hours: 1,
+      people: 1,
+      materials: true,
+    },
+    {
+      code: 'ELK-S-DEMO6',
+      pro: meera,
+      service: repair,
+      offset: 1,
+      slot: '10:00',
+      status: S.CONFIRMED,
+      hours: 2,
+      people: 1,
+      materials: false,
+    },
+  ];
+  for (const j of jobs) {
+    const rate = Number(j.service.hourlyRate);
+    const base = rate * j.hours + Number(j.service.extraProRate) * j.hours * (j.people - 1);
+    const materials = j.materials ? Number(j.service.materialsFee) : 0;
+    const data = {
+      userId: customer.id,
+      serviceId: j.service.id,
+      serviceName: j.service.name,
+      vertical: j.service.vertical,
+      category: j.service.category,
+      hours: j.hours,
+      professionals: j.people,
+      withMaterials: j.materials,
+      scheduledDate: day(j.offset),
+      timeSlot: j.slot,
+      addressLabel: 'Home',
+      addressText: 'Flat 4B, Skyline Apartments, Seaport-Airport Road, Kakkanad, Kochi 682030',
+      lat: 10.0159,
+      lng: 76.3419,
+      directions: 'Second tower on the left. Call when you reach the gate.',
+      contactPhone: DEMO_CUSTOMER.phone,
+      locationId: location.id,
+      professionalId: j.pro,
+      status: j.status,
+      baseAmount: base,
+      materialsAmount: materials,
+      discountAmount: 0,
+      totalAmount: base + materials,
+      confirmedAt: new Date(),
+      startedAt: j.status === S.COMPLETED ? day(j.offset) : null,
+      completedAt: j.status === S.COMPLETED ? day(j.offset) : null,
+      cancelledAt: null,
+    };
+    await prisma.serviceBooking.upsert({
+      where: { code: j.code },
+      update: data,
+      create: { ...data, code: j.code },
+    });
+  }
+  console.log(
+    `Seeded ${DEMO_PROFESSIONALS.length} demo professionals with ${jobs.length} jobs ` +
+      `(customer ${DEMO_CUSTOMER.name}, ${DEMO_CUSTOMER.phone})`,
+  );
+}
+
 async function main(): Promise<void> {
   // Before the listings: they need an owner, and the demo provider is it.
   const demoUsers = await seedDemoUsers();
@@ -1234,6 +1422,7 @@ async function main(): Promise<void> {
   const adCount = withListings ? await seedAds(await seedSellerId()) : 0;
   if (withListings) await seedDemoRecords();
   await seedTestAccounts();
+  await seedDemoProfessionals();
 
   console.log(
     !withListings

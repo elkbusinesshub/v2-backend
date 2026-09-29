@@ -12,5 +12,6 @@ import { AdminRepository } from './admin.repository';
   imports: [HomeServicesModule, NotificationsModule, PlacesModule],
   controllers: [AdminController],
   providers: [AdminRepository, AdminCatalogService, AdminBookingsService],
+  exports: [AdminBookingsService],
 })
 export class AdminModule {}

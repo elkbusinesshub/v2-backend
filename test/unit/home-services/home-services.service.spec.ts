@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Role, ServiceBookingStatus, ServiceVertical } from '@prisma/client';
+import { UserType, ServiceBookingStatus, ServiceVertical } from '@prisma/client';
 import {
   DomainException,
   ResourceNotFoundException,
@@ -11,7 +11,7 @@ import { HomeServicesService } from '@/modules/home-services/home-services.servi
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
 
-const user: AuthUser = { id: 'u-1', roles: [Role.USER], jti: 'j', exp: 9999999999 };
+const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 const FUTURE = '2099-01-10';
 
 const service = {

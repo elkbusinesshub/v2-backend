@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AdOrderStatus, type Prisma, type ProviderProfile } from '@prisma/client';
+import { AdOrderStatus, type Prisma, type ProviderProfile, type UserType } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
@@ -59,11 +59,11 @@ export class ProviderRepository {
     profileId: string,
     userId: string,
     status: 'VERIFIED' | 'REJECTED',
-    roles: string[],
+    userType: UserType,
   ): Promise<ProviderProfile> {
     return this.db.$transaction(async (tx) => {
       if (status === 'VERIFIED') {
-        await tx.user.update({ where: { id: userId }, data: { roles } });
+        await tx.user.update({ where: { id: userId }, data: { userType } });
       }
       return tx.providerProfile.update({ where: { id: profileId }, data: { status } });
     });

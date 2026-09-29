@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ServiceBookingStatus,
+  UserType,
   type HomeService,
   type Prisma,
   type PromoCode,
@@ -12,6 +13,8 @@ import {
   bookingInclude,
   type ServiceBookingRow,
 } from '@/modules/home-services/home-services.repository';
+
+type Tx = Parameters<Parameters<ExtendedPrismaClient['$transaction']>[0]>[0];
 
 /** Statuses a booking is still "open" in — work that has not finished or been dropped. */
 export const OPEN_STATUSES: ServiceBookingStatus[] = [
@@ -101,19 +104,71 @@ export class AdminRepository {
   async professional(id: string): Promise<ProfessionalRow | null> {
     return this.db.professional.findUnique({ where: { id }, include: professionalInclude });
   }
+  /** Adds a professional, linked to the app account for [accountPhone] (E.164). */
   async createProfessional(
     data: Prisma.ProfessionalUncheckedCreateInput,
-  ): Promise<ProfessionalRow> {
-    return this.db.professional.create({ data, include: professionalInclude });
+    accountPhone: string,
+  ): Promise<ProfessionalRow | 'PHONE_TAKEN'> {
+    return this.db.$transaction(async (tx) => {
+      const userId = await this.linkAccount(tx, accountPhone, null);
+      if (!userId) return 'PHONE_TAKEN';
+      return tx.professional.create({ data: { ...data, userId }, include: professionalInclude });
+    });
   }
+  /** Edits a professional. A new phone moves them to that phone's account. */
   async updateProfessional(
     id: string,
     data: Prisma.ProfessionalUncheckedUpdateInput,
-  ): Promise<ProfessionalRow> {
-    return this.db.professional.update({ where: { id }, data, include: professionalInclude });
+    accountPhone?: string,
+  ): Promise<ProfessionalRow | 'PHONE_TAKEN'> {
+    return this.db.$transaction(async (tx) => {
+      if (accountPhone === undefined) {
+        return tx.professional.update({ where: { id }, data, include: professionalInclude });
+      }
+      const before = await tx.professional.findUniqueOrThrow({ where: { id } });
+      const userId = await this.linkAccount(tx, accountPhone, id);
+      if (!userId) return 'PHONE_TAKEN';
+      const updated = await tx.professional.update({
+        where: { id },
+        data: { ...data, userId },
+        include: professionalInclude,
+      });
+      if (before.userId && before.userId !== userId) await this.releaseAccount(tx, before.userId);
+      return updated;
+    });
   }
   async deleteProfessional(id: string): Promise<void> {
-    await this.db.professional.delete({ where: { id } });
+    await this.db.$transaction(async (tx) => {
+      const removed = await tx.professional.delete({ where: { id } });
+      if (removed.userId) await this.releaseAccount(tx, removed.userId);
+    });
+  }
+  /**
+   * The account a professional signs in with, created if the phone has never
+   * signed in, and made PROFESSIONAL unless it is an admin's. Null when another
+   * professional already has it.
+   */
+  private async linkAccount(tx: Tx, phone: string, selfId: string | null): Promise<string | null> {
+    const user =
+      (await tx.user.findUnique({ where: { phone } })) ??
+      (await tx.user.create({
+        data: { phone, userType: UserType.PROFESSIONAL },
+      }));
+    const other = await tx.professional.findFirst({
+      where: { userId: user.id, ...(selfId ? { NOT: { id: selfId } } : {}) },
+    });
+    if (other) return null;
+    if (user.userType === UserType.USER) {
+      await tx.user.update({ where: { id: user.id }, data: { userType: UserType.PROFESSIONAL } });
+    }
+    return user.id;
+  }
+  /** An account no longer used by a professional goes back to a customer's. */
+  private async releaseAccount(tx: Tx, userId: string): Promise<void> {
+    await tx.user.updateMany({
+      where: { id: userId, userType: UserType.PROFESSIONAL },
+      data: { userType: UserType.USER },
+    });
   }
   /** Professionals with a job under way right now. */
   async professionalsOnJob(): Promise<Set<string>> {
