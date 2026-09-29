@@ -2530,7 +2530,7 @@
     },
     {
       "name": "Admin",
-      "description": "The admin panel's API. Every route needs a token with the ADMIN role \u2014 granted at login to the phones in the server's ADMIN_PHONES. Sign in with the two requests in 'Sign in' first: they save adminAccessToken, separate from the customer's accessToken, so both can be used side by side. A non-admin token gets 403.",
+      "description": "The admin panel's API. Every route needs a token with the ADMIN role \u2014 given to users whose users.userType is ADMIN. Sign in with the two requests in 'Sign in' first: they save adminAccessToken, separate from the customer's accessToken, so both can be used side by side. A non-admin token gets 403.",
       "item": [
         {
           "name": "Sign in",

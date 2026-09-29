@@ -21,25 +21,34 @@ enum Role {
   ADMIN
 }
 
+/// Who the account belongs to. ADMIN opens the admin panel; it is the only
+/// source of the ADMIN role (see userRoles in src/common/utils/roles.ts).
+enum UserType {
+  USER
+  ADMIN
+}
+
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
 model User {
-  id            String  @id @default(uuid(7)) @db.Char(36)
-  phone         String? @unique
-  email         String? @unique
+  id            String   @id @default(uuid(7)) @db.Char(36)
+  phone         String?  @unique
+  email         String?  @unique
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
   name          String?
   /// JSON array of `Role` values — MySQL has no enum arrays. Narrowed back to
   /// Role[] at the auth boundary (see src/common/utils/roles.ts).
-  roles         Json    @default("[\"USER\"]")
+  roles         Json     @default("[\"USER\"]")
+  /// USER or ADMIN. Set in the database (or by a migration/seed), never by the API.
+  userType      UserType @default(USER)
   /// ISO 639-1 code of the user's preferred app language
-  language      String  @default("en")
+  language      String   @default("en")
   /// Loyalty points balance — earned by leaving reviews, redeemable via offers.
-  rewardPoints  Int     @default(0)
+  rewardPoints  Int      @default(0)
   /// ELK Wallet balance. Top-up/withdraw and /payments/charge (wallet method)
   /// are the only things that move it — other verticals' "wallet" payment
   /// option is a mock charge today and doesn't yet debit this balance.
-  walletBalance Decimal @default(0) @db.Decimal(10, 2)
+  walletBalance Decimal  @default(0) @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -419,18 +428,18 @@ model DriverProfile {
   /// Nullable only because profiles registered before this existed still have
   /// rows; the API requires every one of them, and `verification` is what says
   /// whether a profile is complete. Nothing is backfilled with a guess.
-  fullName      String?
-  dateOfBirth   DateTime? @db.Date
+  fullName        String?
+  dateOfBirth     DateTime? @db.Date
   /// As printed on the licence. Collected because a rider may ask for a
   /// driver of a particular gender — an option several markets require — and
   /// because a document check cannot be made against a detail nobody holds.
   /// `OTHER` exists so the form never forces a wrong answer.
-  gender        Gender?
-  licenceNumber String?
+  gender          Gender?
+  licenceNumber   String?
   /// When the licence stops being valid. A licence is only proof while it is
   /// in date, so this is checked at registration and is what a future expiry
   /// sweep would read.
-  licenceExpiry DateTime? @db.Date
+  licenceExpiry   DateTime? @db.Date
   /// Storage keys from `POST /uploads/image` (purpose `provider-docs`), not
   /// URLs: a URL expires, and the document has to outlive the link.
   licenceFrontKey String?
@@ -1122,7 +1131,7 @@ model ServiceBooking {
   timeSlot      String   @db.VarChar(5)
 
   addressLabel String
-  addressText  String   @db.VarChar(500)
+  addressText  String           @db.VarChar(500)
   lat          Float?
   lng          Float?
   directions   String?          @db.Text

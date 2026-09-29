@@ -2,11 +2,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
-import type { Prisma, User } from '@prisma/client';
+import type { Prisma, Role, UserType } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
-import { toRoles } from '@/common/utils/roles';
+import { userRoles } from '@/common/utils/roles';
 import type { AppConfig } from '@/config/configuration';
 import { UsersRepository } from '@/modules/users/users.repository';
 import type { TokenPairDto } from './auth.dto';
@@ -38,7 +37,6 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly accessTtlSeconds: number;
   private readonly refreshTtlDays: number;
-  private readonly adminPhones: string[];
 
   constructor(
     private readonly jwtService: JwtService,
@@ -50,7 +48,6 @@ export class AuthService {
   ) {
     this.accessTtlSeconds = config.get('jwt.accessTtlSeconds', { infer: true });
     this.refreshTtlDays = config.get('jwt.refreshTtlDays', { infer: true });
-    this.adminPhones = config.get('admin.phones', { infer: true });
   }
 
   /** Sends (logs, for now) an OTP to [phone]. Returns the resend cooldown in seconds. */
@@ -61,26 +58,12 @@ export class AuthService {
   /** Verifies the OTP, finding or creating the user, then issues a token pair. */
   async loginWithPhone(phone: string, code: string, meta: SessionMeta): Promise<TokenPairDto> {
     await this.otp.verify(phone, code);
-    let user = (await this.users.findByPhone(phone)) ?? (await this.users.createByPhone(phone));
-    user = await this.grantAdminIfAllowlisted(user);
+    const user = (await this.users.findByPhone(phone)) ?? (await this.users.createByPhone(phone));
     return this.issueTokenPair(user, meta);
   }
 
-  /**
-   * Promotes an allowlisted phone to ADMIN at login. There is no seeded admin
-   * account, so `ADMIN_PHONES` is the only way the role is ever granted;
-   * removing a number from the list does not revoke it.
-   */
-  private async grantAdminIfAllowlisted(user: User): Promise<User> {
-    if (!user.phone || !this.adminPhones.includes(user.phone)) return user;
-    const roles = Array.isArray(user.roles) ? (user.roles as Role[]) : [];
-    if (roles.includes(Role.ADMIN)) return user;
-    this.logger.log(`granting ADMIN to allowlisted phone: ${user.phone}`);
-    return this.users.setRoles(user.id, [...new Set([...roles, Role.ADMIN])]);
-  }
-
   async issueTokenPair(
-    user: { id: string; roles: Prisma.JsonValue },
+    user: { id: string; roles: Prisma.JsonValue; userType: UserType },
     meta: SessionMeta,
     familyId: string = randomUUID(),
   ): Promise<TokenPairDto> {
@@ -96,7 +79,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, toRoles(user.roles)),
+      accessToken: await this.signAccessToken(user.id, userRoles(user)),
       refreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,
@@ -146,7 +129,7 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.signAccessToken(user.id, toRoles(user.roles)),
+      accessToken: await this.signAccessToken(user.id, userRoles(user)),
       refreshToken: newRefreshToken,
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,

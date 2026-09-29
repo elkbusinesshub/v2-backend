@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, UserType } from '@prisma/client';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { HomeService } from '@/modules/home/home.service';
 import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
@@ -11,6 +11,7 @@ const user = {
   email: null,
   name: 'Ahmed',
   roles: [Role.USER],
+  userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
   walletBalance: new Prisma.Decimal(0),

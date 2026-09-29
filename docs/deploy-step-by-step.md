@@ -128,40 +128,22 @@ git checkout -- .
 
 ---
 
-## Step 5: Add the admin phone number
+## Step 5: Check the settings file
 
-Only the first time. This makes `+919562461531` an admin when it logs in.
+Admins are no longer set in `deploy/.env`. A user is an admin when
+`users.userType` is `ADMIN` in the database. This update's migration makes
+`+919562461531` and `+917034996847` admins by itself. To add more admins
+later, see [Adding an admin](#adding-an-admin).
 
-```bash
-grep ADMIN_PHONES deploy/.env
-```
+If `deploy/.env` still has an `ADMIN_PHONES=` line from before, it is
+ignored. You can delete it.
 
-- If it prints `ADMIN_PHONES=+919562461531`, skip to Step 6.
-- If it prints `ADMIN_PHONES=` (empty) or nothing, edit the file:
-
-```bash
-nano deploy/.env
-```
-
-Find the `ADMIN_PHONES=` line, or add one at the bottom, so it reads:
-
-```
-ADMIN_PHONES=+919562461531
-```
-
-To add more admins later, separate the numbers with commas:
-`ADMIN_PHONES=+919562461531,+91XXXXXXXXXX`
-
-Save and exit nano: **Ctrl+O**, **Enter**, **Ctrl+X**.
-
-Check it saved:
+Check `OTP_TEST_PHONES=` is **empty**. The API refuses to start in
+production if it isn't:
 
 ```bash
-grep ADMIN_PHONES deploy/.env
+grep OTP_TEST_PHONES deploy/.env
 ```
-
-While you're in this file, also check `OTP_TEST_PHONES=` is **empty**. The
-API refuses to start in production if it isn't.
 
 ---
 
@@ -287,17 +269,31 @@ cd /opt/elk-api/deploy
 docker compose -f docker-compose.prod.yml logs --tail=100 api
 ```
 
-| Problem                                                 | Fix                                                                                                                                                            |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Build stops with `Killed` and no other error            | The server ran out of memory. Add swap: [deployment.md](deployment.md), section "Swap", then re-run Step 7                                                     |
-| `git pull` says `Not possible to fast-forward`          | Server has its own commits. Run `git reset --hard origin/main` (discards them), then re-run Step 7                                                             |
-| `Invalid environment configuration`                     | A value in `deploy/.env` is wrong; the log names it. Fix it and re-run Step 7                                                                                  |
-| `OTP_TEST_PHONES must be empty in production`           | Set `OTP_TEST_PHONES=` (empty) in `deploy/.env`                                                                                                                |
-| Migration hangs, then times out                         | The server can't reach RDS. Check the RDS security group allows port 3306 from the EC2 server                                                                  |
-| `permission denied ... docker.sock`                     | Run `sudo usermod -aG docker $USER`, log out, log back in, retry                                                                                               |
-| `502 Bad Gateway` from the website                      | The API isn't running. Check the logs above                                                                                                                    |
-| Admin number opens the normal home, not the admin panel | `ADMIN_PHONES` wasn't set when the API started. Fix Step 5, run `docker compose -f docker-compose.prod.yml up -d api`, then log out and log back in on the app |
-| No OTP SMS arrives                                      | Check `SMS_ENABLED=true` and the SMS tokens in `deploy/.env`                                                                                                   |
+| Problem                                                 | Fix                                                                                                                    |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Build stops with `Killed` and no other error            | The server ran out of memory. Add swap: [deployment.md](deployment.md), section "Swap", then re-run Step 7             |
+| `git pull` says `Not possible to fast-forward`          | Server has its own commits. Run `git reset --hard origin/main` (discards them), then re-run Step 7                     |
+| `Invalid environment configuration`                     | A value in `deploy/.env` is wrong; the log names it. Fix it and re-run Step 7                                          |
+| `OTP_TEST_PHONES must be empty in production`           | Set `OTP_TEST_PHONES=` (empty) in `deploy/.env`                                                                        |
+| Migration hangs, then times out                         | The server can't reach RDS. Check the RDS security group allows port 3306 from the EC2 server                          |
+| `permission denied ... docker.sock`                     | Run `sudo usermod -aG docker $USER`, log out, log back in, retry                                                       |
+| `502 Bad Gateway` from the website                      | The API isn't running. Check the logs above                                                                            |
+| Admin number opens the normal home, not the admin panel | That user's `userType` isn't `ADMIN`. See [Adding an admin](#adding-an-admin), then log out and log back in on the app |
+| No OTP SMS arrives                                      | Check `SMS_ENABLED=true` and the SMS tokens in `deploy/.env`                                                           |
+
+### Adding an admin
+
+Run on the server, with the number in `+91XXXXXXXXXX` form:
+
+```bash
+cd /opt/elk-api/deploy
+docker compose -f docker-compose.prod.yml --profile tools run --rm migrate \
+  npx prisma db execute --stdin <<< "UPDATE users SET userType='ADMIN' WHERE phone='+91XXXXXXXXXX';"
+```
+
+The number must have signed in to the app at least once, so its row
+exists. To remove an admin, run the same command with `userType='USER'`.
+The change applies at their next login.
 
 ### Going back to the previous version
 

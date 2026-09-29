@@ -44,11 +44,6 @@ export function configuration() {
       senderId: env.SMS_SENDER_ID,
       countryCode: env.SMS_COUNTRY_CODE,
     },
-    admin: {
-      phones: env.ADMIN_PHONES.split(',')
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0),
-    },
     places: {
       googleMapsApiKey: env.GOOGLE_MAPS_API_KEY,
       regionCode: env.PLACES_REGION_CODE.toUpperCase(),

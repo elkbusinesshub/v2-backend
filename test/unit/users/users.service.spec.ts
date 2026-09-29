@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role, type User } from '@prisma/client';
+import { Prisma, Role, UserType, type User } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { UsersService } from '@/modules/users/users.service';
@@ -10,6 +10,7 @@ const user: User = {
   email: null,
   name: null,
   roles: [Role.USER],
+  userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
   walletBalance: new Prisma.Decimal(0),
@@ -51,7 +52,17 @@ describe('UsersService', () => {
         name: null,
         language: 'en',
         roles: [Role.USER],
+        userType: UserType.USER,
       });
+    });
+
+    it('adds ADMIN to the roles of an ADMIN userType', async () => {
+      repo.findById.mockResolvedValue({ ...user, userType: UserType.ADMIN });
+
+      const profile = await service.getProfile('u-1');
+
+      expect(profile.roles).toEqual([Role.USER, Role.ADMIN]);
+      expect(profile.userType).toBe(UserType.ADMIN);
     });
 
     it('404s for an unknown user', async () => {

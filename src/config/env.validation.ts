@@ -39,11 +39,6 @@ export const envSchema = z
     SMS_SENDER_ID: z.string().default('SGMOLN'),
     SMS_COUNTRY_CODE: z.string().default('+91'),
 
-    // Comma-separated E.164 phones granted ADMIN on login. Replaces the
-    // seeded demo admin — without at least one, the admin routes are
-    // unreachable on a fresh database.
-    ADMIN_PHONES: z.string().default(''),
-
     // Firebase Cloud Messaging. Disabled → notifications are still stored and
     // returned by GET /notifications, they just do not reach the device.
     PUSH_ENABLED: boolString('false'),

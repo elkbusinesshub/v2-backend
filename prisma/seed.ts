@@ -1,4 +1,11 @@
-import { DriverService, DriverVerification, Gender, Prisma, PrismaClient } from '@prisma/client';
+import {
+  DriverService,
+  DriverVerification,
+  Gender,
+  Prisma,
+  PrismaClient,
+  UserType,
+} from '@prisma/client';
 
 /**
  * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
@@ -537,16 +544,19 @@ async function seedDemoUsers(): Promise<number> {
 
   const demo = [
     // First names matter: the home feeds greet the user by theirs.
-    { phone: '+971500000000', name: 'Demo Admin', roles: ['ADMIN'] },
-    { phone: '+971500000001', name: 'Demo User', roles: ['USER'] },
-    { phone: '+971500000002', name: 'Demo Provider', roles: ['PROVIDER'] },
+    // Admins are told apart by userType, not roles.
+    { phone: '+971500000000', name: 'Demo Admin', roles: ['USER'], userType: UserType.ADMIN },
+    { phone: '+971500000003', name: 'Asha Menon', roles: ['USER'], userType: UserType.ADMIN },
+    { phone: '+971500000004', name: 'Rahul Nair', roles: ['USER'], userType: UserType.ADMIN },
+    { phone: '+971500000001', name: 'Demo User', roles: ['USER'], userType: UserType.USER },
+    { phone: '+971500000002', name: 'Demo Provider', roles: ['PROVIDER'], userType: UserType.USER },
   ];
 
-  for (const account of demo) {
+  for (const { phone, name, roles, userType } of demo) {
     await prisma.user.upsert({
-      where: { phone: account.phone },
-      update: {},
-      create: { phone: account.phone, name: account.name, roles: account.roles },
+      where: { phone },
+      update: { userType },
+      create: { phone, name, roles, userType },
     });
   }
   return demo.length;

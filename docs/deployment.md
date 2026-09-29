@@ -117,8 +117,9 @@ Points that will bite you if skipped:
 - **`OTP_TEST_PHONES` must be empty.** Your dev `.env` has `+919999999999`,
   which is a permanent unauthenticated login. The app refuses to boot in
   production if it is set.
-- **`ADMIN_PHONES` is empty in the template.** There is no seeded admin, so
-  until you add at least one E.164 phone, the admin routes are unreachable.
+- **Admins are not configured here.** A user is an admin when their
+  `users.userType` is `ADMIN`. The `20260929120000_user_type` migration
+  makes the owner's numbers admins; see "Adding an admin" below for more.
 - **`SWAGGER_ENABLED`** is irrelevant in production — Swagger is force-disabled.
 
 ### 6. Secrets file (FCM)

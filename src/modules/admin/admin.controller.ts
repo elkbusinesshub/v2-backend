@@ -37,7 +37,7 @@ import {
 
 /**
  * Everything the admin panel calls. Every route is ADMIN only — the role is
- * granted at login to the phones in ADMIN_PHONES.
+ * given to users whose users.userType is ADMIN.
  */
 @ApiTags('admin')
 @ApiBearerAuth()

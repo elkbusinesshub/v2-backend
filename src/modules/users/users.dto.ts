@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { Role, UserType } from '@prisma/client';
 import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
@@ -31,4 +31,5 @@ export class ProfileDto {
   name!: string | null;
   language!: string;
   roles!: Role[];
+  userType!: UserType;
 }

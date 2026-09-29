@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, UserType } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { UsersRepository } from '@/modules/users/users.repository';
@@ -14,6 +14,7 @@ const account = {
   email: null,
   name: 'Demo User',
   roles: [Role.USER],
+  userType: UserType.USER,
   language: 'en',
   rewardPoints: 150,
   walletBalance: new Prisma.Decimal(0),

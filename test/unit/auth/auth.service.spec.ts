@@ -1,7 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, UserType } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import { AuthService } from '@/modules/auth/auth.service';
 import { OtpService } from '@/modules/auth/otp.service';
@@ -18,6 +18,7 @@ const user = {
   email: null,
   name: 'Test User',
   roles: [Role.USER],
+  userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
   walletBalance: new Prisma.Decimal(0),
@@ -43,9 +44,6 @@ function makeSession(overrides: Partial<SessionWithUser> = {}): SessionWithUser 
     ...overrides,
   };
 }
-
-/** Mutated in place by tests — AuthService captures this array in its constructor. */
-const adminPhones: string[] = [];
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -79,7 +77,6 @@ describe('AuthService', () => {
             findById: jest.fn().mockResolvedValue(user),
             findByPhone: jest.fn(),
             createByPhone: jest.fn(),
-            setRoles: jest.fn(),
           },
         },
         {
@@ -96,15 +93,12 @@ describe('AuthService', () => {
             get: jest.fn((key: string) => {
               if (key === 'jwt.accessTtlSeconds') return 900;
               if (key === 'jwt.refreshTtlDays') return 30;
-              if (key === 'admin.phones') return adminPhones;
               return undefined;
             }),
           },
         },
       ],
     }).compile();
-
-    adminPhones.length = 0;
 
     service = moduleRef.get(AuthService);
     sessions = moduleRef.get(RefreshSessionRepository);
@@ -134,41 +128,22 @@ describe('AuthService', () => {
       expect(pair.accessToken).toBe('signed.jwt');
     });
 
-    it('grants ADMIN to a phone on the allowlist', async () => {
-      adminPhones.push('+919876500001');
-      const user = { id: 'u1', phone: '+919876500001', roles: [Role.USER] };
-      users.findByPhone.mockResolvedValue(user as never);
-      users.setRoles.mockResolvedValue({ ...user, roles: [Role.USER, Role.ADMIN] } as never);
+    it('signs ADMIN into the token of a user whose userType is ADMIN', async () => {
+      const jwt = (service as unknown as { jwtService: { signAsync: jest.Mock } }).jwtService;
+      users.findByPhone.mockResolvedValue({ ...user, userType: UserType.ADMIN });
 
-      await service.loginWithPhone('+919876500001', '1234', {});
+      await service.loginWithPhone(user.phone, '1234', {});
 
-      expect(users.setRoles).toHaveBeenCalledWith('u1', [Role.USER, Role.ADMIN]);
+      expect(jwt.signAsync.mock.calls[0]![0]).toMatchObject({ roles: [Role.USER, Role.ADMIN] });
     });
 
-    it('leaves a phone that is not on the allowlist alone', async () => {
-      adminPhones.push('+919999999999');
-      users.findByPhone.mockResolvedValue({
-        id: 'u2',
-        phone: '+919876500001',
-        roles: [Role.USER],
-      } as never);
+    it('ignores ADMIN in the roles column when userType is USER', async () => {
+      const jwt = (service as unknown as { jwtService: { signAsync: jest.Mock } }).jwtService;
+      users.findByPhone.mockResolvedValue({ ...user, roles: [Role.USER, Role.ADMIN] });
 
-      await service.loginWithPhone('+919876500001', '1234', {});
+      await service.loginWithPhone(user.phone, '1234', {});
 
-      expect(users.setRoles).not.toHaveBeenCalled();
-    });
-
-    it('does not re-grant ADMIN to a user who already has it', async () => {
-      adminPhones.push('+919876500001');
-      users.findByPhone.mockResolvedValue({
-        id: 'u3',
-        phone: '+919876500001',
-        roles: [Role.USER, Role.ADMIN],
-      } as never);
-
-      await service.loginWithPhone('+919876500001', '1234', {});
-
-      expect(users.setRoles).not.toHaveBeenCalled();
+      expect(jwt.signAsync.mock.calls[0]![0]).toMatchObject({ roles: [Role.USER] });
     });
 
     it('propagates OTP verification failure without touching users', async () => {
