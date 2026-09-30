@@ -1222,7 +1222,7 @@ async function seedTestAccounts(): Promise<void> {
 /**
  * Two professionals with jobs around today, and the customer who booked them,
  * so the professional's screens have something on every tab. Their phones are
- * local test numbers (OTP_TEST_PHONES in .env) — sign in with OTP 123456.
+ * test numbers (OTP_TEST_PHONES) — sign in with OTP_TEST_CODE.
  * The jobs are rewritten on every run, dated from today, so the demo never
  * goes stale.
  */
@@ -1238,7 +1238,11 @@ const DEMO_PROFESSIONALS = [
 const DEMO_CUSTOMER = { phone: '+912222222222', name: 'Priya Menon' };
 
 async function seedDemoProfessionals(): Promise<void> {
-  if (process.env.SEED_TEST_ACCOUNTS !== 'true') return;
+  // SEED_DEMO_PROFESSIONALS alone adds just these, e.g. for a testing team on
+  // a server where the other test accounts and their listings are unwanted.
+  if (process.env.SEED_TEST_ACCOUNTS !== 'true' && process.env.SEED_DEMO_PROFESSIONALS !== 'true') {
+    return;
+  }
 
   const location =
     (await prisma.serviceLocation.findFirst({ where: { active: true } })) ??
