@@ -25,8 +25,11 @@ export const envSchema = z
 
     // Comma-separated E.164 phones that always receive OTP_TEST_CODE and are
     // never sent an SMS — ported from the legacy backend's hardcoded
-    // 9999999999 → 123456. Refused in production (see superRefine below).
+    // 9999999999 → 123456. Refused in production (see superRefine below)
+    // unless OTP_TEST_ALLOW_IN_PRODUCTION=true, for a testing team before
+    // launch. Anyone who knows a test phone and the code can sign in as it.
     OTP_TEST_PHONES: z.string().default(''),
+    OTP_TEST_ALLOW_IN_PRODUCTION: boolString('false'),
     OTP_TEST_CODE: z
       .string()
       .regex(/^\d{6}$/, 'OTP_TEST_CODE must be exactly 6 digits')
@@ -84,12 +87,19 @@ export const envSchema = z
       }
     }
     // A fixed-code phone is a permanent unauthenticated login. Refusing to
-    // boot is the only reliable way to stop one reaching production.
-    if (env.NODE_ENV === 'production' && env.OTP_TEST_PHONES.trim().length > 0) {
+    // boot is the only reliable way to stop one reaching production by
+    // accident; allowing it takes a second, explicit setting.
+    if (
+      env.NODE_ENV === 'production' &&
+      env.OTP_TEST_PHONES.trim().length > 0 &&
+      !env.OTP_TEST_ALLOW_IN_PRODUCTION
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['OTP_TEST_PHONES'],
-        message: 'OTP_TEST_PHONES must be empty in production — it bypasses OTP verification',
+        message:
+          'OTP_TEST_PHONES must be empty in production — it bypasses OTP verification. ' +
+          'Set OTP_TEST_ALLOW_IN_PRODUCTION=true to allow it for testing',
       });
     }
     if (env.PUSH_ENABLED && env.FIREBASE_SERVICE_ACCOUNT_PATH.length === 0) {

@@ -49,6 +49,12 @@ export class OtpService {
     this.isProduction = config.get('app.isProduction', { infer: true });
     this.testPhones = config.get('otp.testPhones', { infer: true });
     this.testCode = config.get('otp.testCode', { infer: true });
+    if (this.isProduction && this.testPhones.length > 0) {
+      this.logger.warn(
+        `${this.testPhones.length} test phones sign in with a fixed OTP in production ` +
+          '(OTP_TEST_ALLOW_IN_PRODUCTION=true). Remove them before going live.',
+      );
+    }
   }
 
   /** Generates and stores a fresh code for [phone]. Returns the resend cooldown in seconds. */
