@@ -13,6 +13,7 @@ import { EnvelopeInterceptor } from '@/common/interceptors/envelope.interceptor'
 import { configuration, type AppConfig } from '@/config/configuration';
 import { validateEnv } from '@/config/env.validation';
 import { RedisModule } from '@/cache/redis.module';
+import { AdminAccessModule } from '@/common/admin-access/admin-access.module';
 import { PrismaModule } from '@/database/prisma.module';
 import { JobsModule } from '@/jobs/jobs.module';
 import { AdminModule } from '@/modules/admin/admin.module';
@@ -107,6 +108,7 @@ import { StorageModule } from '@/storage/storage.module';
 
     // ── infrastructure ───────────────────────────────────────────────────
     PrismaModule,
+    AdminAccessModule,
     RedisModule,
     StorageModule,
     PushModule,

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseEnumPipe, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserType } from '@prisma/client';
+import { AdminModule, UserType } from '@prisma/client';
+import { AdminModules } from '@/common/admin-access/admin-modules.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import { CLEANING_SUB_CATEGORIES } from './ad-attributes';
@@ -24,6 +25,7 @@ export class CleaningPricingController {
 
   @Put(':subCategory')
   @Roles(UserType.ADMIN)
+  @AdminModules(AdminModule.CLEAN)
   @ApiOperation({ summary: 'Set the price of one cleaning tile (admin)' })
   async update(
     @Param('subCategory', new ParseEnumPipe(SUB_CATEGORY_ENUM)) subCategory: string,

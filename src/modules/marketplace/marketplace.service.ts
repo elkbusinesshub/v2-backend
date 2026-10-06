@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AdStatus, Prisma, UserType } from '@prisma/client';
+import { AdStatus, Prisma } from '@prisma/client';
+import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import {
   ForbiddenResourceException,
   ResourceNotFoundException,
@@ -42,6 +43,7 @@ export class MarketplaceService {
   constructor(
     private readonly ads: MarketplaceRepository,
     private readonly images: ImageService,
+    private readonly access: AdminAccessService,
   ) {}
 
   /** Ads ranked by engagement — wishlists first, views breaking ties. */
@@ -200,7 +202,8 @@ export class MarketplaceService {
     if (!ad) {
       throw new ResourceNotFoundException('Ad');
     }
-    if (user.role !== UserType.ADMIN && ad.sellerId !== user.id) {
+    // An ELK Rental admin may manage any rental listing.
+    if (ad.sellerId !== user.id && !(await this.access.canModerate(user, ad.categorySlug))) {
       throw new ForbiddenResourceException('You can only manage your own listings');
     }
     // Returned so an update can read the ad's current category without a

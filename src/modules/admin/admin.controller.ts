@@ -12,8 +12,12 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserType } from '@prisma/client';
+import { AdminModule, UserType } from '@prisma/client';
+import { verticalsOf } from '@/common/admin-access/admin-access.service';
+import { AdminModules, AdminScope } from '@/common/admin-access/admin-modules.decorator';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
+import type { AuthUser } from '@/common/types/auth.types';
 import type { ServiceBookingDto } from '@/modules/home-services/home-services.dto';
 import { AdminBookingsService, type DashboardDto } from './admin-bookings.service';
 import { AdminCatalogService } from './admin-catalog.service';
@@ -37,11 +41,17 @@ import {
 
 /**
  * Everything the admin panel calls. Every route is ADMIN only — the role is
- * given to users whose users.userType is ADMIN.
+ * given to users whose users.userType is ADMIN. A SUPER_ADMIN has its own
+ * screens: approvals (AdminApprovalsController) and users (AdminUsersController).
+ *
+ * The admin needs ELK Clean or ELK Repair. Services and bookings are then
+ * limited to the vertical(s) they hold; areas, professionals and promo codes
+ * are shared by both.
  */
 @ApiTags('admin')
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
+@AdminModules(AdminModule.CLEAN, AdminModule.REPAIR)
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -51,30 +61,39 @@ export class AdminController {
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Dashboard numbers, pending bookings and today’s jobs' })
-  async dashboard(): Promise<DashboardDto> {
-    return this.bookings.dashboard();
+  async dashboard(@AdminScope() scope: AdminModule[]): Promise<DashboardDto> {
+    return this.bookings.dashboard(verticalsOf(scope));
   }
 
   // ── services ──
   @Get('services')
-  async services(): Promise<AdminServiceDto[]> {
-    return this.catalog.services();
+  async services(@AdminScope() scope: AdminModule[]): Promise<AdminServiceDto[]> {
+    return this.catalog.services(verticalsOf(scope));
   }
   @Post('services')
-  async createService(@Body() dto: CreateServiceDto): Promise<AdminServiceDto> {
-    return this.catalog.createService(dto);
+  async createService(
+    @Body() dto: CreateServiceDto,
+    @CurrentUser() user: AuthUser,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<AdminServiceDto> {
+    return this.catalog.createService(dto, user.id, verticalsOf(scope));
   }
   @Patch('services/:id')
   async updateService(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateServiceDto,
+    @CurrentUser() user: AuthUser,
+    @AdminScope() scope: AdminModule[],
   ): Promise<AdminServiceDto> {
-    return this.catalog.updateService(id, dto);
+    return this.catalog.updateService(id, dto, user.id, verticalsOf(scope));
   }
   @Delete('services/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteService(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.catalog.deleteService(id);
+  async deleteService(
+    @Param('id', ParseUUIDPipe) id: string,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<void> {
+    await this.catalog.deleteService(id, verticalsOf(scope));
   }
 
   // ── locations ──
@@ -140,21 +159,26 @@ export class AdminController {
 
   // ── bookings ──
   @Get('bookings')
-  async bookingsList(@Query() query: AdminBookingsQueryDto): Promise<ServiceBookingDto[]> {
-    return this.bookings.list(query.status);
+  async bookingsList(
+    @Query() query: AdminBookingsQueryDto,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<ServiceBookingDto[]> {
+    return this.bookings.list(query.status, verticalsOf(scope));
   }
   @Patch('bookings/:id/assign')
   async assign(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignProfessionalDto,
+    @AdminScope() scope: AdminModule[],
   ): Promise<ServiceBookingDto> {
-    return this.bookings.assign(id, dto.professionalId);
+    return this.bookings.assign(id, dto.professionalId, verticalsOf(scope));
   }
   @Patch('bookings/:id/status')
   async setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetBookingStatusDto,
+    @AdminScope() scope: AdminModule[],
   ): Promise<ServiceBookingDto> {
-    return this.bookings.setStatus(id, dto.status);
+    return this.bookings.setStatus(id, dto.status, verticalsOf(scope));
   }
 }

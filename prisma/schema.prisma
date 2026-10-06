@@ -17,12 +17,36 @@ datasource db {
 
 /// The one role an account has. USER is a customer; PROVIDER is a verified
 /// seller; ADMIN opens the admin panel; PROFESSIONAL opens the job screens and
-/// is set when an admin adds the phone as a professional.
+/// is set when an admin adds the phone as a professional. SUPER_ADMIN only
+/// approves or rejects the admin's service and price changes.
 enum UserType {
   USER
   PROVIDER
   ADMIN
   PROFESSIONAL
+  SUPER_ADMIN
+}
+
+/// The parts of ELK an admin runs. An ADMIN account holds one or more.
+enum AdminModule {
+  /// ELK Clean: cleaning services and their bookings.
+  CLEAN
+  /// ELK Repair: repair services and their bookings.
+  REPAIR
+  /// ELK Rental: rental listings on the marketplace, and seller verification.
+  RENTAL
+}
+
+/// One module an admin can use. Set by the super admin with the ADMIN role.
+model AdminModuleAccess {
+  userId String       @db.Char(36)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module AdminModule
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, module])
+  @@map("admin_module_access")
 }
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
@@ -34,7 +58,8 @@ model User {
   /// no name up front
   name          String?
   /// The account's role. ADMIN and PROFESSIONAL are set in the database or
-  /// the admin panel; PROVIDER when a seller is verified.
+  /// the admin panel; PROVIDER when a seller is verified. The super admin can
+  /// set any of them from the Users tab.
   userType      UserType @default(USER)
   /// ISO 639-1 code of the user's preferred app language
   language      String   @default("en")
@@ -69,8 +94,12 @@ model User {
   providerProfile    ProviderProfile?
   serviceBookings    ServiceBooking[]
   professional       Professional?
+  changesRequested   ServiceChangeRequest[] @relation("ChangesRequested")
+  changesDecided     ServiceChangeRequest[] @relation("ChangesDecided")
+  adminModules       AdminModuleAccess[]
 
   @@index([deletedAt])
+  @@index([deletedAt, createdAt])
   @@map("users")
 }
 
@@ -1021,14 +1050,61 @@ model HomeService {
   active       Boolean         @default(false)
   /// Shown in the customer app.
   online       Boolean         @default(false)
+  /// A new service stays hidden from the app until the super admin approves it.
+  approved     Boolean         @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings ServiceBooking[]
+  bookings       ServiceBooking[]
+  changeRequests ServiceChangeRequest[]
 
   @@index([vertical, active, online])
   @@map("home_services")
+}
+
+enum ServiceChangeKind {
+  NEW_SERVICE
+  PRICE_CHANGE
+}
+
+enum ServiceChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// An admin's new service or price/duration change, waiting for the super
+/// admin. The app keeps the live values until it is approved.
+model ServiceChangeRequest {
+  id        String              @id @default(uuid(7)) @db.Char(36)
+  kind      ServiceChangeKind
+  status    ServiceChangeStatus @default(PENDING)
+  /// Null once the service is deleted; the snapshots keep the history readable.
+  serviceId String?             @db.Char(36)
+  service   HomeService?        @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  /// The service id while PENDING, null after: at most one open request per service.
+  openFor   String?             @unique @db.Char(36)
+  /// The live terms when decided; null for a new service.
+  before    Json?
+  requested Json
+
+  requestedById String    @db.Char(36)
+  requestedBy   User      @relation("ChangesRequested", fields: [requestedById], references: [id])
+  decidedById   String?   @db.Char(36)
+  decidedBy     User?     @relation("ChangesDecided", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt     DateTime?
+  note          String    @default("") @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([decidedAt])
+  @@index([serviceId])
+  @@index([requestedById])
+  @@index([decidedById])
+  @@map("service_change_requests")
 }
 
 /// An area customers can book in. A booking is matched to the nearest active

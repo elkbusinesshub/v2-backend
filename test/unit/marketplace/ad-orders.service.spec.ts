@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import { AdOrderStatus, AdStatus, UserType } from '@prisma/client';
 import {
   DomainException,
@@ -82,7 +83,7 @@ function order(overrides: Partial<AdOrderRow> = {}): AdOrderRow {
     createdAt: new Date('2026-06-12T09:00:00.000Z'),
     updatedAt: new Date(),
     buyer: { name: 'Aarav Menon', phone: '+919000000001' },
-    ad: { icon: '🛋️', title: 'Sofa Shampoo' },
+    ad: { icon: '🛋️', title: 'Sofa Shampoo', categorySlug: 'cleaning' },
     ...overrides,
   };
 }
@@ -128,6 +129,10 @@ describe('AdOrdersService', () => {
         {
           provide: RepairPricingService,
           useValue: { quote: jest.fn() },
+        },
+        {
+          provide: AdminAccessService,
+          useValue: { canModerate: jest.fn().mockResolvedValue(false) },
         },
       ],
     }).compile();

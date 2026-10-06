@@ -1,5 +1,11 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { Prisma, type HomeService, type PromoCode, type ServiceLocation } from '@prisma/client';
+import {
+  Prisma,
+  type HomeService,
+  type PromoCode,
+  type ServiceLocation,
+  type ServiceVertical,
+} from '@prisma/client';
 import {
   DomainException,
   DuplicateResourceException,
@@ -18,6 +24,7 @@ import type {
   CreateProfessionalDto,
   CreatePromoCodeDto,
   CreateServiceDto,
+  PendingChangeDto,
   ProfessionalStatus,
   PromoState,
   UpdateLocationDto,
@@ -25,14 +32,18 @@ import type {
   UpdatePromoCodeDto,
   UpdateServiceDto,
 } from './admin.dto';
+import { assertVertical } from './admin-scope';
 import { AdminRepository, type ProfessionalRow } from './admin.repository';
+import { ServiceChangeRepository, type OpenChange } from './service-change.repository';
+import { PRICE_FIELDS, priceOf, samePrice, startingPrice, termsOf } from './service-terms';
 
 /**
  * The catalogue side of the admin panel: services and their prices, service
  * areas, the professionals, and promo codes.
  *
- * Changes go live as soon as they are saved. A super-admin approval step is
- * planned; when it lands, saves here become requests instead.
+ * Changes go live as soon as they are saved, except a new service and a
+ * service's price or duration: those wait for the super admin (see
+ * AdminApprovalsService), and the app keeps what it has until then.
  */
 @Injectable()
 export class AdminCatalogService {
@@ -40,49 +51,107 @@ export class AdminCatalogService {
 
   constructor(
     private readonly repo: AdminRepository,
+    private readonly changes: ServiceChangeRepository,
     private readonly places: PlacesService,
   ) {}
 
   // ── services ──────────────────────────────────────────────────────────────
 
-  async services(): Promise<AdminServiceDto[]> {
-    const [services, open] = await Promise.all([
+  async services(verticals: ServiceVertical[]): Promise<AdminServiceDto[]> {
+    const [all, open, changes] = await Promise.all([
       this.repo.services(),
       this.repo.openBookingsByService(),
+      this.changes.openChanges(),
     ]);
-    return services.map((s) => this.serviceJson(s, open.get(s.id) ?? 0));
+    return all
+      .filter((s) => verticals.includes(s.vertical))
+      .map((s) => this.serviceJson(s, open.get(s.id) ?? 0, changes.get(s.id)));
   }
 
-  async createService(dto: CreateServiceDto): Promise<AdminServiceDto> {
+  /** Saves the service hidden from the app, and asks the super admin to approve it. */
+  async createService(
+    dto: CreateServiceDto,
+    requestedById: string,
+    verticals: ServiceVertical[],
+  ): Promise<AdminServiceDto> {
+    assertVertical(dto.vertical, verticals);
     this.checkCategory(dto.vertical, dto.category);
     const active = dto.active ?? true;
-    const created = await this.repo.createService({
-      ...dto,
-      active,
-      // Offline follows inactive: a service nobody offers cannot be shown.
-      online: active && (dto.online ?? true),
+    const { service, change } = await this.changes.transaction(async (tx) => {
+      const service = await this.repo.createService(
+        {
+          ...dto,
+          active,
+          // Offline follows inactive: a service nobody offers cannot be shown.
+          online: active && (dto.online ?? true),
+          approved: false,
+        },
+        tx,
+      );
+      return { service, change: await this.changes.requestNewService(service, requestedById, tx) };
     });
-    return this.serviceJson(created, 0);
+    return this.serviceJson(service, 0, change);
   }
 
-  async updateService(id: string, dto: UpdateServiceDto): Promise<AdminServiceDto> {
+  /**
+   * Name, description, tile and the on/off switches save straight away. A new
+   * price or duration becomes a request, replacing any already waiting; asking
+   * for what is live again withdraws it. A service still waiting to be
+   * approved is not in the app, so everything about it saves straight away.
+   */
+  async updateService(
+    id: string,
+    dto: UpdateServiceDto,
+    requestedById: string,
+    verticals: ServiceVertical[],
+  ): Promise<AdminServiceDto> {
     const current = await this.repo.service(id);
     if (!current) throw new ResourceNotFoundException('Service');
+    assertVertical(current.vertical, verticals);
+    if (dto.vertical) assertVertical(dto.vertical, verticals);
     this.checkCategory(dto.vertical ?? current.vertical, dto.category ?? current.category);
+
+    const { minHours, hourlyRate, extraProRate, materialsFee, ...rest } = dto;
+    const priceAsked = PRICE_FIELDS.some((f) => dto[f] !== undefined);
+    const direct = current.approved ? rest : dto;
     const active = dto.active ?? current.active;
-    const updated = await this.repo.updateService(id, {
-      ...dto,
-      active,
-      online: active && (dto.online ?? current.online),
-    });
-    const open = await this.repo.openBookingsByService();
-    return this.serviceJson(updated, open.get(id) ?? 0);
+    const [updated, open, waiting] = await Promise.all([
+      this.repo.updateService(id, {
+        ...direct,
+        active,
+        online: active && (dto.online ?? current.online),
+      }),
+      this.repo.openBookingsByService(),
+      this.changes.openChange(id),
+    ]);
+
+    let change = waiting;
+    if (current.approved && priceAsked) {
+      const live = priceOf(termsOf(updated));
+      const wanted = {
+        ...(waiting?.requested ?? live),
+        ...this.defined({ minHours, hourlyRate, extraProRate, materialsFee }),
+      };
+      if (samePrice(wanted, live)) {
+        await this.changes.withdraw(id);
+        change = null;
+      } else {
+        change = await this.changes.requestPriceChange(updated, wanted, requestedById);
+      }
+    }
+    return this.serviceJson(updated, open.get(id) ?? 0, change);
   }
 
-  async deleteService(id: string): Promise<void> {
-    if (!(await this.repo.service(id))) throw new ResourceNotFoundException('Service');
+  async deleteService(id: string, verticals: ServiceVertical[]): Promise<void> {
+    const service = await this.repo.service(id);
+    if (!service) throw new ResourceNotFoundException('Service');
+    assertVertical(service.vertical, verticals);
     // Bookings keep their snapshot of the name and price and still go ahead.
     await this.repo.deleteService(id);
+  }
+
+  private defined<T extends object>(o: T): Partial<T> {
+    return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
   }
 
   private checkCategory(vertical: HomeService['vertical'], category: string): void {
@@ -96,7 +165,11 @@ export class AdminCatalogService {
     }
   }
 
-  private serviceJson(s: HomeService, openBookings: number): AdminServiceDto {
+  private serviceJson(
+    s: HomeService,
+    openBookings: number,
+    change?: OpenChange | null,
+  ): AdminServiceDto {
     const hourlyRate = Number(s.hourlyRate);
     return {
       id: s.id,
@@ -111,9 +184,23 @@ export class AdminCatalogService {
       fromPrice: hourlyRate * s.minHours,
       active: s.active,
       online: s.online,
-      live: s.active && s.online,
+      approved: s.approved,
+      live: s.approved && s.active && s.online,
+      pendingChange: change ? this.pendingJson(s, change) : null,
       openBookings,
       updatedAt: s.updatedAt.toISOString(),
+    };
+  }
+
+  private pendingJson(s: HomeService, c: OpenChange): PendingChangeDto {
+    // A new service is its own request: what it holds now is what is asked for.
+    const price = c.kind === 'NEW_SERVICE' ? priceOf(termsOf(s)) : c.requested;
+    return {
+      id: c.id,
+      kind: c.kind,
+      ...price,
+      startingPrice: startingPrice(price),
+      requestedAt: c.createdAt.toISOString(),
     };
   }
 

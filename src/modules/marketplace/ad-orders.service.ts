@@ -1,12 +1,13 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { type Ad, AdOrderStatus, UserType } from '@prisma/client';
+import { type Ad, AdOrderStatus } from '@prisma/client';
 import {
   DomainException,
   ForbiddenResourceException,
   ResourceNotFoundException,
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
+import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import type { AuthUser } from '@/common/types/auth.types';
 import { displayDate } from '@/common/utils/display-date';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
@@ -57,6 +58,7 @@ export class AdOrdersService {
     private readonly notifications: NotificationsService,
     private readonly cleaningPricing: CleaningPricingService,
     private readonly repairPricing: RepairPricingService,
+    private readonly access: AdminAccessService,
   ) {}
 
   /** A buyer orders a listing. */
@@ -198,9 +200,11 @@ export class AdOrdersService {
       throw new ResourceNotFoundException('Order');
     }
 
-    const isAdmin = user.role === UserType.ADMIN;
     const isSeller = order.sellerId === user.id;
     const isBuyer = order.buyerId === user.id;
+    // An ELK Rental admin may move any rental order on, as its seller would.
+    const isAdmin =
+      !isSeller && !isBuyer && (await this.access.canModerate(user, order.ad.categorySlug));
     if (!isAdmin && !isSeller && !isBuyer) {
       throw new ForbiddenResourceException('This is not your order');
     }

@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { ServiceBookingStatus, ServiceVertical } from '@prisma/client';
-import { DomainException } from '@/common/errors/domain.exceptions';
+import { DomainException, ForbiddenResourceException } from '@/common/errors/domain.exceptions';
 import { AdminBookingsService } from '@/modules/admin/admin-bookings.service';
 import { AdminRepository } from '@/modules/admin/admin.repository';
 import { HomeServicesRepository } from '@/modules/home-services/home-services.repository';
@@ -49,6 +49,8 @@ function row(overrides: Record<string, unknown> = {}): never {
   } as never;
 }
 
+const BOTH = [ServiceVertical.CLEANING, ServiceVertical.REPAIR];
+
 describe('AdminBookingsService', () => {
   let svc: AdminBookingsService;
   let repo: jest.Mocked<AdminRepository>;
@@ -85,7 +87,7 @@ describe('AdminBookingsService', () => {
   });
 
   it('confirms a pending booking by assigning a professional, and tells the customer', async () => {
-    const result = await svc.assign('b-1', 'p-1');
+    const result = await svc.assign('b-1', 'p-1', BOTH);
 
     expect(bookings.updateBooking).toHaveBeenCalledWith(
       'b-1',
@@ -99,27 +101,31 @@ describe('AdminBookingsService', () => {
 
   it('will not assign someone who is off duty', async () => {
     repo.professional.mockResolvedValue({ id: 'p-2', name: 'Joseph', onDuty: false } as never);
-    await expect(svc.assign('b-1', 'p-2')).rejects.toBeInstanceOf(DomainException);
+    await expect(svc.assign('b-1', 'p-2', BOTH)).rejects.toBeInstanceOf(DomainException);
   });
 
   it('will not reassign a finished job', async () => {
     bookings.findBooking.mockResolvedValue(row({ status: COMPLETED }));
-    await expect(svc.assign('b-1', 'p-1')).rejects.toBeInstanceOf(DomainException);
+    await expect(svc.assign('b-1', 'p-1', BOTH)).rejects.toBeInstanceOf(DomainException);
   });
 
   it('will not start a job with nobody assigned', async () => {
     bookings.findBooking.mockResolvedValue(row({ status: CONFIRMED }));
-    await expect(svc.setStatus('b-1', IN_PROGRESS)).rejects.toMatchObject({
+    await expect(svc.setStatus('b-1', IN_PROGRESS, BOTH)).rejects.toMatchObject({
       code: 'NOT_ASSIGNED',
     });
   });
 
   it('walks a job forward: confirmed → in progress → completed', async () => {
     bookings.findBooking.mockResolvedValue(row({ status: CONFIRMED, professionalId: 'p-1' }));
-    await expect(svc.setStatus('b-1', IN_PROGRESS)).resolves.toMatchObject({ status: IN_PROGRESS });
+    await expect(svc.setStatus('b-1', IN_PROGRESS, BOTH)).resolves.toMatchObject({
+      status: IN_PROGRESS,
+    });
 
     bookings.findBooking.mockResolvedValue(row({ status: IN_PROGRESS, professionalId: 'p-1' }));
-    await expect(svc.setStatus('b-1', COMPLETED)).resolves.toMatchObject({ status: COMPLETED });
+    await expect(svc.setStatus('b-1', COMPLETED, BOTH)).resolves.toMatchObject({
+      status: COMPLETED,
+    });
     expect(bookings.updateBooking).toHaveBeenLastCalledWith(
       'b-1',
       expect.objectContaining({ completedAt: expect.any(Date) }),
@@ -128,13 +134,31 @@ describe('AdminBookingsService', () => {
 
   it('refuses to cancel a job already under way', async () => {
     bookings.findBooking.mockResolvedValue(row({ status: IN_PROGRESS }));
-    await expect(svc.setStatus('b-1', CANCELLED)).rejects.toMatchObject({
+    await expect(svc.setStatus('b-1', CANCELLED, BOTH)).rejects.toMatchObject({
       code: 'INVALID_TRANSITION',
     });
   });
 
   it('keeps the change when the notification fails', async () => {
     notifications.create.mockRejectedValue(new Error('push down'));
-    await expect(svc.assign('b-1', 'p-1')).resolves.toMatchObject({ status: CONFIRMED });
+    await expect(svc.assign('b-1', 'p-1', BOTH)).resolves.toMatchObject({ status: CONFIRMED });
+  });
+
+  it('keeps an ELK Repair admin away from a cleaning booking', async () => {
+    await expect(svc.assign('b-1', 'p-1', [ServiceVertical.REPAIR])).rejects.toBeInstanceOf(
+      ForbiddenResourceException,
+    );
+    expect(bookings.updateBooking).not.toHaveBeenCalled();
+  });
+
+  it('lets the professional’s own start skip the module check', async () => {
+    bookings.findBooking.mockResolvedValue(row({ status: CONFIRMED, professionalId: 'p-1' }));
+    await expect(svc.setStatus('b-1', IN_PROGRESS)).resolves.toMatchObject({ status: IN_PROGRESS });
+  });
+
+  it('lists only the bookings of the admin’s verticals', async () => {
+    repo.bookings.mockResolvedValue([]);
+    await svc.list(undefined, [ServiceVertical.CLEANING]);
+    expect(repo.bookings).toHaveBeenCalledWith(undefined, [ServiceVertical.CLEANING]);
   });
 });

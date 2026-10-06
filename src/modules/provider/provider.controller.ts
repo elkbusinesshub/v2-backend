@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserType } from '@prisma/client';
+import { AdminModule, UserType } from '@prisma/client';
+import { AdminModules } from '@/common/admin-access/admin-modules.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
@@ -54,6 +55,7 @@ export class ProviderController {
 
   @Patch(':userId/verify')
   @Roles(UserType.ADMIN)
+  @AdminModules(AdminModule.RENTAL)
   @ApiOperation({
     summary: 'Verify or reject a provider (admin) — verify grants the PROVIDER role',
   })

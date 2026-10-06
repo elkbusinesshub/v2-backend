@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import { AdStatus, Prisma, UserType } from '@prisma/client';
 import {
   ForbiddenResourceException,
@@ -51,6 +52,7 @@ describe('MarketplaceService', () => {
   let service: MarketplaceService;
   let repo: jest.Mocked<MarketplaceRepository>;
   let images: jest.Mocked<ImageService>;
+  let access: jest.Mocked<AdminAccessService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -83,12 +85,17 @@ describe('MarketplaceService', () => {
           provide: ImageService,
           useValue: { urlFor: jest.fn().mockResolvedValue('https://signed/x.jpg') },
         },
+        {
+          provide: AdminAccessService,
+          useValue: { canModerate: jest.fn().mockResolvedValue(false) },
+        },
       ],
     }).compile();
 
     service = moduleRef.get(MarketplaceService);
     repo = moduleRef.get(MarketplaceRepository);
     images = moduleRef.get(ImageService);
+    access = moduleRef.get(AdminAccessService);
   });
 
   describe('ranking', () => {
@@ -341,13 +348,27 @@ describe('MarketplaceService', () => {
       expect(repo.softDelete).not.toHaveBeenCalled();
     });
 
-    it('lets an admin manage a listing they do not own', async () => {
-      repo.findOwned.mockResolvedValue(ad({ sellerId: 'someone-else' }));
+    it('lets an ELK Rental admin manage a rental listing they do not own', async () => {
+      repo.findOwned.mockResolvedValue(
+        ad({ sellerId: 'someone-else', categorySlug: 'car_rental' }),
+      );
+      access.canModerate.mockResolvedValue(true);
       const admin: AuthUser = { ...seller, role: UserType.ADMIN };
 
       await service.remove(admin, 'ad-1');
 
+      expect(access.canModerate).toHaveBeenCalledWith(admin, 'car_rental');
       expect(repo.softDelete).toHaveBeenCalledWith('ad-1');
+    });
+
+    it('refuses an admin whose modules do not cover the listing', async () => {
+      repo.findOwned.mockResolvedValue(ad({ sellerId: 'someone-else' }));
+      const admin: AuthUser = { ...seller, role: UserType.ADMIN };
+
+      await expect(service.remove(admin, 'ad-1')).rejects.toBeInstanceOf(
+        ForbiddenResourceException,
+      );
+      expect(repo.softDelete).not.toHaveBeenCalled();
     });
 
     it('404s a listing that does not exist', async () => {

@@ -2530,7 +2530,7 @@
     },
     {
       "name": "Admin",
-      "description": "The admin panel's API. Every route needs a token with the ADMIN role \u2014 given to users whose users.userType is ADMIN. Sign in with the two requests in 'Sign in' first: they save adminAccessToken, separate from the customer's accessToken, so both can be used side by side. A non-admin token gets 403.",
+      "description": "The admin panel's API. Every route needs a token with the ADMIN role \u2014 given to users whose users.userType is ADMIN. Sign in with the two requests in 'Sign in' first: they save adminAccessToken, separate from the customer's accessToken, so both can be used side by side. A non-admin token gets 403. New services and price or duration changes wait for the super admin (see the Super admin folder).",
       "item": [
         {
           "name": "Sign in",
@@ -2678,7 +2678,8 @@
                   "raw": "{{baseUrl}}/api/v1/admin/services",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "admin", "services"]
-                }
+                },
+                "description": "Each service has approved (false for a new one waiting for the super admin), live (approved, active and online) and pendingChange (the waiting request, or null)."
               },
               "event": [
                 {
@@ -2724,7 +2725,7 @@
                     }
                   }
                 },
-                "description": "category must be an app tile of the vertical \u2014 CLEANING: cln deep tnk sof crp kit bth lndr; REPAIR: ac plm elc cpt pnt gen. Goes live immediately when active and online."
+                "description": "category must be an app tile of the vertical \u2014 CLEANING: cln deep tnk sof crp kit bth lndr; REPAIR: ac plm elc cpt pnt gen. Saved hidden from the app (approved: false) and sent to the super admin as a NEW_SERVICE request; it shows once approved. The response carries pendingChange."
               },
               "event": [
                 {
@@ -2769,7 +2770,8 @@
                       "language": "json"
                     }
                   }
-                }
+                },
+                "description": "minHours, hourlyRate, extraProRate and materialsFee are not applied: they become a PRICE_CHANGE request for the super admin, replacing any already waiting (asking for the live values again withdraws it). The app keeps the old price until approved; see pendingChange in the response. Name, description, category, active and online save straight away."
               }
             },
             {
@@ -3430,6 +3432,450 @@
                 },
                 "description": "From PENDING or CONFIRMED."
               }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Super admin",
+      "description": "The super admin's screens: Approvals, Decision history and Users. Every route needs a token whose role is SUPER_ADMIN (set in the DB: UPDATE users SET userType='SUPER_ADMIN' WHERE phone=...). Sign in first: it saves superAdminAccessToken, separate from the admin's and the customer's. Any other token gets 403, and a super admin gets 403 on the other /admin routes.",
+      "item": [
+        {
+          "name": "Sign in",
+          "item": [
+            {
+              "name": "Send OTP to the super admin phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/otp/request",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "otp", "request"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{superAdminPhone}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify super admin OTP (saves superAdminAccessToken)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/otp/verify",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "otp", "verify"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{superAdminPhone}}\",\n  \"otp\": \"{{otp}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "In production the OTP arrives by SMS \u2014 put it in the otp variable first. Locally, test phones use 123456."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code === 200) {",
+                      "  const d = pm.response.json().data;",
+                      "  pm.environment.set('superAdminAccessToken', d.accessToken);",
+                      "  pm.environment.set('superAdminRefreshToken', d.refreshToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Check the SUPER_ADMIN role",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/me",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "auth", "me"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('is the super admin', () => pm.expect(pm.response.json().data.role).to.eql('SUPER_ADMIN'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Approvals",
+          "description": "New services and price or duration changes the admin asked for. The app keeps the live values until one is approved. Lists are paged: meta = {page, limit, total, totalPages}.",
+          "item": [
+            {
+              "name": "Summary (the three cards)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/summary",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals", "summary"]
+                },
+                "description": "{waiting, newServices, priceChanges}: requests waiting for review."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Waiting for review",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals?view=pending&page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals"],
+                  "query": [
+                    {
+                      "key": "view",
+                      "value": "pending",
+                      "description": "pending (oldest first) or decided (newest first)"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Page size, max 100"
+                    }
+                  ]
+                },
+                "description": "Each item: current (\"In app now\"; null for a new service), requested, changed (fields to highlight), requestedBy, requestedAt. startingPrice = hourlyRate \u00d7 minHours. Saves the first id as changeRequestId."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data[0] && pm.response.json().data[0].id;",
+                      "  if (v) pm.environment.set('changeRequestId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Decision history",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals?view=decided&page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals"],
+                  "query": [
+                    {
+                      "key": "view",
+                      "value": "decided"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Page size, max 100"
+                    }
+                  ]
+                },
+                "description": "Approved and rejected requests, newest first, with decidedBy, decidedAt and note. current and requested are as they were when decided."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Approve",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/{{changeRequestId}}/approve",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals", "{{changeRequestId}}", "approve"]
+                },
+                "description": "The new price goes live, or the new service shows in the app. 409 ALREADY_DECIDED if it was decided already."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Reject",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/{{changeRequestId}}/reject",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals", "{{changeRequestId}}", "reject"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"note\": \"Price too high for this area\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "The app keeps its price; a rejected new service is deleted. note is optional (max 500)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Users",
+          "description": "Everyone with an app account. A role change reaches the user at their next token refresh (up to 15 minutes).",
+          "item": [
+            {
+              "name": "All users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/users?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "users"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Page size, max 100"
+                    }
+                  ]
+                },
+                "description": "Newest first: id, name (null if never set), phone, role, joinedAt. Saves the first id as targetUserId."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                      "if (pm.response.code < 300) {",
+                      "  const v = pm.response.json().data[0] && pm.response.json().data[0].id;",
+                      "  if (v) pm.environment.set('targetUserId', v);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Search by name or phone",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/users?search=priya&page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "users"],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": "priya",
+                      "description": "Part of a name, or phone digits in any format"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "1-based page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Page size, max 100"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Change a role",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}/role",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "users", "{{targetUserId}}", "role"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"role\": \"ADMIN\",\n  \"modules\": [\n    \"CLEAN\",\n    \"RENTAL\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "role: USER, PROVIDER, ADMIN, PROFESSIONAL or SUPER_ADMIN. For ADMIN, modules is required with at least one of CLEAN (ELK Clean), REPAIR (ELK Repair), RENTAL (ELK Rental); send role ADMIN with new modules to change an admin's modules. Any other role clears the modules. 400 VALIDATION_ERROR when an admin has no modules; 409 OWN_ROLE for your own account; 409 IS_PROFESSIONAL for someone linked in Professionals (remove them there first); 400 if making someone PROFESSIONAL who has no phone."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
             }
           ]
         }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { AdminModulesGuard } from '@/common/admin-access/admin-modules.guard';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import type { AppConfig } from '@/config/configuration';
@@ -39,6 +40,8 @@ import { TokenDenylistService } from './token-denylist.service';
     SmsService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // after RolesGuard: narrows an ADMIN to the modules they hold
+    { provide: APP_GUARD, useClass: AdminModulesGuard },
   ],
   exports: [AuthService, TokenDenylistService],
 })

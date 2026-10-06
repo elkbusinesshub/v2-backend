@@ -5,12 +5,12 @@ import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
 export type AdOrderRow = AdOrder & {
   buyer: { name: string | null; phone: string | null };
-  ad: { icon: string; title: string };
+  ad: { icon: string; title: string; categorySlug: string };
 };
 
 const withParties = {
   buyer: { select: { name: true, phone: true } },
-  ad: { select: { icon: true, title: true } },
+  ad: { select: { icon: true, title: true, categorySlug: true } },
 } satisfies Prisma.AdOrderInclude;
 
 @Injectable()

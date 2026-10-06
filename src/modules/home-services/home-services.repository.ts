@@ -22,10 +22,10 @@ export type ServiceBookingRow = Prisma.ServiceBookingGetPayload<{ include: typeo
 export class HomeServicesRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
 
-  /** Services the app shows: active and online. */
+  /** Services the app shows: approved, active and online. */
   async listLive(vertical?: ServiceVertical): Promise<HomeService[]> {
     return this.db.homeService.findMany({
-      where: { active: true, online: true, ...(vertical ? { vertical } : {}) },
+      where: { approved: true, active: true, online: true, ...(vertical ? { vertical } : {}) },
       orderBy: [{ vertical: 'asc' }, { name: 'asc' }],
     });
   }

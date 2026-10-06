@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ServiceBookingStatus,
+  ServiceVertical,
   UserType,
   type HomeService,
   type Prisma,
@@ -14,7 +15,8 @@ import {
   type ServiceBookingRow,
 } from '@/modules/home-services/home-services.repository';
 
-type Tx = Parameters<Parameters<ExtendedPrismaClient['$transaction']>[0]>[0];
+/** An interactive transaction, for writes that must land together. */
+export type Tx = Parameters<Parameters<ExtendedPrismaClient['$transaction']>[0]>[0];
 
 /** Statuses a booking is still "open" in — work that has not finished or been dropped. */
 export const OPEN_STATUSES: ServiceBookingStatus[] = [
@@ -43,14 +45,21 @@ export class AdminRepository {
   async service(id: string): Promise<HomeService | null> {
     return this.db.homeService.findUnique({ where: { id } });
   }
-  async createService(data: Prisma.HomeServiceCreateInput): Promise<HomeService> {
-    return this.db.homeService.create({ data });
+  async createService(data: Prisma.HomeServiceCreateInput, tx: Tx = this.db): Promise<HomeService> {
+    return tx.homeService.create({ data });
   }
-  async updateService(id: string, data: Prisma.HomeServiceUpdateInput): Promise<HomeService> {
-    return this.db.homeService.update({ where: { id }, data });
+  async updateService(
+    id: string,
+    data: Prisma.HomeServiceUpdateInput,
+    tx: Tx = this.db,
+  ): Promise<HomeService> {
+    return tx.homeService.update({ where: { id }, data });
   }
-  async deleteService(id: string): Promise<void> {
-    await this.db.homeService.delete({ where: { id } });
+  /** Deletes a service and withdraws its waiting request; decided ones stay as history. */
+  async deleteService(id: string, tx?: Tx): Promise<void> {
+    if (!tx) return this.db.$transaction((t) => this.deleteService(id, t));
+    await tx.serviceChangeRequest.deleteMany({ where: { openFor: id } });
+    await tx.homeService.delete({ where: { id } });
   }
   async openBookingsByService(): Promise<Map<string, number>> {
     const rows = await this.db.serviceBooking.groupBy({
@@ -221,9 +230,13 @@ export class AdminRepository {
   }
 
   // ── bookings ──
-  async bookings(status?: ServiceBookingStatus, take = 500): Promise<ServiceBookingRow[]> {
+  async bookings(
+    status: ServiceBookingStatus | undefined,
+    verticals: ServiceVertical[],
+    take = 500,
+  ): Promise<ServiceBookingRow[]> {
     return this.db.serviceBooking.findMany({
-      where: status ? { status } : {},
+      where: { vertical: { in: verticals }, ...(status ? { status } : {}) },
       include: bookingInclude,
       orderBy: [{ scheduledDate: 'desc' }, { timeSlot: 'asc' }],
       take,

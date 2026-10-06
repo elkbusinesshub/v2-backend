@@ -65,7 +65,7 @@ export class HomeServicesService {
 
   async book(user: AuthUser, dto: CreateServiceBookingDto): Promise<ServiceBookingDto> {
     const service = await this.repo.findService(dto.serviceId);
-    if (!service || !service.active || !service.online) {
+    if (!service || !service.approved || !service.active || !service.online) {
       throw new ResourceNotFoundException('Service');
     }
     if (dto.hours < service.minHours) {

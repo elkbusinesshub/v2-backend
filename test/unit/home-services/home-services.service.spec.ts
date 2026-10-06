@@ -26,6 +26,7 @@ const service = {
   materialsFee: 149 as never,
   active: true,
   online: true,
+  approved: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -186,6 +187,11 @@ describe('HomeServicesService', () => {
 
   it('treats a service that is offline as missing', async () => {
     repo.findService.mockResolvedValue({ ...service, online: false });
+    await expect(svc.book(user, base)).rejects.toBeInstanceOf(ResourceNotFoundException);
+  });
+
+  it('treats a new service the super admin has not approved as missing', async () => {
+    repo.findService.mockResolvedValue({ ...service, approved: false });
     await expect(svc.book(user, base)).rejects.toBeInstanceOf(ResourceNotFoundException);
   });
 

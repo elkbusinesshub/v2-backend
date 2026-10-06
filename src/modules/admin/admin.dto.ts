@@ -1,9 +1,19 @@
 import { PartialType } from '@nestjs/swagger';
-import { ServiceBookingStatus, ServiceVertical } from '@prisma/client';
+import {
+  AdminModule,
+  ServiceBookingStatus,
+  ServiceChangeKind,
+  ServiceChangeStatus,
+  ServiceVertical,
+  UserType,
+} from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -16,6 +26,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { PaginationQuery } from '@/common/http/pagination';
 import { MAX_HOURS } from '@/modules/home-services/home-services.rules';
 
 // ── services ────────────────────────────────────────────────────────────────
@@ -87,10 +98,25 @@ export class AdminServiceDto {
   fromPrice!: number;
   active!: boolean;
   online!: boolean;
-  /** Active and online: what the app shows. */
+  /** False for a new service the super admin has not approved yet. */
+  approved!: boolean;
+  /** Approved, active and online: what the app shows. */
   live!: boolean;
+  /** The change waiting for the super admin; the app keeps the values above until then. */
+  pendingChange!: PendingChangeDto | null;
   openBookings!: number;
   updatedAt!: string;
+}
+
+export class PendingChangeDto {
+  id!: string;
+  kind!: ServiceChangeKind;
+  minHours!: number;
+  hourlyRate!: number;
+  extraProRate!: number;
+  materialsFee!: number;
+  startingPrice!: number;
+  requestedAt!: string;
 }
 
 // ── locations ───────────────────────────────────────────────────────────────
@@ -249,4 +275,98 @@ export class AssignProfessionalDto {
 export class SetBookingStatusDto {
   @IsEnum(ServiceBookingStatus)
   status!: ServiceBookingStatus;
+}
+
+// ── users ───────────────────────────────────────────────────────────────────
+
+export class AdminUsersQueryDto extends PaginationQuery {
+  /** Part of a name, or digits of a phone number. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  search?: string;
+}
+
+export class SetUserRoleDto {
+  @IsEnum(UserType)
+  role!: UserType;
+
+  /** Required, with at least one, when role is ADMIN; ignored otherwise. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(AdminModule, { each: true })
+  modules?: AdminModule[];
+}
+
+export class AdminUserDto {
+  id!: string;
+  name!: string | null;
+  phone!: string | null;
+  role!: UserType;
+  /** What an ADMIN runs: CLEAN, REPAIR, RENTAL. Empty for every other role. */
+  modules!: AdminModule[];
+  joinedAt!: string;
+}
+
+// ── approvals ───────────────────────────────────────────────────────────────
+
+export const APPROVAL_VIEWS = ['pending', 'decided'] as const;
+export type ApprovalView = (typeof APPROVAL_VIEWS)[number];
+
+export class ApprovalsQueryDto extends PaginationQuery {
+  /** pending: waiting for review, oldest first. decided: history, newest first. */
+  @IsOptional()
+  @IsIn(APPROVAL_VIEWS)
+  view: ApprovalView = 'pending';
+}
+
+export class RejectChangeDto {
+  /** Why, shown to the admin in the history. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class ServiceTermsDto {
+  name!: string;
+  vertical!: ServiceVertical;
+  category!: string;
+  minHours!: number;
+  hourlyRate!: number;
+  extraProRate!: number;
+  materialsFee!: number;
+  /** hourlyRate × minHours: the "From" price in the app. */
+  startingPrice!: number;
+}
+
+export class PersonDto {
+  id!: string;
+  name!: string | null;
+  phone!: string | null;
+}
+
+export class ServiceChangeDto {
+  id!: string;
+  kind!: ServiceChangeKind;
+  status!: ServiceChangeStatus;
+  /** Null once the service has been deleted. */
+  serviceId!: string | null;
+  /** In the app now (when decided: at that moment). Null for a new service. */
+  current!: ServiceTermsDto | null;
+  requested!: ServiceTermsDto;
+  /** The fields that differ between current and requested. */
+  changed!: string[];
+  requestedBy!: PersonDto;
+  requestedAt!: string;
+  decidedBy!: PersonDto | null;
+  decidedAt!: string | null;
+  note!: string;
+}
+
+export class ApprovalsSummaryDto {
+  waiting!: number;
+  newServices!: number;
+  priceChanges!: number;
 }

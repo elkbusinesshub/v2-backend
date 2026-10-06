@@ -9,6 +9,7 @@ import {
 } from '@/modules/home-services/home-services.repository';
 import { todayInIndia } from '@/modules/home-services/home-services.rules';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { assertVertical } from './admin-scope';
 import { AdminRepository } from './admin.repository';
 
 const { PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED } = ServiceBookingStatus;
@@ -46,13 +47,21 @@ export class AdminBookingsService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async list(status?: ServiceBookingStatus): Promise<ServiceBookingDto[]> {
-    return (await this.repo.bookings(status)).map(toBookingJson);
+  async list(
+    status: ServiceBookingStatus | undefined,
+    verticals: ServiceVertical[],
+  ): Promise<ServiceBookingDto[]> {
+    return (await this.repo.bookings(status, verticals)).map(toBookingJson);
   }
 
   /** Assigning a professional is what confirms a pending booking. */
-  async assign(id: string, professionalId: string): Promise<ServiceBookingDto> {
+  async assign(
+    id: string,
+    professionalId: string,
+    verticals: ServiceVertical[],
+  ): Promise<ServiceBookingDto> {
     const booking = await this.require(id);
+    assertVertical(booking.vertical, verticals);
     if (booking.status !== PENDING && booking.status !== CONFIRMED) {
       throw new DomainException(
         HttpStatus.CONFLICT,
@@ -78,8 +87,17 @@ export class AdminBookingsService {
     return toBookingJson(updated);
   }
 
-  async setStatus(id: string, next: ServiceBookingStatus): Promise<ServiceBookingDto> {
+  /**
+   * [verticals] limits an admin to their modules; the professional's own
+   * start and complete (ProService) check the assignment instead and omit it.
+   */
+  async setStatus(
+    id: string,
+    next: ServiceBookingStatus,
+    verticals?: ServiceVertical[],
+  ): Promise<ServiceBookingDto> {
     const booking = await this.require(id);
+    if (verticals) assertVertical(booking.vertical, verticals);
     if (!TRANSITIONS[booking.status].includes(next)) {
       throw new DomainException(
         HttpStatus.CONFLICT,
@@ -110,16 +128,23 @@ export class AdminBookingsService {
     return toBookingJson(updated);
   }
 
-  async dashboard(): Promise<DashboardDto> {
+  /** Bookings and services are counted for the admin's verticals; the team and areas are shared. */
+  async dashboard(verticals: ServiceVertical[]): Promise<DashboardDto> {
+    const mine = { vertical: { in: verticals } };
     const today = todayInIndia();
     const monthStart = new Date(`${today.slice(0, 8)}01T00:00:00+05:30`);
     const todayDate = new Date(`${today}T00:00:00.000Z`);
-    const [monthBookings, monthRevenue, pending, todayJobs, services, locations, pros, onJob] =
+    const [monthBookings, monthRevenue, pending, todayJobs, allServices, locations, pros, onJob] =
       await Promise.all([
-        this.repo.countBookings({ createdAt: { gte: monthStart }, status: { not: CANCELLED } }),
-        this.repo.sumTotals({ status: COMPLETED, completedAt: { gte: monthStart } }),
-        this.repo.bookingsWhere({ status: PENDING }),
+        this.repo.countBookings({
+          ...mine,
+          createdAt: { gte: monthStart },
+          status: { not: CANCELLED },
+        }),
+        this.repo.sumTotals({ ...mine, status: COMPLETED, completedAt: { gte: monthStart } }),
+        this.repo.bookingsWhere({ ...mine, status: PENDING }),
         this.repo.bookingsWhere({
+          ...mine,
           scheduledDate: todayDate,
           status: { in: [CONFIRMED, IN_PROGRESS] },
         }),
@@ -128,6 +153,7 @@ export class AdminBookingsService {
         this.repo.professionals(),
         this.repo.professionalsOnJob(),
       ]);
+    const services = allServices.filter((s) => verticals.includes(s.vertical));
     const offDuty = pros.filter((p) => !p.onDuty).length;
     const busy = pros.filter((p) => p.onDuty && onJob.has(p.id)).length;
     return {
