@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { WalletModule } from '@/modules/wallet/wallet.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { StorageModule } from '@/storage/storage.module';
 import { AdOrdersRepository } from './ad-orders.repository';
@@ -14,7 +15,7 @@ import { MarketplaceRepository } from './marketplace.repository';
 import { MarketplaceService } from './marketplace.service';
 
 @Module({
-  imports: [StorageModule, NotificationsModule],
+  imports: [StorageModule, NotificationsModule, WalletModule],
   controllers: [MarketplaceController, CleaningPricingController, RepairPricingController],
   providers: [
     MarketplaceService,

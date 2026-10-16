@@ -18,8 +18,11 @@ import { AdminModules, AdminScope } from '@/common/admin-access/admin-modules.de
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import type { AuthUser } from '@/common/types/auth.types';
-import type { ServiceBookingDto } from '@/modules/home-services/home-services.dto';
-import { AdminBookingsService, type DashboardDto } from './admin-bookings.service';
+import {
+  AdminBookingsService,
+  type AdminBookingDto,
+  type DashboardDto,
+} from './admin-bookings.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import {
   AdminBookingsQueryDto,
@@ -59,10 +62,19 @@ export class AdminController {
     private readonly bookings: AdminBookingsService,
   ) {}
 
+  @Get('me')
+  @ApiOperation({ summary: 'The modules this admin runs: CLEAN, REPAIR, RENTAL' })
+  me(@AdminScope() scope: AdminModule[]): { modules: AdminModule[] } {
+    return { modules: [...scope].sort() };
+  }
+
   @Get('dashboard')
   @ApiOperation({ summary: 'Dashboard numbers, pending bookings and today’s jobs' })
-  async dashboard(@AdminScope() scope: AdminModule[]): Promise<DashboardDto> {
-    return this.bookings.dashboard(verticalsOf(scope));
+  async dashboard(
+    @CurrentUser() user: AuthUser,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<DashboardDto> {
+    return this.bookings.dashboard(user.id, verticalsOf(scope));
   }
 
   // ── services ──
@@ -96,43 +108,58 @@ export class AdminController {
     await this.catalog.deleteService(id, verticalsOf(scope));
   }
 
-  // ── locations ──
+  // ── locations ── (the company's own service areas)
   @Get('locations')
-  async locations(): Promise<AdminLocationDto[]> {
-    return this.catalog.locations();
+  async locations(@CurrentUser() user: AuthUser): Promise<AdminLocationDto[]> {
+    return this.catalog.locations(user.id);
   }
   @Post('locations')
-  async createLocation(@Body() dto: CreateLocationDto): Promise<AdminLocationDto> {
-    return this.catalog.createLocation(dto);
+  async createLocation(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateLocationDto,
+  ): Promise<AdminLocationDto> {
+    return this.catalog.createLocation(user.id, dto);
   }
   @Patch('locations/:id')
   async updateLocation(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLocationDto,
   ): Promise<AdminLocationDto> {
-    return this.catalog.updateLocation(id, dto);
+    return this.catalog.updateLocation(user.id, id, dto);
   }
 
-  // ── professionals ──
+  // ── professionals ── (the company's own people)
   @Get('professionals')
-  async professionals(): Promise<AdminProfessionalDto[]> {
-    return this.catalog.professionals();
+  @ApiOperation({ summary: 'The company’s professionals, with their approval status' })
+  async professionals(@CurrentUser() user: AuthUser): Promise<AdminProfessionalDto[]> {
+    return this.catalog.professionals(user.id);
   }
   @Post('professionals')
-  async createProfessional(@Body() dto: CreateProfessionalDto): Promise<AdminProfessionalDto> {
-    return this.catalog.createProfessional(dto);
+  @ApiOperation({ summary: 'Add a professional; they wait for the super admin’s approval' })
+  async createProfessional(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateProfessionalDto,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<AdminProfessionalDto> {
+    return this.catalog.createProfessional(user.id, dto, verticalsOf(scope));
   }
   @Patch('professionals/:id')
   async updateProfessional(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProfessionalDto,
+    @AdminScope() scope: AdminModule[],
   ): Promise<AdminProfessionalDto> {
-    return this.catalog.updateProfessional(id, dto);
+    return this.catalog.updateProfessional(user.id, id, dto, verticalsOf(scope));
   }
   @Delete('professionals/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteProfessional(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.catalog.deleteProfessional(id);
+  async deleteProfessional(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.catalog.deleteProfessional(user.id, id);
   }
 
   // ── promo codes ──
@@ -160,25 +187,48 @@ export class AdminController {
   // ── bookings ──
   @Get('bookings')
   async bookingsList(
+    @CurrentUser() user: AuthUser,
     @Query() query: AdminBookingsQueryDto,
     @AdminScope() scope: AdminModule[],
-  ): Promise<ServiceBookingDto[]> {
-    return this.bookings.list(query.status, verticalsOf(scope));
+  ): Promise<AdminBookingDto[]> {
+    return this.bookings.list(user.id, query.status, verticalsOf(scope));
+  }
+  @Get('bookings/:id/professionals')
+  @ApiOperation({ summary: 'The company’s approved professionals who do this booking’s service' })
+  async assignable(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<AdminProfessionalDto[]> {
+    return this.catalog.assignableFor(user.id, id, verticalsOf(scope));
   }
   @Patch('bookings/:id/assign')
+  @ApiOperation({ summary: 'Assign and confirm; the professional is sent the job on WhatsApp' })
   async assign(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignProfessionalDto,
     @AdminScope() scope: AdminModule[],
-  ): Promise<ServiceBookingDto> {
-    return this.bookings.assign(id, dto.professionalId, verticalsOf(scope));
+  ): Promise<AdminBookingDto> {
+    return this.bookings.assign(user.id, id, dto.professionalId, verticalsOf(scope));
+  }
+  @Post('bookings/:id/whatsapp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send the job to the assigned professional on WhatsApp again' })
+  async resendWhatsapp(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @AdminScope() scope: AdminModule[],
+  ): Promise<AdminBookingDto> {
+    return this.bookings.resend(user.id, id, verticalsOf(scope));
   }
   @Patch('bookings/:id/status')
   async setStatus(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetBookingStatusDto,
     @AdminScope() scope: AdminModule[],
-  ): Promise<ServiceBookingDto> {
-    return this.bookings.setStatus(id, dto.status, verticalsOf(scope));
+  ): Promise<AdminBookingDto> {
+    return this.bookings.setStatus(user.id, id, dto.status, verticalsOf(scope));
   }
 }

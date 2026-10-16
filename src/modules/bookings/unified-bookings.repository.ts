@@ -136,7 +136,9 @@ export class UnifiedBookingsRepository {
         serviceIcon: b.vertical === 'REPAIR' ? '🔧' : '🧹',
         // Named once the admin assigns someone.
         providerName:
-          b.professional?.name ?? (b.vertical === 'REPAIR' ? 'ELK Repair' : 'ELK Clean'),
+          b.professional?.name ??
+          b.professionalName ??
+          (b.vertical === 'REPAIR' ? 'ELK Repair' : 'ELK Clean'),
         status: b.status,
         // The same slugs the listings use, so My Bookings groups them alike.
         categorySlug: b.vertical === 'REPAIR' ? 'repairing' : 'cleaning',

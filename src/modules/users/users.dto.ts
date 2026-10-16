@@ -30,6 +30,6 @@ export class ProfileDto {
   email!: string | null;
   name!: string | null;
   language!: string;
-  /** The account's one role: USER, PROVIDER, ADMIN or PROFESSIONAL. */
+  /** The account's one role: USER, ADMIN or SUPER_ADMIN. */
   userType!: UserType;
 }

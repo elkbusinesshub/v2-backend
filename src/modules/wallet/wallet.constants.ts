@@ -31,6 +31,7 @@ export const PAYMENT_METHOD_CATALOG: Record<
 export const WALLET_TXN_TOPUP = { icon: '💳', title: 'Wallet Top-up', colorHex: 0xffd1fae5 };
 export const WALLET_TXN_WITHDRAW = { icon: '💸', title: 'Wallet Withdrawal', colorHex: 0xfffee2e2 };
 export const WALLET_TXN_PAYMENT = { icon: '💳', title: 'Payment', colorHex: 0xffe0f7f5 };
+export const WALLET_TXN_REFUND = { icon: '↩️', title: 'Refund', colorHex: 0xffd1fae5 };
 
 /** Generic charge reference: ELK-YYYY-##### (matches the app's static fixture shape). */
 export const PAYMENT_REFERENCE_SPAN = 100000;

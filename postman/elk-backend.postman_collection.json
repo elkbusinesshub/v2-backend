@@ -2966,6 +2966,24 @@
           "name": "Professionals",
           "item": [
             {
+              "name": "This admin's modules",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/me",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "me"]
+                },
+                "description": "CLEAN / REPAIR / RENTAL: decides which categories a professional can have."
+              }
+            },
+            {
               "name": "All professionals",
               "request": {
                 "method": "GET",
@@ -2983,7 +3001,7 @@
               }
             },
             {
-              "name": "Add a professional",
+              "name": "Add a professional (waits for approval)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -3003,29 +3021,15 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Anil Kumar\",\n  \"phone\": \"+91 98470 21456\",\n  \"experienceYears\": 5,\n  \"skills\": \"Home, Bathroom\",\n  \"locationId\": \"{{serviceLocationId}}\"\n}",
+                  "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"phone\": \"98460 00001\",\n  \"email\": \"ravi@example.com\",\n  \"categories\": [\n    \"cln\",\n    \"deep\"\n  ],\n  \"experienceYears\": 5\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                      "if (pm.response.code < 300) {",
-                      "  const v = pm.response.json().data.id;",
-                      "  if (v) pm.environment.set('professionalId', v);",
-                      "}"
-                    ]
-                  }
-                }
-              ]
+                },
+                "description": "Phone and email are required, not unique. The professional is PENDING until the super admin approves."
+              }
             },
             {
               "name": "Edit a professional",
@@ -3048,43 +3052,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"skills\": \"Home, Bathroom, Kitchen\"\n}",
+                  "raw": "{\n  \"categories\": [\n    \"cln\",\n    \"deep\",\n    \"bth\"\n  ],\n  \"experienceYears\": 6\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
-                }
-              }
-            },
-            {
-              "name": "Set off duty",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/admin/professionals/{{professionalId}}",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "admin", "professionals", "{{professionalId}}"]
                 },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"onDuty\": false\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
+                "description": "A new phone or email sends an approved professional back for approval."
               }
             },
             {
@@ -3311,7 +3286,32 @@
               ]
             },
             {
-              "name": "Assign a professional (confirms the booking)",
+              "name": "Professionals who can take this booking",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/professionals",
+                  "host": ["{{baseUrl}}"],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "bookings",
+                    "{{serviceBookingId}}",
+                    "professionals"
+                  ]
+                },
+                "description": "The company's approved professionals who do this booking's service."
+              }
+            },
+            {
+              "name": "Assign a professional (confirms, sends WhatsApp)",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -3339,6 +3339,23 @@
                   }
                 },
                 "description": "PENDING \u2192 CONFIRMED; can reassign while CONFIRMED. The professional must be on duty. The customer is notified."
+              }
+            },
+            {
+              "name": "Resend the job on WhatsApp",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/bookings/{{serviceBookingId}}/whatsapp",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "bookings", "{{serviceBookingId}}", "whatsapp"]
+                }
               }
             },
             {
@@ -3742,6 +3759,115 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "Professionals waiting",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/professionals?view=pending",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals", "professionals"],
+                  "query": [
+                    {
+                      "key": "view",
+                      "value": "pending"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Professionals decided",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/professionals?view=decided",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "approvals", "professionals"],
+                  "query": [
+                    {
+                      "key": "view",
+                      "value": "decided"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Approve a professional",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/professionals/{{professionalId}}/approve",
+                  "host": ["{{baseUrl}}"],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "approvals",
+                    "professionals",
+                    "{{professionalId}}",
+                    "approve"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject a professional",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/approvals/professionals/{{professionalId}}/reject",
+                  "host": ["{{baseUrl}}"],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "approvals",
+                    "professionals",
+                    "{{professionalId}}",
+                    "reject"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"note\": \"Phone number does not match their ID\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
             }
           ]
         },

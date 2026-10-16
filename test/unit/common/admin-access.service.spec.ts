@@ -27,7 +27,7 @@ describe('AdminAccessService', () => {
   });
 
   it('gives a non-admin nothing, without reading the database', async () => {
-    await expect(access.has(user(UserType.PROVIDER), AdminModule.RENTAL)).resolves.toBe(false);
+    await expect(access.has(user(UserType.USER), AdminModule.RENTAL)).resolves.toBe(false);
     expect(modules).not.toHaveBeenCalled();
   });
 

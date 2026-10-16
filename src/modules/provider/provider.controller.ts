@@ -57,7 +57,7 @@ export class ProviderController {
   @Roles(UserType.ADMIN)
   @AdminModules(AdminModule.RENTAL)
   @ApiOperation({
-    summary: 'Verify or reject a provider (admin) — verify grants the PROVIDER role',
+    summary: 'Verify or reject a provider (admin)',
   })
   async verify(
     @Param('userId') userId: string,

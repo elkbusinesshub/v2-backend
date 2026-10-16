@@ -10,7 +10,7 @@ import type { App } from 'supertest/types';
  * Provider persona against real MySQL/Redis: the seeded verified provider's
  * dashboard/schedule/earnings, availability toggle, request accept/decline,
  * a fresh registration (PENDING) that is blocked from the dashboard, and the
- * admin verification that grants the PROVIDER role.
+ * admin verification, which leaves the account a plain USER.
  */
 describe('Provider (integration)', () => {
   let mysql: StartedMySqlContainer;
@@ -192,7 +192,7 @@ describe('Provider (integration)', () => {
       .expect(409);
   });
 
-  it('admin verification grants the PROVIDER role (visible on the next token)', async () => {
+  it('admin verification marks the profile verified and keeps the account a USER', async () => {
     // users cannot verify
     await request(http())
       .patch(`/api/v1/provider/${userId}/verify`)
@@ -207,13 +207,12 @@ describe('Provider (integration)', () => {
       .expect(200);
     expect(verify.body.data.status).toBe('verified');
 
-    // the role is persisted — /users/me reads userType fresh from the DB
-    // (the existing access token still carries the old role until re-login)
+    // every user can sell, so verifying grants no role
     const me = await request(http())
       .get('/api/v1/users/me')
       .set('Authorization', bearer(userToken))
       .expect(200);
-    expect(me.body.data.userType).toBe('PROVIDER');
+    expect(me.body.data.userType).toBe('USER');
   });
 
   it('requires auth on every route', async () => {

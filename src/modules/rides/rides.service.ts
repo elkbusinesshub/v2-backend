@@ -8,6 +8,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import {
   RIDE_CODE_ALPHABET,
   RIDE_CODE_LENGTH,
@@ -45,6 +46,7 @@ export class RidesService {
     private readonly dispatch: DispatchService,
     private readonly gateway: DispatchGateway,
     private readonly scheduler: DispatchScheduler,
+    private readonly wallet: WalletService,
   ) {}
 
   // ─── legacy contract (the exact endpoints RideRepository already calls) ─────
@@ -74,25 +76,32 @@ export class RidesService {
       this.resolvePlace(user, dto.dropAddressId, dto.dropAddress),
     ]);
     const code = await this.generateCode();
+    const fare = Number(rideType.baseFare);
+    const paid = await this.wallet.payForBooking(user.id, dto.paymentMethod, fare, `Ride ${code}`);
 
     // Created SEARCHING with no driver: who takes it is decided by whoever
     // accepts first, not by the server picking a name out of a list.
-    const booking = await this.bookings.create({
-      code,
-      userId: user.id,
-      rideTypeId: rideType.id,
-      status: RideBookingStatus.SEARCHING,
-      pickupAddress: pickup.address,
-      dropAddress: drop.address,
-      distanceKm: RIDE_DEFAULT_DISTANCE_KM,
-      etaMinutes: rideType.etaMinutes,
-      fare: Number(rideType.baseFare),
-      cancellationFee: Number(rideType.cancellationFee),
-      paymentMethod: dto.paymentMethod,
-      // internal mock charge — replaced by the payments module later
-      paymentRef: `PAY-${code}`,
-      paidAt: new Date(),
-    });
+    const booking = await this.bookings
+      .create({
+        code,
+        userId: user.id,
+        rideTypeId: rideType.id,
+        status: RideBookingStatus.SEARCHING,
+        pickupAddress: pickup.address,
+        dropAddress: drop.address,
+        distanceKm: RIDE_DEFAULT_DISTANCE_KM,
+        etaMinutes: rideType.etaMinutes,
+        fare: Number(rideType.baseFare),
+        cancellationFee: Number(rideType.cancellationFee),
+        paymentMethod: dto.paymentMethod,
+        // internal mock charge — replaced by the payments module later
+        paymentRef: `PAY-${code}`,
+        paidAt: new Date(),
+      })
+      .catch(async (err: unknown) => {
+        if (paid) await this.wallet.refundBooking(user.id, dto.paymentMethod, fare, `Ride ${code}`);
+        throw err;
+      });
 
     // The rider's socket follows this trip from here on.
     this.gateway.joinTrip(user.id, booking.id);
@@ -100,7 +109,9 @@ export class RidesService {
     if (pickup.lat === null || pickup.lng === null) {
       // Nothing to search around. Better an immediate, honest answer than a
       // rider watching a spinner that could never resolve.
-      await this.bookings.markNoDrivers(booking.id);
+      if (await this.bookings.markNoDrivers(booking.id)) {
+        await this.wallet.refundBooking(user.id, dto.paymentMethod, fare, `Ride ${code}`);
+      }
       this.logger.warn(`ride ${code} has no pickup coordinate — cannot dispatch`);
       return toRideBookingJson((await this.bookings.findById(booking.id))!);
     }
@@ -287,6 +298,12 @@ export class RidesService {
     }
     // Whoever was driving to them is free again, and the rider's screen is
     // told rather than left on a countdown.
+    await this.wallet.refundBooking(
+      user.id,
+      booking.paymentMethod,
+      Number(booking.fare),
+      `Ride ${booking.code}`,
+    );
     await this.dispatch.release(booking.driverId);
     this.gateway.emitTrip(id, 'trip:cancelled', {});
     this.logger.log(`ride cancelled: ${booking.code}`);

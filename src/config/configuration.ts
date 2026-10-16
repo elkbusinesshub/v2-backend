@@ -44,6 +44,14 @@ export function configuration() {
       senderId: env.SMS_SENDER_ID,
       countryCode: env.SMS_COUNTRY_CODE,
     },
+    whatsapp: {
+      enabled: env.WHATSAPP_ENABLED,
+      apiVersion: env.WHATSAPP_API_VERSION,
+      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+      accessToken: env.WHATSAPP_ACCESS_TOKEN,
+      templateName: env.WHATSAPP_TEMPLATE_NAME,
+      templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,
+    },
     places: {
       googleMapsApiKey: env.GOOGLE_MAPS_API_KEY,
       regionCode: env.PLACES_REGION_CODE.toUpperCase(),

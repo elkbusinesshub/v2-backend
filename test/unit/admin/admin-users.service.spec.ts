@@ -103,24 +103,6 @@ describe('AdminUsersService', () => {
     expect(repo.setAccess).not.toHaveBeenCalled();
   });
 
-  it('leaves a linked professional to the Professionals tab', async () => {
-    repo.user.mockResolvedValue({
-      ...priya,
-      userType: UserType.PROFESSIONAL,
-      professional: { id: 'pr-1' },
-    });
-    await expect(svc.setRole('u-1', UserType.USER, 'u-super')).rejects.toMatchObject({
-      code: 'IS_PROFESSIONAL',
-    });
-  });
-
-  it('needs a phone to make someone a professional', async () => {
-    repo.user.mockResolvedValue({ ...priya, phone: null });
-    await expect(svc.setRole('u-1', UserType.PROFESSIONAL, 'u-super')).rejects.toBeInstanceOf(
-      ValidationFailedException,
-    );
-  });
-
   it('does nothing when the role is already the one asked for', async () => {
     await svc.setRole('u-1', UserType.USER, 'u-super');
     expect(repo.setAccess).not.toHaveBeenCalled();

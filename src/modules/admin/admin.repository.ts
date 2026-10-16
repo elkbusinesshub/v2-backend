@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  ProfessionalStatus,
   ServiceBookingStatus,
   ServiceVertical,
-  UserType,
   type HomeService,
   type Prisma,
   type PromoCode,
   type ServiceLocation,
+  type WhatsappMessage,
 } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
@@ -26,14 +27,19 @@ export const OPEN_STATUSES: ServiceBookingStatus[] = [
 ];
 
 export const professionalInclude = {
-  location: { select: { id: true, area: true, district: true } },
+  categories: { select: { category: true } },
+  decidedBy: { select: { id: true, name: true, phone: true } },
 } satisfies Prisma.ProfessionalInclude;
 
 export type ProfessionalRow = Prisma.ProfessionalGetPayload<{
   include: typeof professionalInclude;
 }>;
 
-/** Everything the admin panel reads and writes, in one place. */
+/**
+ * Everything the admin panel reads and writes, in one place. A company (an
+ * ADMIN account) sees and changes only its own areas, professionals and
+ * bookings, so those take its id; services and promo codes are shared.
+ */
 @Injectable()
 export class AdminRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
@@ -71,13 +77,16 @@ export class AdminRepository {
   }
 
   // ── locations ──
-  async locations(): Promise<ServiceLocation[]> {
-    return this.db.serviceLocation.findMany({ orderBy: [{ district: 'asc' }, { area: 'asc' }] });
+  async locations(companyId: string): Promise<ServiceLocation[]> {
+    return this.db.serviceLocation.findMany({
+      where: { companyId },
+      orderBy: [{ district: 'asc' }, { area: 'asc' }],
+    });
   }
-  async location(id: string): Promise<ServiceLocation | null> {
-    return this.db.serviceLocation.findUnique({ where: { id } });
+  async location(id: string, companyId: string): Promise<ServiceLocation | null> {
+    return this.db.serviceLocation.findFirst({ where: { id, companyId } });
   }
-  async createLocation(data: Prisma.ServiceLocationCreateInput): Promise<ServiceLocation> {
+  async createLocation(data: Prisma.ServiceLocationUncheckedCreateInput): Promise<ServiceLocation> {
     return this.db.serviceLocation.create({ data });
   }
   async updateLocation(
@@ -86,111 +95,82 @@ export class AdminRepository {
   ): Promise<ServiceLocation> {
     return this.db.serviceLocation.update({ where: { id }, data });
   }
-  async professionalsByLocation(): Promise<Map<string, number>> {
-    const rows = await this.db.professional.groupBy({
-      by: ['locationId'],
-      where: { locationId: { not: null } },
-      _count: { _all: true },
-    });
-    return new Map(rows.map((r) => [r.locationId!, r._count._all]));
-  }
-  async pendingByLocation(): Promise<Map<string, number>> {
+  async pendingByLocation(companyId: string): Promise<Map<string, number>> {
     const rows = await this.db.serviceBooking.groupBy({
       by: ['locationId'],
-      where: { status: ServiceBookingStatus.PENDING, locationId: { not: null } },
+      where: { companyId, status: ServiceBookingStatus.PENDING, locationId: { not: null } },
       _count: { _all: true },
     });
     return new Map(rows.map((r) => [r.locationId!, r._count._all]));
   }
 
   // ── professionals ──
-  async professionals(): Promise<ProfessionalRow[]> {
+  async professionals(companyId: string): Promise<ProfessionalRow[]> {
     return this.db.professional.findMany({
+      where: { companyId },
       include: professionalInclude,
       orderBy: { name: 'asc' },
     });
   }
-  async professional(id: string): Promise<ProfessionalRow | null> {
-    return this.db.professional.findUnique({ where: { id }, include: professionalInclude });
-  }
-  /** Adds a professional, linked to the app account for [accountPhone] (E.164). */
-  async createProfessional(
-    data: Prisma.ProfessionalUncheckedCreateInput,
-    accountPhone: string,
-  ): Promise<ProfessionalRow | 'PHONE_TAKEN'> {
-    return this.db.$transaction(async (tx) => {
-      const userId = await this.linkAccount(tx, accountPhone, null);
-      if (!userId) return 'PHONE_TAKEN';
-      return tx.professional.create({ data: { ...data, userId }, include: professionalInclude });
+  async professional(id: string, companyId: string): Promise<ProfessionalRow | null> {
+    return this.db.professional.findFirst({
+      where: { id, companyId },
+      include: professionalInclude,
     });
   }
-  /** Edits a professional. A new phone moves them to that phone's account. */
+  async createProfessional(
+    data: Omit<Prisma.ProfessionalUncheckedCreateInput, 'categories'>,
+    categories: string[],
+  ): Promise<ProfessionalRow> {
+    return this.db.professional.create({
+      data: { ...data, categories: { create: categories.map((category) => ({ category })) } },
+      include: professionalInclude,
+    });
+  }
+  /** Edits a professional; [categories], when given, replaces their categories. */
   async updateProfessional(
     id: string,
     data: Prisma.ProfessionalUncheckedUpdateInput,
-    accountPhone?: string,
-  ): Promise<ProfessionalRow | 'PHONE_TAKEN'> {
+    categories?: string[],
+  ): Promise<ProfessionalRow> {
     return this.db.$transaction(async (tx) => {
-      if (accountPhone === undefined) {
-        return tx.professional.update({ where: { id }, data, include: professionalInclude });
+      if (categories) {
+        await tx.professionalCategory.deleteMany({ where: { professionalId: id } });
+        await tx.professionalCategory.createMany({
+          data: categories.map((category) => ({ professionalId: id, category })),
+        });
       }
-      const before = await tx.professional.findUniqueOrThrow({ where: { id } });
-      const userId = await this.linkAccount(tx, accountPhone, id);
-      if (!userId) return 'PHONE_TAKEN';
-      const updated = await tx.professional.update({
-        where: { id },
-        data: { ...data, userId },
-        include: professionalInclude,
-      });
-      if (before.userId && before.userId !== userId) await this.releaseAccount(tx, before.userId);
-      return updated;
+      return tx.professional.update({ where: { id }, data, include: professionalInclude });
     });
   }
   async deleteProfessional(id: string): Promise<void> {
-    await this.db.$transaction(async (tx) => {
-      const removed = await tx.professional.delete({ where: { id } });
-      if (removed.userId) await this.releaseAccount(tx, removed.userId);
-    });
+    await this.db.professional.delete({ where: { id } });
   }
-  /**
-   * The account a professional signs in with, created if the phone has never
-   * signed in, and made PROFESSIONAL unless it is an admin's. Null when another
-   * professional already has it.
-   */
-  private async linkAccount(tx: Tx, phone: string, selfId: string | null): Promise<string | null> {
-    const user =
-      (await tx.user.findUnique({ where: { phone } })) ??
-      (await tx.user.create({
-        data: { phone, userType: UserType.PROFESSIONAL },
-      }));
-    const other = await tx.professional.findFirst({
-      where: { userId: user.id, ...(selfId ? { NOT: { id: selfId } } : {}) },
-    });
-    if (other) return null;
-    if (user.userType === UserType.USER) {
-      await tx.user.update({ where: { id: user.id }, data: { userType: UserType.PROFESSIONAL } });
-    }
-    return user.id;
-  }
-  /** An account no longer used by a professional goes back to a customer's. */
-  private async releaseAccount(tx: Tx, userId: string): Promise<void> {
-    await tx.user.updateMany({
-      where: { id: userId, userType: UserType.PROFESSIONAL },
-      data: { userType: UserType.USER },
+  /** The company's approved professionals who do [category]: the people a booking can go to. */
+  async approvedFor(companyId: string, category: string): Promise<ProfessionalRow[]> {
+    return this.db.professional.findMany({
+      where: {
+        companyId,
+        status: ProfessionalStatus.APPROVED,
+        categories: { some: { category } },
+      },
+      include: professionalInclude,
+      orderBy: { name: 'asc' },
     });
   }
   /** Professionals with a job under way right now. */
-  async professionalsOnJob(): Promise<Set<string>> {
+  async professionalsOnJob(companyId: string): Promise<Set<string>> {
     const rows = await this.db.serviceBooking.findMany({
-      where: { status: ServiceBookingStatus.IN_PROGRESS, professionalId: { not: null } },
+      where: { companyId, status: ServiceBookingStatus.IN_PROGRESS, professionalId: { not: null } },
       select: { professionalId: true },
     });
     return new Set(rows.map((r) => r.professionalId!));
   }
-  async jobsOnDay(day: Date): Promise<Map<string, number>> {
+  async jobsOnDay(companyId: string, day: Date): Promise<Map<string, number>> {
     const rows = await this.db.serviceBooking.groupBy({
       by: ['professionalId'],
       where: {
+        companyId,
         scheduledDate: day,
         professionalId: { not: null },
         status: { not: ServiceBookingStatus.CANCELLED },
@@ -231,12 +211,13 @@ export class AdminRepository {
 
   // ── bookings ──
   async bookings(
+    companyId: string,
     status: ServiceBookingStatus | undefined,
     verticals: ServiceVertical[],
     take = 500,
   ): Promise<ServiceBookingRow[]> {
     return this.db.serviceBooking.findMany({
-      where: { vertical: { in: verticals }, ...(status ? { status } : {}) },
+      where: { companyId, vertical: { in: verticals }, ...(status ? { status } : {}) },
       include: bookingInclude,
       orderBy: [{ scheduledDate: 'desc' }, { timeSlot: 'asc' }],
       take,
@@ -249,6 +230,27 @@ export class AdminRepository {
       orderBy: [{ scheduledDate: 'asc' }, { timeSlot: 'asc' }],
     });
   }
+  async companyName(companyId: string): Promise<string | null> {
+    const u = await this.db.user.findUnique({ where: { id: companyId }, select: { name: true } });
+    return u?.name ?? null;
+  }
+
+  // ── WhatsApp log ──
+  async logWhatsapp(data: Prisma.WhatsappMessageUncheckedCreateInput): Promise<WhatsappMessage> {
+    return this.db.whatsappMessage.create({ data });
+  }
+  /** The last WhatsApp sent about each booking. */
+  async lastWhatsapp(bookingIds: string[]): Promise<Map<string, WhatsappMessage>> {
+    if (bookingIds.length === 0) return new Map();
+    const rows = await this.db.whatsappMessage.findMany({
+      where: { bookingId: { in: bookingIds } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const last = new Map<string, WhatsappMessage>();
+    for (const r of rows) if (!last.has(r.bookingId)) last.set(r.bookingId, r);
+    return last;
+  }
+
   async countBookings(where: Prisma.ServiceBookingWhereInput): Promise<number> {
     return this.db.serviceBooking.count({ where });
   }

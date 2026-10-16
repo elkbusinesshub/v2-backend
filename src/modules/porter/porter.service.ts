@@ -17,6 +17,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import {
   PORTER_CODE_ALPHABET,
   PORTER_CODE_MIN,
@@ -63,6 +64,7 @@ export class PorterService {
     private readonly dispatch: DispatchService,
     private readonly gateway: DispatchGateway,
     private readonly scheduler: DispatchScheduler,
+    private readonly wallet: WalletService,
   ) {}
 
   /**
@@ -152,42 +154,51 @@ export class PorterService {
     const pickupAddress = pickup.address;
     const dropAddress = drop.address;
     const code = await this.generateCode();
+    const what = `Delivery ${code}`;
+    const paid = await this.wallet.payForBooking(user.id, dto.paymentMethod, q.totalAmount, what);
 
-    const booking = await this.bookings.create({
-      booking: {
-        code,
-        userId: user.id,
-        vehicleId: q.vehicle.id,
-        // No partner yet: the job goes out to whoever is nearby, and belongs
-        // to the first one who takes it.
-        status: PorterBookingStatus.SEARCHING,
-        pickupAddress,
-        dropAddress,
-        packageType: dto.packageType ?? null,
-        weightLabel: dto.weightLabel ?? null,
-        scheduledAt: schedule.scheduledAt,
-        pickupWindow: schedule.pickupWindow,
-        distanceKm: PORTER_DEFAULT_DISTANCE_KM,
-        etaMinutes: q.vehicle.etaMinutes,
-        baseFare: q.baseFare,
-        addonsTotal: q.addonsTotal,
-        serviceFee: q.serviceFee,
-        vatAmount: q.vatAmount,
-        totalAmount: q.totalAmount,
-        paymentMethod: dto.paymentMethod,
-        // internal mock charge — replaced by the payments module later
-        paymentRef: `PAY-${code}`,
-        paidAt: new Date(),
-      },
-      addons: q.addons.map((a) => ({ addonId: a.id, label: a.label, price: Number(a.price) })),
-    });
+    const booking = await this.bookings
+      .create({
+        booking: {
+          code,
+          userId: user.id,
+          vehicleId: q.vehicle.id,
+          // No partner yet: the job goes out to whoever is nearby, and belongs
+          // to the first one who takes it.
+          status: PorterBookingStatus.SEARCHING,
+          pickupAddress,
+          dropAddress,
+          packageType: dto.packageType ?? null,
+          weightLabel: dto.weightLabel ?? null,
+          scheduledAt: schedule.scheduledAt,
+          pickupWindow: schedule.pickupWindow,
+          distanceKm: PORTER_DEFAULT_DISTANCE_KM,
+          etaMinutes: q.vehicle.etaMinutes,
+          baseFare: q.baseFare,
+          addonsTotal: q.addonsTotal,
+          serviceFee: q.serviceFee,
+          vatAmount: q.vatAmount,
+          totalAmount: q.totalAmount,
+          paymentMethod: dto.paymentMethod,
+          // internal mock charge — replaced by the payments module later
+          paymentRef: `PAY-${code}`,
+          paidAt: new Date(),
+        },
+        addons: q.addons.map((a) => ({ addonId: a.id, label: a.label, price: Number(a.price) })),
+      })
+      .catch(async (err: unknown) => {
+        if (paid) await this.wallet.refundBooking(user.id, dto.paymentMethod, q.totalAmount, what);
+        throw err;
+      });
 
     this.gateway.joinTrip(user.id, booking.id);
 
     if (pickup.lat === null || pickup.lng === null) {
       // Nothing to search around; say so now rather than after a minute of
       // waiting on a search that could never match anybody.
-      await this.bookings.markNoDrivers(booking.id);
+      if (await this.bookings.markNoDrivers(booking.id)) {
+        await this.wallet.refundBooking(user.id, dto.paymentMethod, q.totalAmount, what);
+      }
       this.logger.warn(`porter ${code} has no pickup coordinate — cannot dispatch`);
       return toPorterBookingJson((await this.bookings.findById(booking.id))!);
     }
@@ -369,9 +380,15 @@ export class PorterService {
         'Deliveries can only be cancelled before pickup',
       );
     }
+    await this.wallet.refundBooking(
+      user.id,
+      booking.paymentMethod,
+      Number(booking.totalAmount),
+      `Delivery ${booking.code}`,
+    );
     await this.dispatch.release(booking.driverId);
     this.gateway.emitTrip(id, 'trip:cancelled', {});
-    this.logger.log(`porter booking cancelled (mock refund): ${booking.code}`);
+    this.logger.log(`porter booking cancelled: ${booking.code}`);
   }
 
   // ─── fulfilment (ops/admin until rider assignment exists) ──────────────────

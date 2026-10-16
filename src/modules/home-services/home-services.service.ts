@@ -9,6 +9,7 @@ import {
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import type {
   CreateServiceBookingDto,
   HomeServiceDto,
@@ -51,6 +52,7 @@ export class HomeServicesService {
     private readonly repo: HomeServicesRepository,
     private readonly addresses: LocationsRepository,
     private readonly users: UsersRepository,
+    private readonly wallet: WalletService,
   ) {}
 
   async listLive(vertical?: ServiceVertical): Promise<HomeServiceDto[]> {
@@ -84,7 +86,7 @@ export class HomeServicesService {
     const addressText = [address.flatNumber, address.building, address.formattedAddress]
       .filter((part) => part && part.trim())
       .join(', ');
-    const area = matchArea(await this.repo.activeAreas(), {
+    const area = matchArea(await this.repo.activeAreas(service.vertical), {
       text: addressText,
       lat: address.lat,
       lng: address.lng,
@@ -128,31 +130,43 @@ export class HomeServicesService {
     }
 
     const account = await this.users.findById(user.id);
-    const booking = await this.repo.createBooking({
-      code: `ELK-S-${this.randomCode()}`,
-      userId: user.id,
-      serviceId: service.id,
-      serviceName: service.name,
-      vertical: service.vertical,
-      category: service.category,
-      hours: dto.hours,
-      professionals: dto.professionals,
-      withMaterials,
-      scheduledDate: new Date(`${dto.date}T00:00:00.000Z`),
-      timeSlot: dto.timeSlot,
-      addressLabel: address.label,
-      addressText,
-      lat: address.lat,
-      lng: address.lng,
-      directions: address.directions,
-      contactPhone: account?.phone ?? '',
-      locationId: area.id,
-      baseAmount: q.base,
-      materialsAmount: q.materials,
-      discountAmount: discount,
-      totalAmount: q.subtotal - discount,
-      promoCode,
-    });
+    const total = q.subtotal - discount;
+    const paymentMethod = dto.paymentMethod ?? 'card';
+    const paid = await this.wallet.payForBooking(user.id, paymentMethod, total, service.name);
+    const booking = await this.repo
+      .createBooking({
+        code: `ELK-S-${this.randomCode()}`,
+        userId: user.id,
+        serviceId: service.id,
+        serviceName: service.name,
+        vertical: service.vertical,
+        category: service.category,
+        hours: dto.hours,
+        professionals: dto.professionals,
+        withMaterials,
+        scheduledDate: new Date(`${dto.date}T00:00:00.000Z`),
+        timeSlot: dto.timeSlot,
+        addressLabel: address.label,
+        addressText,
+        lat: address.lat,
+        lng: address.lng,
+        directions: address.directions,
+        contactPhone: account?.phone ?? '',
+        locationId: area.id,
+        // The company whose area this is takes the booking.
+        companyId: area.companyId,
+        baseAmount: q.base,
+        materialsAmount: q.materials,
+        discountAmount: discount,
+        totalAmount: total,
+        promoCode,
+        paymentMethod,
+      })
+      .catch(async (err: unknown) => {
+        // Charged but not booked: give the money back before failing.
+        if (paid) await this.wallet.refundBooking(user.id, paymentMethod, total, service.name);
+        throw err;
+      });
     return toBookingJson(booking);
   }
 
@@ -169,12 +183,21 @@ export class HomeServicesService {
         'This booking has already started and can no longer be cancelled',
       );
     }
-    return toBookingJson(
-      await this.repo.updateBooking(id, {
-        status: ServiceBookingStatus.CANCELLED,
-        cancelledAt: new Date(),
-      }),
+    const cancelled = await this.repo.cancelBooking(id, CUSTOMER_CANCELLABLE);
+    if (!cancelled) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'INVALID_TRANSITION',
+        'This booking can no longer be cancelled',
+      );
+    }
+    await this.wallet.refundBooking(
+      user.id,
+      cancelled.paymentMethod,
+      Number(cancelled.totalAmount),
+      cancelled.serviceName,
     );
+    return toBookingJson(cancelled);
   }
 
   private randomCode(): string {

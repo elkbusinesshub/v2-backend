@@ -7,6 +7,7 @@ import {
   PAYMENT_METHOD_IDS,
   PAYMENT_REFERENCE_SPAN,
   WALLET_TXN_PAYMENT,
+  WALLET_TXN_REFUND,
   WALLET_TXN_TOPUP,
   WALLET_TXN_WITHDRAW,
 } from './wallet.constants';
@@ -60,6 +61,51 @@ export class WalletService {
       await this.wallet.logActivity(user.id, entry);
     }
     return { reference };
+  }
+
+  /**
+   * Pays for a booking from the wallet when that is the method chosen; any
+   * other method is left alone. 402 INSUFFICIENT_BALANCE when it can't cover
+   * [amount]. Returns whether the wallet was debited, so a booking that then
+   * fails to save can be refunded.
+   */
+  async payForBooking(
+    userId: string,
+    method: string | null | undefined,
+    amount: number,
+    what: string,
+  ): Promise<boolean> {
+    if (method !== 'wallet' || amount <= 0) return false;
+    const balance = await this.wallet.debitIfSufficient(userId, amount, {
+      ...WALLET_TXN_PAYMENT,
+      title: `Paid · ${what}`,
+      amount,
+      isCredit: false,
+    });
+    if (balance === null) {
+      throw new DomainException(
+        HttpStatus.PAYMENT_REQUIRED,
+        'INSUFFICIENT_BALANCE',
+        `Your ELK Wallet doesn't have ₹${amount.toFixed(0)}. Add money or choose another way to pay.`,
+      );
+    }
+    return true;
+  }
+
+  /** Gives a wallet payment back, e.g. when the booking is cancelled. */
+  async refundBooking(
+    userId: string,
+    method: string | null | undefined,
+    amount: number,
+    what: string,
+  ): Promise<void> {
+    if (method !== 'wallet' || amount <= 0) return;
+    await this.wallet.credit(userId, amount, {
+      ...WALLET_TXN_REFUND,
+      title: `Refund · ${what}`,
+      amount,
+      isCredit: true,
+    });
   }
 
   // ─── wallet ────────────────────────────────────────────────────────────────

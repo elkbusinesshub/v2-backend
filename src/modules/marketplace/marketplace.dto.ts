@@ -298,6 +298,12 @@ export class CreateAdOrderDto {
   @Max(1_000_000)
   taxAmount?: number;
 
+  /** wallet, card, upi, cash… A wallet order is debited when placed. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  paymentMethod?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

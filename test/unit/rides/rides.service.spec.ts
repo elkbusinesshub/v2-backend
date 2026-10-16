@@ -7,6 +7,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import { RideBookingsRepository } from '@/modules/rides/ride-bookings.repository';
 import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
 import { RidesService } from '@/modules/rides/rides.service';
@@ -58,6 +59,7 @@ describe('RidesService', () => {
   let bookings: jest.Mocked<RideBookingsRepository>;
   let locations: jest.Mocked<LocationsRepository>;
   let dispatch: jest.Mocked<DispatchService>;
+  let wallet: jest.Mocked<WalletService>;
 
   beforeEach(async () => {
     stored = null;
@@ -130,6 +132,15 @@ describe('RidesService', () => {
           useValue: { joinTrip: jest.fn(), emitTrip: jest.fn() },
         },
         { provide: DispatchScheduler, useValue: { scheduleExpiry: jest.fn() } },
+        {
+          provide: WalletService,
+          useValue: {
+            payForBooking: jest.fn((_u: string, method: string) =>
+              Promise.resolve(method === 'wallet'),
+            ),
+            refundBooking: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -138,6 +149,7 @@ describe('RidesService', () => {
     bookings = moduleRef.get(RideBookingsRepository);
     locations = moduleRef.get(LocationsRepository);
     dispatch = moduleRef.get(DispatchService);
+    wallet = moduleRef.get(WalletService);
   });
 
   describe('legacy contract', () => {
@@ -186,6 +198,23 @@ describe('RidesService', () => {
         'auto',
         expect.objectContaining({ pickupAddress: 'Indiranagar · Gate 3' }),
         expect.any(Number),
+      );
+    });
+
+    it('debits a wallet-paid fare, and refunds it when nobody can be searched for', async () => {
+      await service.createBooking(user, { ...dto, paymentMethod: 'wallet' });
+
+      expect(wallet.payForBooking).toHaveBeenCalledWith(
+        'u-1',
+        'wallet',
+        8,
+        expect.stringMatching(/^Ride ELK-/),
+      );
+      expect(wallet.refundBooking).toHaveBeenCalledWith(
+        'u-1',
+        'wallet',
+        8,
+        expect.stringMatching(/^Ride ELK-/),
       );
     });
 
@@ -284,6 +313,18 @@ describe('RidesService', () => {
       bookings.findForUser.mockResolvedValue(owned as never);
       bookings.complete.mockResolvedValue(false);
       await expect(service.completeRide(user, 'b-1')).rejects.toBeInstanceOf(DomainException);
+    });
+
+    it('refunds a wallet-paid ride the rider cancels', async () => {
+      bookings.findForUser.mockResolvedValue({ ...owned, paymentMethod: 'wallet' } as never);
+      bookings.cancel.mockResolvedValue(true);
+      await service.cancelBooking(user, 'b-1');
+      expect(wallet.refundBooking).toHaveBeenCalledWith(
+        'u-1',
+        'wallet',
+        expect.any(Number),
+        expect.any(String),
+      );
     });
 
     it('409s cancelling once the trip has started', async () => {

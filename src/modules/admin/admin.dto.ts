@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   AdminModule,
+  ProfessionalStatus,
   ServiceBookingStatus,
   ServiceChangeKind,
   ServiceChangeStatus,
@@ -9,9 +10,11 @@ import {
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsIn,
   IsInt,
@@ -24,7 +27,6 @@ import {
   Max,
   MaxLength,
   Min,
-  ValidateIf,
 } from 'class-validator';
 import { PaginationQuery } from '@/common/http/pagination';
 import { MAX_HOURS } from '@/modules/home-services/home-services.rules';
@@ -157,7 +159,6 @@ export class AdminLocationDto {
   /** Whether the area's centre was found on the map; without it only the pincode matches. */
   mapped!: boolean;
   active!: boolean;
-  professionals!: number;
   pendingBookings!: number;
 }
 
@@ -169,42 +170,46 @@ export class CreateProfessionalDto {
   @MaxLength(80)
   name!: string;
 
+  /** A mobile number; 10 digits are read as Indian (+91). WhatsApp goes here. */
   @Matches(/^\+?[0-9 ]{10,16}$/, { message: 'phone must be a mobile number' })
   phone!: string;
 
+  @IsEmail({}, { message: 'email must be a valid email address' })
+  @MaxLength(190)
+  email!: string;
+
+  /** Service tiles they do, e.g. ["bth", "kit"]. At least one. */
+  @IsArray()
+  @ArrayMinSize(1, { message: 'choose at least one category' })
+  @ArrayUnique()
+  @IsString({ each: true })
+  categories!: string[];
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(60)
-  experienceYears!: number;
-
-  @IsString()
-  @MaxLength(160)
-  skills!: string;
-
-  @IsOptional()
-  @ValidateIf((_, v) => v !== null)
-  @IsUUID()
-  locationId?: string | null;
-
-  @IsOptional()
-  @IsBoolean()
-  onDuty?: boolean;
+  experienceYears?: number;
 }
 
 export class UpdateProfessionalDto extends PartialType(CreateProfessionalDto) {}
 
-export type ProfessionalStatus = 'AVAILABLE' | 'ON_JOB' | 'OFF_DUTY';
+/** What a company's professional is doing now (APPROVED ones only). */
+export type ProfessionalActivity = 'AVAILABLE' | 'ON_JOB';
 
 export class AdminProfessionalDto {
   id!: string;
   name!: string;
   phone!: string;
+  email!: string;
   experienceYears!: number;
-  skills!: string;
-  location!: { id: string; area: string; district: string } | null;
-  onDuty!: boolean;
+  categories!: string[];
+  /** PENDING until the super admin approves; only APPROVED can be assigned. */
   status!: ProfessionalStatus;
+  /** The super admin's reason when REJECTED. */
+  note!: string;
+  activity!: ProfessionalActivity;
   jobsToday!: number;
 }
 
@@ -369,4 +374,23 @@ export class ApprovalsSummaryDto {
   waiting!: number;
   newServices!: number;
   priceChanges!: number;
+  professionals!: number;
+}
+
+/** A company's professional, as the super admin reviews them. */
+export class ProfessionalApprovalDto {
+  id!: string;
+  name!: string;
+  phone!: string;
+  email!: string;
+  experienceYears!: number;
+  categories!: string[];
+  status!: ProfessionalStatus;
+  /** The company (ADMIN account) that added them. */
+  company!: PersonDto;
+  /** When they were added, or last sent back for approval. */
+  submittedAt!: string;
+  decidedBy!: PersonDto | null;
+  decidedAt!: string | null;
+  note!: string;
 }

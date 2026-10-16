@@ -15,16 +15,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// The one role an account has. USER is a customer; PROVIDER is a verified
-/// seller; ADMIN opens the admin panel; PROFESSIONAL opens the job screens and
-/// is set when an admin adds the phone as a professional. SUPER_ADMIN only
-/// approves or rejects the admin's service and price changes.
+/// The one role an account has. USER is a customer, and any user can also
+/// sell from the seller panel (that switch is the app's, not a role); ADMIN is a company running cleaning/repair (its areas, its
+/// professionals, the bookings in its areas). SUPER_ADMIN approves the
+/// companies' new services, price changes and professionals.
 enum UserType {
   USER
-  PROVIDER
   ADMIN
-  PROFESSIONAL
   SUPER_ADMIN
+}
+
+/// A professional is offered for jobs only once the super admin approves them.
+enum ProfessionalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WhatsappStatus {
+  /// Accepted by WhatsApp Cloud API.
+  SENT
+  /// WhatsApp refused it, or could not be reached.
+  FAILED
+  /// WhatsApp sending is switched off (WHATSAPP_ENABLED=false); only logged.
+  SKIPPED
 }
 
 /// The parts of ELK an admin runs. An ADMIN account holds one or more.
@@ -39,8 +53,8 @@ enum AdminModule {
 
 /// One module an admin can use. Set by the super admin with the ADMIN role.
 model AdminModuleAccess {
-  userId String       @db.Char(36)
-  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String      @db.Char(36)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   module AdminModule
 
   createdAt DateTime @default(now())
@@ -57,9 +71,8 @@ model User {
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
   name          String?
-  /// The account's role. ADMIN and PROFESSIONAL are set in the database or
-  /// the admin panel; PROVIDER when a seller is verified. The super admin can
-  /// set any of them from the Users tab.
+  /// The account's role. The super admin sets ADMIN or SUPER_ADMIN from the
+  /// Users tab; everyone else is USER.
   userType      UserType @default(USER)
   /// ISO 639-1 code of the user's preferred app language
   language      String   @default("en")
@@ -74,29 +87,33 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  sessions           RefreshSession[]
-  addresses          Address[]
-  adOrdersPlaced     AdOrder[]           @relation("AdOrdersPlaced")
-  adOrdersReceived   AdOrder[]           @relation("AdOrdersReceived")
-  chatThreadsAsA     ChatThread[]        @relation("ChatThreadsAsA")
-  chatThreadsAsB     ChatThread[]        @relation("ChatThreadsAsB")
-  chatMessagesSent   ChatMessage[]       @relation("ChatMessagesSent")
-  porterBookings     PorterBooking[]
-  rideBookings       RideBooking[]
-  driverProfiles     DriverProfile[]
-  reviews            Review[]
-  notifications      Notification[]
-  deviceTokens       DeviceToken[]
-  ads                Ad[]
-  adViews            AdView[]
-  adWishlists        AdWishlist[]
-  walletTransactions WalletTransaction[]
-  providerProfile    ProviderProfile?
-  serviceBookings    ServiceBooking[]
-  professional       Professional?
-  changesRequested   ServiceChangeRequest[] @relation("ChangesRequested")
-  changesDecided     ServiceChangeRequest[] @relation("ChangesDecided")
-  adminModules       AdminModuleAccess[]
+  sessions             RefreshSession[]
+  addresses            Address[]
+  adOrdersPlaced       AdOrder[]              @relation("AdOrdersPlaced")
+  adOrdersReceived     AdOrder[]              @relation("AdOrdersReceived")
+  chatThreadsAsA       ChatThread[]           @relation("ChatThreadsAsA")
+  chatThreadsAsB       ChatThread[]           @relation("ChatThreadsAsB")
+  chatMessagesSent     ChatMessage[]          @relation("ChatMessagesSent")
+  porterBookings       PorterBooking[]
+  rideBookings         RideBooking[]
+  driverProfiles       DriverProfile[]
+  reviews              Review[]
+  notifications        Notification[]
+  deviceTokens         DeviceToken[]
+  ads                  Ad[]
+  adViews              AdView[]
+  adWishlists          AdWishlist[]
+  walletTransactions   WalletTransaction[]
+  providerProfile      ProviderProfile?
+  serviceBookings      ServiceBooking[]
+  /// As a company (ADMIN): its professionals, areas and the bookings in them.
+  companyProfessionals Professional[]         @relation("CompanyProfessionals")
+  companyLocations     ServiceLocation[]      @relation("CompanyLocations")
+  companyBookings      ServiceBooking[]       @relation("CompanyBookings")
+  professionalsDecided Professional[]         @relation("ProfessionalsDecided")
+  changesRequested     ServiceChangeRequest[] @relation("ChangesRequested")
+  changesDecided       ServiceChangeRequest[] @relation("ChangesDecided")
+  adminModules         AdminModuleAccess[]
 
   @@index([deletedAt])
   @@index([deletedAt, createdAt])
@@ -736,7 +753,7 @@ enum ProviderStatus {
 }
 
 /// A service provider's business profile. Created by registration (PENDING),
-/// then admin-verified (which grants the PROVIDER role). `isAvailable` is the
+/// then admin-verified. `isAvailable` is the
 /// online toggle. Rating/earnings/job aggregates are stored display values
 /// until a real jobs ledger exists (mirrors the seeded values on `Service`).
 /// `scheduleDays` is a 7-element JSON array of booleans (Mon→Sun availability).
@@ -822,6 +839,10 @@ model AdOrder {
   /// Tax on `amount + feesAmount`. Separate from the fees so a receipt can
   /// show what it always showed.
   taxAmount     Decimal @default(0) @db.Decimal(10, 2)
+  /// How the buyer paid: wallet, card, upi, cash… Null for an enquiry or an
+  /// order from an older app. A wallet order is debited when placed and
+  /// refunded when cancelled.
+  paymentMethod String? @db.VarChar(20)
   serviceName   String
 
   scheduledAt    DateTime?
@@ -1110,48 +1131,94 @@ model ServiceChangeRequest {
 /// An area customers can book in. A booking is matched to the nearest active
 /// area whose radius covers the address, or whose pincode the address carries.
 model ServiceLocation {
-  id       String  @id @default(uuid(7)) @db.Char(36)
-  area     String
-  district String
-  pincode  String  @db.VarChar(10)
-  radiusKm Int     @default(5)
+  id        String  @id @default(uuid(7)) @db.Char(36)
+  area      String
+  district  String
+  pincode   String  @db.VarChar(10)
+  radiusKm  Int     @default(5)
   /// Centre of the area, geocoded when the admin saves it. Null when that
   /// failed, in which case only the pincode matches.
-  lat      Float?
-  lng      Float?
-  active   Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  professionals Professional[]
-  bookings      ServiceBooking[]
-
-  @@map("service_locations")
-}
-
-/// One of ELK's own cleaners or technicians. Not an app account: the admin
-/// assigns them to bookings and calls them.
-model Professional {
-  id              String           @id @default(uuid(7)) @db.Char(36)
-  name            String
-  phone           String           @db.VarChar(20)
-  experienceYears Int              @default(0)
-  skills          String           @default("")
-  locationId      String?          @db.Char(36)
-  location        ServiceLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  onDuty          Boolean          @default(true)
-  /// The app account that signs in with this phone.
-  userId          String?          @unique @db.Char(36)
-  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lat       Float?
+  lng       Float?
+  active    Boolean @default(true)
+  /// The company (ADMIN) serving this area. Null for an area nobody owns; it
+  /// takes no bookings.
+  companyId String? @db.Char(36)
+  company   User?   @relation("CompanyLocations", fields: [companyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   bookings ServiceBooking[]
 
-  @@index([locationId])
+  @@index([companyId])
+  @@map("service_locations")
+}
+
+/// One of ELK's own cleaners or technicians. Not an app account: the admin
+/// assigns them to bookings and calls them.
+/// Someone a company sends to do the work. Not an app account: they are told
+/// about a job by WhatsApp. Phone and email are not unique, because one person
+/// can work for two companies.
+model Professional {
+  id              String             @id @default(uuid(7)) @db.Char(36)
+  companyId       String             @db.Char(36)
+  company         User               @relation("CompanyProfessionals", fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  /// E.164, e.g. +919876543210. WhatsApp messages go here.
+  phone           String             @db.VarChar(20)
+  email           String             @db.VarChar(190)
+  experienceYears Int                @default(0)
+  status          ProfessionalStatus @default(PENDING)
+  decidedById     String?            @db.Char(36)
+  decidedBy       User?              @relation("ProfessionalsDecided", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt       DateTime?
+  /// The super admin's reason, shown to the company when rejected.
+  note            String             @default("") @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  categories       ProfessionalCategory[]
+  bookings         ServiceBooking[]
+  whatsappMessages WhatsappMessage[]
+
+  @@index([companyId, status])
+  @@index([status, createdAt])
   @@map("professionals")
+}
+
+/// A service tile a professional does, e.g. `bth` (bathroom) or `plm` (plumbing).
+model ProfessionalCategory {
+  professionalId String       @db.Char(36)
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  category       String       @db.VarChar(20)
+
+  @@id([professionalId, category])
+  @@index([category])
+  @@map("professional_categories")
+}
+
+/// Every WhatsApp sent to a professional about a job, sent or not.
+model WhatsappMessage {
+  id                String         @id @default(uuid(7)) @db.Char(36)
+  bookingId         String         @db.Char(36)
+  booking           ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  professionalId    String?        @db.Char(36)
+  professional      Professional?  @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+  toPhone           String         @db.VarChar(20)
+  template          String         @db.VarChar(100)
+  status            WhatsappStatus
+  /// WhatsApp's message id (wamid…), when it was accepted.
+  providerMessageId String?        @db.VarChar(200)
+  error             String?        @db.Text
+  /// The admin who pressed Assign or Resend.
+  sentById          String         @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+  @@map("whatsapp_messages")
 }
 
 /// A percentage discount a customer enters at checkout.
@@ -1214,8 +1281,14 @@ model ServiceBooking {
   locationId   String?          @db.Char(36)
   location     ServiceLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
-  professionalId String?       @db.Char(36)
-  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+  /// The company whose area the address fell in, when booked.
+  companyId         String?       @db.Char(36)
+  company           User?         @relation("CompanyBookings", fields: [companyId], references: [id], onDelete: SetNull)
+  professionalId    String?       @db.Char(36)
+  professional      Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+  /// Copied on assignment, so history reads the same after a professional is removed.
+  professionalName  String?       @db.VarChar(191)
+  professionalPhone String?       @db.VarChar(20)
 
   status          ServiceBookingStatus @default(PENDING)
   baseAmount      Decimal              @db.Decimal(10, 2)
@@ -1223,6 +1296,9 @@ model ServiceBooking {
   discountAmount  Decimal              @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal              @db.Decimal(10, 2)
   promoCode       String?              @db.VarChar(20)
+  /// card, apple or wallet. A wallet booking is debited when made and
+  /// refunded when cancelled.
+  paymentMethod   String               @default("card") @db.VarChar(20)
 
   confirmedAt DateTime?
   startedAt   DateTime?
@@ -1231,8 +1307,11 @@ model ServiceBooking {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  whatsappMessages WhatsappMessage[]
+
   @@index([userId])
   @@index([status, scheduledDate])
   @@index([professionalId])
+  @@index([companyId, status])
   @@map("service_bookings")
 }

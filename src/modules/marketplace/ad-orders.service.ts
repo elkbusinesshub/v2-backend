@@ -11,6 +11,7 @@ import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import type { AuthUser } from '@/common/types/auth.types';
 import { displayDate } from '@/common/utils/display-date';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import { AdOrdersRepository, type AdOrderRow } from './ad-orders.repository';
 import {
   type HourlyQuote,
@@ -59,6 +60,7 @@ export class AdOrdersService {
     private readonly cleaningPricing: CleaningPricingService,
     private readonly repairPricing: RepairPricingService,
     private readonly access: AdminAccessService,
+    private readonly wallet: WalletService,
   ) {}
 
   /** A buyer orders a listing. */
@@ -90,37 +92,49 @@ export class AdOrdersService {
 
     const quantity = dto.quantity ?? 1;
     const hourly = await this.hourlyQuote(ad, dto);
-    const order = await this.orders.create({
-      code: `ELK-A-${this.randomCode()}`,
-      adId: ad.id,
-      buyerId: user.id,
-      // Snapshotted, not joined: a listing that changes hands or is repriced
-      // must not rewrite who was owed what for work already ordered.
-      sellerId: ad.sellerId,
-      // Computed here, never taken from the client — the buyer's device does
-      // not get to say what it owes. An enquiry costs nothing: asking to view
-      // a room is not the same as taking it for a month.
-      amount: dto.isEnquiry ? 0 : (hourly?.amount ?? Number(ad.price) * quantity),
-      isEnquiry: dto.isEnquiry ?? false,
-      quantity,
-      serviceName: ad.title,
-      addressText: dto.addressText,
-      lat: dto.lat ?? null,
-      lng: dto.lng ?? null,
-      contactPhone: dto.contactPhone,
-      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
-      endAt: dto.endAt ? new Date(dto.endAt) : null,
-      durationMonths: dto.durationMonths ?? null,
-      depositAmount: dto.depositAmount ?? null,
-      feesAmount: hourly?.feesAmount ?? dto.feesAmount ?? 0,
-      hours: hourly ? dto.hours : null,
-      professionals: hourly ? dto.professionals : null,
-      withMaterials:
-        hourly && ad.categorySlug === 'cleaning' ? (dto.withMaterials ?? false) : false,
-      withParts: hourly && ad.categorySlug === 'repairing' ? (dto.withParts ?? false) : false,
-      taxAmount: dto.taxAmount ?? 0,
-      note: dto.note ?? null,
-    });
+    // Computed here, never taken from the client — the buyer's device does
+    // not get to say what it owes. An enquiry costs nothing: asking to view
+    // a room is not the same as taking it for a month.
+    const amount = dto.isEnquiry ? 0 : (hourly?.amount ?? Number(ad.price) * quantity);
+    const feesAmount = hourly?.feesAmount ?? dto.feesAmount ?? 0;
+    const taxAmount = dto.taxAmount ?? 0;
+    const paymentMethod = dto.isEnquiry ? null : (dto.paymentMethod ?? null);
+    const total = amount + feesAmount + taxAmount;
+    const paid = await this.wallet.payForBooking(user.id, paymentMethod, total, ad.title);
+    const order = await this.orders
+      .create({
+        code: `ELK-A-${this.randomCode()}`,
+        adId: ad.id,
+        buyerId: user.id,
+        // Snapshotted, not joined: a listing that changes hands or is repriced
+        // must not rewrite who was owed what for work already ordered.
+        sellerId: ad.sellerId,
+        amount,
+        isEnquiry: dto.isEnquiry ?? false,
+        quantity,
+        serviceName: ad.title,
+        addressText: dto.addressText,
+        lat: dto.lat ?? null,
+        lng: dto.lng ?? null,
+        contactPhone: dto.contactPhone,
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        endAt: dto.endAt ? new Date(dto.endAt) : null,
+        durationMonths: dto.durationMonths ?? null,
+        depositAmount: dto.depositAmount ?? null,
+        feesAmount,
+        hours: hourly ? dto.hours : null,
+        professionals: hourly ? dto.professionals : null,
+        withMaterials:
+          hourly && ad.categorySlug === 'cleaning' ? (dto.withMaterials ?? false) : false,
+        withParts: hourly && ad.categorySlug === 'repairing' ? (dto.withParts ?? false) : false,
+        taxAmount,
+        paymentMethod,
+        note: dto.note ?? null,
+      })
+      .catch(async (err: unknown) => {
+        if (paid) await this.wallet.refundBooking(user.id, paymentMethod, total, ad.title);
+        throw err;
+      });
 
     // The seller has no live connection to the panel, so this is the only way
     // they learn an order arrived. Failure must not fail the order.
@@ -220,11 +234,26 @@ export class AdOrdersService {
     }
 
     const now = new Date();
-    const updated = await this.orders.updateStatus(id, next, {
+    const updated = await this.orders.updateStatus(id, order.status, next, {
       ...(next === AdOrderStatus.IN_PROGRESS ? { acceptedAt: now } : {}),
       ...(next === AdOrderStatus.COMPLETED ? { completedAt: now } : {}),
       ...(next === AdOrderStatus.CANCELLED ? { cancelledAt: now } : {}),
     });
+    if (!updated) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'INVALID_TRANSITION',
+        'This order just changed. Refresh and try again.',
+      );
+    }
+    if (next === AdOrderStatus.CANCELLED) {
+      await this.wallet.refundBooking(
+        updated.buyerId,
+        updated.paymentMethod,
+        Number(updated.amount) + Number(updated.feesAmount) + Number(updated.taxAmount),
+        updated.serviceName,
+      );
+    }
 
     // The other party is the one who needs telling; whoever made the change
     // already knows.

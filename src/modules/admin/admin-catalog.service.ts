@@ -1,10 +1,11 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
+  ProfessionalStatus,
+  ServiceVertical,
   type HomeService,
   type PromoCode,
   type ServiceLocation,
-  type ServiceVertical,
 } from '@prisma/client';
 import {
   DomainException,
@@ -13,6 +14,7 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import { isoDay } from '@/modules/home-services/home-services.mapper';
+import { HomeServicesRepository } from '@/modules/home-services/home-services.repository';
 import { SERVICE_CATEGORIES, todayInIndia } from '@/modules/home-services/home-services.rules';
 import { PlacesService } from '@/modules/places/places.service';
 import type {
@@ -25,7 +27,6 @@ import type {
   CreatePromoCodeDto,
   CreateServiceDto,
   PendingChangeDto,
-  ProfessionalStatus,
   PromoState,
   UpdateLocationDto,
   UpdateProfessionalDto,
@@ -53,6 +54,7 @@ export class AdminCatalogService {
     private readonly repo: AdminRepository,
     private readonly changes: ServiceChangeRepository,
     private readonly places: PlacesService,
+    private readonly bookings: HomeServicesRepository,
   ) {}
 
   // ── services ──────────────────────────────────────────────────────────────
@@ -205,29 +207,35 @@ export class AdminCatalogService {
   }
 
   // ── locations ─────────────────────────────────────────────────────────────
+  // Each company has its own areas; a booking goes to the company whose area
+  // covers the customer's address.
 
-  async locations(): Promise<AdminLocationDto[]> {
-    const [locations, pros, pending] = await Promise.all([
-      this.repo.locations(),
-      this.repo.professionalsByLocation(),
-      this.repo.pendingByLocation(),
+  async locations(companyId: string): Promise<AdminLocationDto[]> {
+    const [locations, pending] = await Promise.all([
+      this.repo.locations(companyId),
+      this.repo.pendingByLocation(companyId),
     ]);
-    return locations.map((l) => this.locationJson(l, pros.get(l.id) ?? 0, pending.get(l.id) ?? 0));
+    return locations.map((l) => this.locationJson(l, pending.get(l.id) ?? 0));
   }
 
-  async createLocation(dto: CreateLocationDto): Promise<AdminLocationDto> {
+  async createLocation(companyId: string, dto: CreateLocationDto): Promise<AdminLocationDto> {
     const centre = await this.geocode(dto.area, dto.district, dto.pincode);
     const created = await this.repo.createLocation({
       ...dto,
+      companyId,
       active: dto.active ?? true,
       lat: centre?.lat ?? null,
       lng: centre?.lng ?? null,
     });
-    return this.locationJson(created, 0, 0);
+    return this.locationJson(created, 0);
   }
 
-  async updateLocation(id: string, dto: UpdateLocationDto): Promise<AdminLocationDto> {
-    const current = await this.repo.location(id);
+  async updateLocation(
+    companyId: string,
+    id: string,
+    dto: UpdateLocationDto,
+  ): Promise<AdminLocationDto> {
+    const current = await this.repo.location(id, companyId);
     if (!current) throw new ResourceNotFoundException('Location');
     const moved =
       (dto.area !== undefined && dto.area !== current.area) ||
@@ -247,11 +255,8 @@ export class AdminCatalogService {
       lat: centre?.lat ?? null,
       lng: centre?.lng ?? null,
     });
-    const [pros, pending] = await Promise.all([
-      this.repo.professionalsByLocation(),
-      this.repo.pendingByLocation(),
-    ]);
-    return this.locationJson(updated, pros.get(id) ?? 0, pending.get(id) ?? 0);
+    const pending = await this.repo.pendingByLocation(companyId);
+    return this.locationJson(updated, pending.get(id) ?? 0);
   }
 
   /**
@@ -274,7 +279,7 @@ export class AdminCatalogService {
     }
   }
 
-  private locationJson(l: ServiceLocation, pros: number, pending: number): AdminLocationDto {
+  private locationJson(l: ServiceLocation, pending: number): AdminLocationDto {
     return {
       id: l.id,
       area: l.area,
@@ -283,50 +288,110 @@ export class AdminCatalogService {
       radiusKm: l.radiusKm,
       mapped: l.lat !== null && l.lng !== null,
       active: l.active,
-      professionals: pros,
       pendingBookings: pending,
     };
   }
 
   // ── professionals ─────────────────────────────────────────────────────────
+  // A company's own people. New ones, and ones whose phone or email changes,
+  // wait for the super admin before they can be assigned.
 
-  async professionals(): Promise<AdminProfessionalDto[]> {
+  async professionals(companyId: string): Promise<AdminProfessionalDto[]> {
     const [pros, onJob, today] = await Promise.all([
-      this.repo.professionals(),
-      this.repo.professionalsOnJob(),
-      this.repo.jobsOnDay(new Date(`${todayInIndia()}T00:00:00.000Z`)),
+      this.repo.professionals(companyId),
+      this.repo.professionalsOnJob(companyId),
+      this.repo.jobsOnDay(companyId, new Date(`${todayInIndia()}T00:00:00.000Z`)),
     ]);
     return pros.map((p) => this.professionalJson(p, onJob.has(p.id), today.get(p.id) ?? 0));
   }
 
-  async createProfessional(dto: CreateProfessionalDto): Promise<AdminProfessionalDto> {
-    await this.checkLocation(dto.locationId);
+  /** The approved professionals who can take a booking, for its Assign list. */
+  async assignableFor(
+    companyId: string,
+    bookingId: string,
+    verticals: ServiceVertical[],
+  ): Promise<AdminProfessionalDto[]> {
+    const booking = await this.bookings.findBooking(bookingId);
+    if (!booking || booking.companyId !== companyId) throw new ResourceNotFoundException('Booking');
+    assertVertical(booking.vertical, verticals);
+    return this.assignable(companyId, booking.category);
+  }
+
+  private async assignable(companyId: string, category: string): Promise<AdminProfessionalDto[]> {
+    const [pros, onJob, today] = await Promise.all([
+      this.repo.approvedFor(companyId, category),
+      this.repo.professionalsOnJob(companyId),
+      this.repo.jobsOnDay(companyId, new Date(`${todayInIndia()}T00:00:00.000Z`)),
+    ]);
+    return pros.map((p) => this.professionalJson(p, onJob.has(p.id), today.get(p.id) ?? 0));
+  }
+
+  async createProfessional(
+    companyId: string,
+    dto: CreateProfessionalDto,
+    verticals: ServiceVertical[],
+  ): Promise<AdminProfessionalDto> {
+    const categories = this.checkCategories(dto.categories, verticals);
     const created = await this.repo.createProfessional(
-      { ...dto, locationId: dto.locationId ?? null, onDuty: dto.onDuty ?? true },
-      accountPhone(dto.phone),
+      {
+        companyId,
+        name: dto.name.trim(),
+        phone: toE164(dto.phone),
+        email: dto.email.trim().toLowerCase(),
+        experienceYears: dto.experienceYears ?? 0,
+      },
+      categories,
     );
-    if (created === 'PHONE_TAKEN') throw phoneTaken();
+    this.logger.log(`professional added, waiting for approval: ${created.id} by ${companyId}`);
     return this.professionalJson(created, false, 0);
   }
 
-  async updateProfessional(id: string, dto: UpdateProfessionalDto): Promise<AdminProfessionalDto> {
-    if (!(await this.repo.professional(id))) throw new ResourceNotFoundException('Professional');
-    await this.checkLocation(dto.locationId);
+  /**
+   * Name, experience and categories save straight away. A new phone or email
+   * sends an approved professional back for approval, since job messages go to
+   * them; any edit to a rejected one sends it back too, so it can be fixed.
+   */
+  async updateProfessional(
+    companyId: string,
+    id: string,
+    dto: UpdateProfessionalDto,
+    verticals: ServiceVertical[],
+  ): Promise<AdminProfessionalDto> {
+    const current = await this.repo.professional(id, companyId);
+    if (!current) throw new ResourceNotFoundException('Professional');
+    const categories = dto.categories && this.checkCategories(dto.categories, verticals);
+
+    const phone = dto.phone === undefined ? undefined : toE164(dto.phone);
+    const email = dto.email === undefined ? undefined : dto.email.trim().toLowerCase();
+    const contactChanged =
+      (phone !== undefined && phone !== current.phone) ||
+      (email !== undefined && email !== current.email);
+    const resubmit =
+      current.status === ProfessionalStatus.REJECTED ||
+      (current.status === ProfessionalStatus.APPROVED && contactChanged);
+
     const updated = await this.repo.updateProfessional(
       id,
-      dto,
-      dto.phone === undefined ? undefined : accountPhone(dto.phone),
+      {
+        name: dto.name?.trim(),
+        phone,
+        email,
+        experienceYears: dto.experienceYears,
+        ...(resubmit
+          ? { status: ProfessionalStatus.PENDING, decidedById: null, decidedAt: null, note: '' }
+          : {}),
+      },
+      categories,
     );
-    if (updated === 'PHONE_TAKEN') throw phoneTaken();
     const [onJob, today] = await Promise.all([
-      this.repo.professionalsOnJob(),
-      this.repo.jobsOnDay(new Date(`${todayInIndia()}T00:00:00.000Z`)),
+      this.repo.professionalsOnJob(companyId),
+      this.repo.jobsOnDay(companyId, new Date(`${todayInIndia()}T00:00:00.000Z`)),
     ]);
     return this.professionalJson(updated, onJob.has(id), today.get(id) ?? 0);
   }
 
-  async deleteProfessional(id: string): Promise<void> {
-    const pro = await this.repo.professional(id);
+  async deleteProfessional(companyId: string, id: string): Promise<void> {
+    const pro = await this.repo.professional(id, companyId);
     if (!pro) throw new ResourceNotFoundException('Professional');
     if (await this.repo.hasActiveAssignments(id)) {
       throw new DomainException(
@@ -338,10 +403,16 @@ export class AdminCatalogService {
     await this.repo.deleteProfessional(id);
   }
 
-  private async checkLocation(locationId: string | null | undefined): Promise<void> {
-    if (locationId && !(await this.repo.location(locationId))) {
-      throw new ResourceNotFoundException('Location');
+  /** Categories must be service tiles of the verticals the admin runs. */
+  private checkCategories(categories: string[], verticals: ServiceVertical[]): string[] {
+    const allowed = new Set(verticals.flatMap((v) => SERVICE_CATEGORIES[v]));
+    const unknown = categories.filter((c) => !allowed.has(c));
+    if (unknown.length > 0) {
+      throw new ValidationFailedException([
+        { field: 'categories', message: `Not a category you run: ${unknown.join(', ')}` },
+      ]);
     }
+    return [...new Set(categories)];
   }
 
   private professionalJson(
@@ -349,16 +420,16 @@ export class AdminCatalogService {
     onJob: boolean,
     jobsToday: number,
   ): AdminProfessionalDto {
-    const status: ProfessionalStatus = !p.onDuty ? 'OFF_DUTY' : onJob ? 'ON_JOB' : 'AVAILABLE';
     return {
       id: p.id,
       name: p.name,
       phone: p.phone,
+      email: p.email,
       experienceYears: p.experienceYears,
-      skills: p.skills,
-      location: p.location,
-      onDuty: p.onDuty,
-      status,
+      categories: p.categories.map((c) => c.category).sort(),
+      status: p.status,
+      note: p.note,
+      activity: onJob ? 'ON_JOB' : 'AVAILABLE',
       jobsToday,
     };
   }
@@ -439,16 +510,8 @@ export class AdminCatalogService {
   }
 }
 
-/** "+91 98765 43210" (as the panel stores it) → "+919876543210", the account's phone. */
-export function accountPhone(phone: string): string {
+/** "+91 98765 43210" or "9876543210" → "+919876543210". 10 digits are Indian. */
+export function toE164(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   return digits.length === 10 ? `+91${digits}` : `+${digits}`;
-}
-
-function phoneTaken(): DomainException {
-  return new DomainException(
-    HttpStatus.CONFLICT,
-    'CONFLICT',
-    'Another professional already uses this phone number',
-  );
 }

@@ -75,9 +75,6 @@ describe('ProviderService', () => {
             updateProfile: jest
               .fn()
               .mockImplementation((_id, data) => Promise.resolve({ ...profile, ...data })),
-            setStatusAndRole: jest
-              .fn()
-              .mockResolvedValue({ ...profile, status: ProviderStatus.VERIFIED }),
             sellerActivity: jest.fn().mockResolvedValue(activity),
           },
         },
@@ -231,22 +228,19 @@ describe('ProviderService', () => {
   });
 
   describe('verify (admin)', () => {
-    it('grants the PROVIDER role on verification', async () => {
+    it('marks the profile verified, without touching the account’s role', async () => {
       providers.findProfileByUser.mockResolvedValue({ ...profile, status: ProviderStatus.PENDING });
-      await service.verify('u-1', { decision: 'verified' });
-      expect(providers.setStatusAndRole).toHaveBeenCalledWith(
-        'pp-1',
-        'u-1',
-        'VERIFIED',
-        UserType.PROVIDER,
-      );
+      const result = await service.verify('u-1', { decision: 'verified' });
+      expect(result.status).toBe('verified');
+      expect(providers.updateProfile).toHaveBeenCalledWith('pp-1', {
+        status: ProviderStatus.VERIFIED,
+      });
     });
 
-    it('rejects without granting a role', async () => {
+    it('marks the profile rejected', async () => {
       providers.findProfileByUser.mockResolvedValue({ ...profile, status: ProviderStatus.PENDING });
       const result = await service.verify('u-1', { decision: 'rejected' });
       expect(result.status).toBe('rejected');
-      expect(providers.setStatusAndRole).not.toHaveBeenCalled();
     });
 
     it('404s an unknown provider profile', async () => {

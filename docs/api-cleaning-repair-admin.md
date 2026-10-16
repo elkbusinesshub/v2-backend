@@ -157,7 +157,8 @@ Request:
   "date": "2026-10-02",
   "timeSlot": "11:00",
   "addressId": "01a0…",
-  "promoCode": "WELCOME15"
+  "promoCode": "WELCOME15",
+  "paymentMethod": "wallet"
 }
 ```
 
@@ -171,6 +172,9 @@ Request:
 | `timeSlot`      | `HH:MM`. The app offers 09:00, 11:00, 13:00, 15:00, 17:00, 19:00           |
 | `addressId`     | One of the caller's saved addresses (`/locations`)                         |
 | `promoCode`     | Optional. A code that doesn't apply rejects the whole booking (see errors) |
+| `paymentMethod` | Optional. `card` (default), `apple` or `wallet`                            |
+
+With `wallet`, the total is debited from the customer's ELK Wallet as the booking is made (`402 INSUFFICIENT_BALANCE` if it can't cover it) and refunded when the customer or the company cancels. Taxi, porter and marketplace orders work the same way.
 
 The address must fall inside an active service location. That means either within the location's radius of its centre, or carrying its pincode in the address text. Its flat number and building are included in the booking's `addressText`, and its directions are copied onto the booking.
 
@@ -209,6 +213,7 @@ Response `data`: a **booking**, the same shape the admin sees:
   "discountAmount": 300,
   "totalAmount": 1793,
   "promoCode": "WELCOME15",
+  "paymentMethod": "wallet",
   "createdAt": "2026-09-28T07:40:12.000Z"
 }
 ```
@@ -362,10 +367,13 @@ Shape:
 
 ### Professionals
 
+A company's own people (each ADMIN account is a company). They are **not app users**: each job is sent to them on WhatsApp. A new professional, or one whose phone or email changes, waits for the super admin's approval (see [Super admin](#super-admin)) and can't be assigned until then.
+
 | Method | Path                       | Body                           | Returns                                                                  |
 | ------ | -------------------------- | ------------------------------ | ------------------------------------------------------------------------ |
-| GET    | `/admin/professionals`     | none                           | all professionals                                                        |
-| POST   | `/admin/professionals`     | professional (below)           | 201, the professional                                                    |
+| GET    | `/admin/me`                | none                           | `{ "modules": ["CLEAN", "REPAIR"] }`: what this admin runs               |
+| GET    | `/admin/professionals`     | none                           | the company's professionals                                              |
+| POST   | `/admin/professionals`     | professional (below)           | 201, the professional, `status: PENDING`                                 |
 | PATCH  | `/admin/professionals/:id` | any fields of the professional | the professional                                                         |
 | DELETE | `/admin/professionals/:id` | none                           | 204; 409 `HAS_ASSIGNMENTS` while they have confirmed or in-progress jobs |
 
@@ -373,40 +381,44 @@ Body:
 
 ```json
 {
-  "name": "Anil Kumar",
-  "phone": "+91 98470 21456",
-  "experienceYears": 5,
-  "skills": "Home, Bathroom",
-  "locationId": "…",
-  "onDuty": true
+  "name": "Ravi Kumar",
+  "phone": "98460 00001",
+  "email": "ravi@example.com",
+  "categories": ["cln", "deep"],
+  "experienceYears": 5
 }
 ```
 
-`locationId` may be `null` for no base location.
+**Field rules:**
+
+| Field        | Rule                                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| `phone`      | Required. 10 digits are read as Indian and stored as `+919846000001`. WhatsApp goes here.              |
+| `email`      | Required. Stored lower-case.                                                                           |
+| `categories` | At least one service tile of a vertical the admin runs (cleaning: `cln`, `bth`…; repair: `plm`, `ac`…) |
+| phone, email | **Not unique**: the same person can work for two companies                                             |
+
+**Editing:** name, experience and categories save straight away. A new phone or email sends an approved professional back to `PENDING`. Any edit to a `REJECTED` one sends it back to `PENDING` too.
 
 Shape:
 
 ```json
 {
   "id": "…",
-  "name": "Anil Kumar",
-  "phone": "+91 98470 21456",
+  "name": "Ravi Kumar",
+  "phone": "+919846000001",
+  "email": "ravi@example.com",
   "experienceYears": 5,
-  "skills": "Home, Bathroom",
-  "location": { "id": "…", "area": "Koramangala", "district": "Bengaluru" },
-  "onDuty": true,
-  "status": "AVAILABLE",
-  "jobsToday": 2
+  "categories": ["cln", "deep"],
+  "status": "PENDING",
+  "note": "",
+  "activity": "AVAILABLE",
+  "jobsToday": 0
 }
 ```
 
-`status`:
-
-| Value       | Meaning                             |
-| ----------- | ----------------------------------- |
-| `AVAILABLE` | On duty and not on a job            |
-| `ON_JOB`    | On duty, with a booking in progress |
-| `OFF_DUTY`  | Switched off duty                   |
+- `status`: `PENDING`, `APPROVED` or `REJECTED`. `note` is the super admin's reason when rejected.
+- `activity`: `ON_JOB` while one of their bookings is in progress, otherwise `AVAILABLE`.
 
 ### Promo codes
 
@@ -446,11 +458,100 @@ Shape adds `state`, which is `ACTIVE`, `INACTIVE` or `EXPIRED`.
 
 ### Bookings
 
-| Method | Path                             | Body                          | Returns                                                 |
-| ------ | -------------------------------- | ----------------------------- | ------------------------------------------------------- |
-| GET    | `/admin/bookings?status=PENDING` | none                          | up to 500 bookings, newest day first; `status` optional |
-| PATCH  | `/admin/bookings/:id/assign`     | `{ "professionalId": "…" }`   | the booking, now `CONFIRMED`                            |
-| PATCH  | `/admin/bookings/:id/status`     | `{ "status": "IN_PROGRESS" }` | the booking                                             |
+A customer's booking goes to the **company whose service area covers the address**: an active area, of a company that is still an ADMIN and runs that vertical. When several match, the area whose centre is nearest wins. A company only ever sees its own bookings.
+
+| Method | Path                                | Body                          | Returns                                                                  |
+| ------ | ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/admin/bookings?status=PENDING`    | none                          | up to 500 of the company's bookings, newest day first; `status` optional |
+| GET    | `/admin/bookings/:id/professionals` | none                          | the company's **approved** professionals who do this booking's service   |
+| PATCH  | `/admin/bookings/:id/assign`        | `{ "professionalId": "…" }`   | the booking, now `CONFIRMED`, with `whatsapp`                            |
+| POST   | `/admin/bookings/:id/whatsapp`      | none                          | sends the job to the assigned professional again; the booking            |
+| PATCH  | `/admin/bookings/:id/status`        | `{ "status": "IN_PROGRESS" }` | the booking                                                              |
+
+**Assign:**
+
+- Works from `PENDING`, which it confirms, or from `CONFIRMED`, which reassigns.
+- The professional must be the company's, `APPROVED` (otherwise 409 `NOT_APPROVED`), and do the booking's service (otherwise 409 `WRONG_CATEGORY`).
+- The professional is sent the job on WhatsApp (see [WhatsApp](#whatsapp-job-message)). The assignment stands even if that fails.
+
+Every booking in these responses carries the last WhatsApp sent about it:
+
+```json
+"whatsapp": { "status": "SENT", "to": "+919846000001", "sentAt": "2026-10-14T05:32:32.136Z", "error": null }
+```
+
+`status` is `SENT`, `FAILED` (with `error`, e.g. `401 190 Invalid OAuth access token`) or `SKIPPED` (WhatsApp is switched off). `whatsapp` is `null` before anyone was assigned.
+
+**Status:** allowed moves:
+
+| From          | To                                                                              |
+| ------------- | ------------------------------------------------------------------------------- |
+| `PENDING`     | `CANCELLED`                                                                     |
+| `CONFIRMED`   | `IN_PROGRESS` (needs a professional, otherwise 409 `NOT_ASSIGNED`), `CANCELLED` |
+| `IN_PROGRESS` | `COMPLETED`                                                                     |
+
+Anything else is 409 `INVALID_TRANSITION`. The company admin moves the job on; professionals have no app.
+
+**Notifications:** the customer gets a push and in-app notification for:
+
+- assign ("Booking confirmed" / "Professional changed")
+- start
+- completion
+- cancellation
+
+### WhatsApp job message
+
+Sent with the WhatsApp Cloud API as an approved **template** (Meta only allows templates for business-started chats).
+
+| Setting                      | Meaning                                                     |
+| ---------------------------- | ----------------------------------------------------------- |
+| `WHATSAPP_ENABLED`           | `false` → nothing is sent; the message is logged, `SKIPPED` |
+| `WHATSAPP_PHONE_NUMBER_ID`   | From WhatsApp Manager → API setup                           |
+| `WHATSAPP_ACCESS_TOKEN`      | A permanent system-user token                               |
+| `WHATSAPP_TEMPLATE_NAME`     | The template's name, default `elk_job_assigned`             |
+| `WHATSAPP_TEMPLATE_LANGUAGE` | The template's language code, default `en`                  |
+| `WHATSAPP_API_VERSION`       | Graph API version, default `v21.0`                          |
+
+The template's body variables, in order:
+
+| Var      | Value                                   | Example                                                           |
+| -------- | --------------------------------------- | ----------------------------------------------------------------- |
+| `{{1}}`  | Professional's name                     | Ravi Kumar                                                        |
+| `{{2}}`  | Company name (the admin account's name) | Shine Home Services                                               |
+| `{{3}}`  | Service                                 | Home cleaning                                                     |
+| `{{4}}`  | Date                                    | Wed, 14 Oct 2026                                                  |
+| `{{5}}`  | Arrival time                            | 11:00 AM                                                          |
+| `{{6}}`  | Work                                    | 2 hours, 1 person, bring cleaning materials                       |
+| `{{7}}`  | Customer's name                         | Priya Menon                                                       |
+| `{{8}}`  | Customer's phone                        | +912222222222                                                     |
+| `{{9}}`  | Address                                 | Home - Flat 4B, Skyline Apartments, Kakkanad, Kochi 682030        |
+| `{{10}}` | Google Maps link to the customer's pin  | https://www.google.com/maps/search/?api=1&query=10.0159%2C76.3419 |
+| `{{11}}` | Customer's note, or "None"              | Second tower on the left. Call when you reach the gate.           |
+| `{{12}}` | Booking ID                              | ELK-S-DEMO2                                                       |
+
+Every send is recorded in `whatsapp_messages`.
+
+### Super admin
+
+`SUPER_ADMIN` accounts only. A super admin can't use the `/admin/*` company routes.
+
+| Method | Path                                          | Body                                        | Returns                                                                |
+| ------ | --------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/admin/approvals/summary`                    | none                                        | `{ waiting, professionals, newServices, priceChanges }`                |
+| GET    | `/admin/approvals/professionals?view=pending` | none                                        | professionals waiting (oldest first), or `view=decided` for history    |
+| POST   | `/admin/approvals/professionals/:id/approve`  | none                                        | the professional, `APPROVED`; 409 `ALREADY_DECIDED` if already decided |
+| POST   | `/admin/approvals/professionals/:id/reject`   | `{ "note": "…" }`                           | the professional, `REJECTED`, with the reason the company sees         |
+| GET    | `/admin/approvals?view=pending`               | none                                        | new services and price changes                                         |
+| POST   | `/admin/approvals/:id/approve` / `reject`     | reject: `{ "note" }`                        | the request                                                            |
+| GET    | `/admin/users?search=`                        | none                                        | users, newest first                                                    |
+| PATCH  | `/admin/users/:id/role`                       | `{ "role": "ADMIN", "modules": ["CLEAN"] }` | the user; an ADMIN needs at least one module                           |
+
+A professional in the approvals list shows the company that added them as `company: { id, name, phone }`.
+
+------ | -------------------------------- | ----------------------------- | ------------------------------------------------------- |
+| GET | `/admin/bookings?status=PENDING` | none | up to 500 bookings, newest day first; `status` optional |
+| PATCH | `/admin/bookings/:id/assign` | `{ "professionalId": "…" }` | the booking, now `CONFIRMED` |
+| PATCH | `/admin/bookings/:id/status` | `{ "status": "IN_PROGRESS" }` | the booking |
 
 **Assign:**
 

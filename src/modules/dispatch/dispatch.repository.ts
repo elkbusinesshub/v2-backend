@@ -39,6 +39,14 @@ export interface NearbyDriver {
   distanceKm: number;
 }
 
+/** What a refund needs to know about a request nobody took. */
+export interface ExpiredBooking {
+  userId: string;
+  code: string;
+  paymentMethod: string;
+  amount: number;
+}
+
 @Injectable()
 export class DispatchRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
@@ -166,20 +174,34 @@ export class DispatchRepository {
    * dispatch concern, and giving dispatch a callback into rides and porter
    * would make the module graph circular for one UPDATE each.
    */
-  async expireRideOffer(bookingId: string): Promise<boolean> {
+  async expireRideOffer(bookingId: string): Promise<ExpiredBooking | null> {
     const result = await this.db.rideBooking.updateMany({
       where: { id: bookingId, status: RideBookingStatus.SEARCHING },
       data: { status: RideBookingStatus.NO_DRIVERS },
     });
-    return result.count === 1;
+    if (result.count !== 1) return null;
+    const b = await this.db.rideBooking.findUniqueOrThrow({ where: { id: bookingId } });
+    return {
+      userId: b.userId,
+      code: b.code,
+      paymentMethod: b.paymentMethod,
+      amount: Number(b.fare),
+    };
   }
 
-  async expirePorterOffer(bookingId: string): Promise<boolean> {
+  async expirePorterOffer(bookingId: string): Promise<ExpiredBooking | null> {
     const result = await this.db.porterBooking.updateMany({
       where: { id: bookingId, status: PorterBookingStatus.SEARCHING },
       data: { status: PorterBookingStatus.NO_DRIVERS },
     });
-    return result.count === 1;
+    if (result.count !== 1) return null;
+    const b = await this.db.porterBooking.findUniqueOrThrow({ where: { id: bookingId } });
+    return {
+      userId: b.userId,
+      code: b.code,
+      paymentMethod: b.paymentMethod,
+      amount: Number(b.totalAmount),
+    };
   }
 
   /** Every service a user drives for — the panel shows one card per profile. */

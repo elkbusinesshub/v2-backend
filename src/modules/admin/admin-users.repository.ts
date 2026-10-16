@@ -40,11 +40,8 @@ export class AdminUsersRepository {
       this.db.user.count({ where }),
     ]);
   }
-  async user(id: string): Promise<(UserRow & { professional: { id: string } | null }) | null> {
-    return this.db.user.findFirst({
-      where: { id, deletedAt: null },
-      select: { ...userSelect, professional: { select: { id: true } } },
-    });
+  async user(id: string): Promise<UserRow | null> {
+    return this.db.user.findFirst({ where: { id, deletedAt: null }, select: userSelect });
   }
   /** Sets the role and, for an ADMIN, exactly [modules]; any other role holds none. */
   async setAccess(id: string, role: UserType, modules: AdminModule[]): Promise<UserRow> {

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ProviderStatus, UserType, type ProviderProfile } from '@prisma/client';
+import { ProviderStatus, type ProviderProfile } from '@prisma/client';
 import {
   DuplicateResourceException,
   ForbiddenResourceException,
@@ -98,14 +98,10 @@ export class ProviderService {
       return toProfileJson(rejected);
     }
 
-    const account = await this.users.findById(userId);
-    if (!account) {
-      throw new ResourceNotFoundException('User');
-    }
-    // A customer becomes a PROVIDER; an admin or professional keeps their role.
-    const role = account.userType === UserType.USER ? UserType.PROVIDER : account.userType;
-    const verified = await this.providers.setStatusAndRole(profile.id, userId, 'VERIFIED', role);
-    this.logger.log(`provider verified, PROVIDER role granted: user=${userId}`);
+    const verified = await this.providers.updateProfile(profile.id, {
+      status: ProviderStatus.VERIFIED,
+    });
+    this.logger.log(`provider verified: user=${userId}`);
     return toProfileJson(verified);
   }
 
@@ -129,9 +125,8 @@ export class ProviderService {
    * silently did nothing — the seller believed they were online while the
    * server had never heard of them.
    *
-   * The row this creates grants nothing. It stays `PENDING`, so the PROVIDER
-   * role still comes only from an admin verifying a real application; it
-   * exists to hold the duty flag and the working week.
+   * The row this creates stays `PENDING` until an admin verifies a real
+   * application; it exists to hold the duty flag and the working week.
    */
   private async ensureProfile(user: AuthUser): Promise<ProviderProfile> {
     const existing = await this.providers.findProfileByUser(user.id);

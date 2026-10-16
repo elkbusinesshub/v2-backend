@@ -2,6 +2,7 @@ import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { DriverService } from '@prisma/client';
 import type { Job, Queue } from 'bullmq';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import { OFFER_WINDOW_SECONDS } from './dispatch.constants';
 import { DispatchGateway } from './dispatch.gateway';
 import { DispatchRepository } from './dispatch.repository';
@@ -45,6 +46,7 @@ export class DispatchProcessor extends WorkerHost {
   constructor(
     private readonly drivers: DispatchRepository,
     private readonly gateway: DispatchGateway,
+    private readonly wallet: WalletService,
   ) {
     super();
   }
@@ -59,6 +61,12 @@ export class DispatchProcessor extends WorkerHost {
         : await this.drivers.expirePorterOffer(bookingId);
 
     if (!expired) return;
+    await this.wallet.refundBooking(
+      expired.userId,
+      expired.paymentMethod,
+      expired.amount,
+      expired.code,
+    );
 
     this.logger.log(`offer window closed unanswered: ${service} ${bookingId}`);
     this.gateway.emitTrip(bookingId, 'trip:no_drivers', {

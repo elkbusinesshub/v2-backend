@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { RideTypesRepository } from '@/modules/rides/ride-types.repository';
+import { WalletModule } from '@/modules/wallet/wallet.module';
 import { DispatchController } from './dispatch.controller';
 import { DispatchGateway } from './dispatch.gateway';
 import { DispatchRepository } from './dispatch.repository';
@@ -16,7 +17,7 @@ import { DispatchService } from './dispatch.service';
  * repositories carry no state of their own.
  */
 @Module({
-  imports: [BullModule.registerQueue({ name: DISPATCH_QUEUE })],
+  imports: [BullModule.registerQueue({ name: DISPATCH_QUEUE }), WalletModule],
   controllers: [DispatchController],
   providers: [
     DispatchService,

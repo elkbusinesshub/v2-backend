@@ -42,6 +42,16 @@ export const envSchema = z
     SMS_SENDER_ID: z.string().default('SGMOLN'),
     SMS_COUNTRY_CODE: z.string().default('+91'),
 
+    // WhatsApp Cloud API (Meta). Disabled → job messages are only logged.
+    // The template must be approved in WhatsApp Manager; its body variables
+    // are listed in src/modules/whatsapp/job-message.ts.
+    WHATSAPP_ENABLED: boolString('false'),
+    WHATSAPP_API_VERSION: z.string().default('v21.0'),
+    WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
+    WHATSAPP_ACCESS_TOKEN: z.string().default(''),
+    WHATSAPP_TEMPLATE_NAME: z.string().default('elk_job_assigned'),
+    WHATSAPP_TEMPLATE_LANGUAGE: z.string().default('en'),
+
     // Firebase Cloud Messaging. Disabled → notifications are still stored and
     // returned by GET /notifications, they just do not reach the device.
     PUSH_ENABLED: boolString('false'),
@@ -75,6 +85,17 @@ export const envSchema = z
   // is actually switched on, so local development needs no third-party
   // accounts at all.
   .superRefine((env, ctx) => {
+    if (env.WHATSAPP_ENABLED) {
+      for (const key of ['WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN'] as const) {
+        if (env[key].length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when WHATSAPP_ENABLED=true`,
+          });
+        }
+      }
+    }
     if (env.SMS_ENABLED) {
       for (const key of ['SMS_ACCESS_TOKEN', 'SMS_ACCESS_TOKEN_KEY'] as const) {
         if (env[key].length === 0) {

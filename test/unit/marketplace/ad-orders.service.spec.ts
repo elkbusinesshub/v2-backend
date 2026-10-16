@@ -9,6 +9,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import { AdOrdersRepository, type AdOrderRow } from '@/modules/marketplace/ad-orders.repository';
 import { AdOrdersService } from '@/modules/marketplace/ad-orders.service';
 import { CleaningPricingService } from '@/modules/marketplace/cleaning-pricing.service';
@@ -63,6 +64,7 @@ function order(overrides: Partial<AdOrderRow> = {}): AdOrderRow {
     quantity: 1,
     feesAmount: 0 as never,
     taxAmount: 0 as never,
+    paymentMethod: null,
     serviceName: 'Sofa Shampoo',
     lat: null,
     lng: null,
@@ -95,6 +97,7 @@ describe('AdOrdersService', () => {
   let notifications: jest.Mocked<NotificationsService>;
   let cleaningPricing: jest.Mocked<CleaningPricingService>;
   let repairPricing: jest.Mocked<RepairPricingService>;
+  let wallet: jest.Mocked<WalletService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -110,7 +113,7 @@ describe('AdOrdersService', () => {
             findOpenEnquiry: jest.fn().mockResolvedValue(null),
             updateStatus: jest
               .fn()
-              .mockImplementation((id, status) => Promise.resolve(order({ id, status }))),
+              .mockImplementation((id, _from, status) => Promise.resolve(order({ id, status }))),
             countsForSeller: jest.fn().mockResolvedValue({ NEW: 1 }),
           },
         },
@@ -134,6 +137,15 @@ describe('AdOrdersService', () => {
           provide: AdminAccessService,
           useValue: { canModerate: jest.fn().mockResolvedValue(false) },
         },
+        {
+          provide: WalletService,
+          useValue: {
+            payForBooking: jest.fn((_u: string, method: string) =>
+              Promise.resolve(method === 'wallet'),
+            ),
+            refundBooking: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -143,6 +155,7 @@ describe('AdOrdersService', () => {
     notifications = moduleRef.get(NotificationsService);
     cleaningPricing = moduleRef.get(CleaningPricingService);
     repairPricing = moduleRef.get(RepairPricingService);
+    wallet = moduleRef.get(WalletService);
   });
 
   describe('placing an order', () => {
@@ -377,6 +390,31 @@ describe('AdOrdersService', () => {
       );
     });
 
+    it('debits the wallet for the full total when the buyer pays with it', async () => {
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        feesAmount: 50,
+        taxAmount: 10,
+        paymentMethod: 'wallet',
+      });
+      expect(wallet.payForBooking).toHaveBeenCalledWith('u-buyer', 'wallet', 959, 'Sofa Shampoo');
+      expect(orders.create).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentMethod: 'wallet' }),
+      );
+    });
+
+    it('charges nothing for an enquiry, whatever method is sent', async () => {
+      await service.place(buyer, 'ad-1', {
+        addressText: '12, 5th Block',
+        contactPhone: '+919000000001',
+        isEnquiry: true,
+        paymentMethod: 'wallet',
+      });
+      expect(orders.create).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: null }));
+      expect(wallet.payForBooking).toHaveBeenCalledWith('u-buyer', null, 0, 'Sofa Shampoo');
+    });
+
     it('gives the order a unique-looking reference', async () => {
       await service.place(buyer, 'ad-1', {
         addressText: 'x',
@@ -431,6 +469,7 @@ describe('AdOrdersService', () => {
       expect(updated.status).toBe(AdOrderStatus.IN_PROGRESS);
       expect(orders.updateStatus).toHaveBeenCalledWith(
         'o-1',
+        AdOrderStatus.NEW,
         AdOrderStatus.IN_PROGRESS,
         expect.objectContaining({ acceptedAt: expect.any(Date) }),
       );
@@ -443,6 +482,7 @@ describe('AdOrdersService', () => {
 
       expect(orders.updateStatus).toHaveBeenCalledWith(
         'o-1',
+        AdOrderStatus.IN_PROGRESS,
         AdOrderStatus.COMPLETED,
         expect.objectContaining({ completedAt: expect.any(Date) }),
       );
@@ -461,6 +501,26 @@ describe('AdOrdersService', () => {
       await expect(
         service.setStatus(seller, 'o-1', AdOrderStatus.IN_PROGRESS),
       ).rejects.toBeInstanceOf(DomainException);
+    });
+
+    it('refunds a wallet-paid order when it is cancelled', async () => {
+      orders.updateStatus.mockResolvedValueOnce(
+        order({
+          status: AdOrderStatus.CANCELLED,
+          paymentMethod: 'wallet',
+          feesAmount: 50 as never,
+        }),
+      );
+      await service.setStatus(buyer, 'o-1', AdOrderStatus.CANCELLED);
+      expect(wallet.refundBooking).toHaveBeenCalledWith('u-buyer', 'wallet', 949, 'Sofa Shampoo');
+    });
+
+    it('refunds nothing when another cancel got there first', async () => {
+      orders.updateStatus.mockResolvedValueOnce(null);
+      await expect(service.setStatus(buyer, 'o-1', AdOrderStatus.CANCELLED)).rejects.toBeInstanceOf(
+        DomainException,
+      );
+      expect(wallet.refundBooking).not.toHaveBeenCalled();
     });
 
     it('lets the buyer cancel only before the seller starts', async () => {

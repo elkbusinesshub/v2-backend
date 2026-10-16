@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -15,6 +16,9 @@ import {
   Min,
 } from 'class-validator';
 import { MAX_HOURS, MAX_PROFESSIONALS } from './home-services.rules';
+
+/** The ways the cleaning and repair checkout lets a customer pay. */
+export const SERVICE_PAYMENT_METHODS = ['card', 'apple', 'wallet'] as const;
 
 export class ServicesQueryDto {
   @IsOptional()
@@ -89,6 +93,11 @@ export class CreateServiceBookingDto {
   @IsString()
   @MaxLength(20)
   promoCode?: string;
+
+  /** card or apple (mock charges for now), or wallet, which is debited. Defaults to card. */
+  @IsOptional()
+  @IsIn(SERVICE_PAYMENT_METHODS)
+  paymentMethod?: (typeof SERVICE_PAYMENT_METHODS)[number];
 }
 
 /** A booking, as both the customer and the admin see it. */
@@ -113,11 +122,13 @@ export class ServiceBookingDto {
   contactPhone!: string;
   customerName!: string;
   location!: { id: string; area: string; district: string; pincode: string } | null;
-  professional!: { id: string; name: string; phone: string } | null;
+  /** id is null when the professional has since been removed; name and phone stay. */
+  professional!: { id: string | null; name: string; phone: string } | null;
   baseAmount!: number;
   materialsAmount!: number;
   discountAmount!: number;
   totalAmount!: number;
   promoCode!: string | null;
+  paymentMethod!: string;
   createdAt!: string;
 }

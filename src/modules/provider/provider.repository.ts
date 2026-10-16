@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AdOrderStatus, type Prisma, type ProviderProfile, type UserType } from '@prisma/client';
+import { AdOrderStatus, type Prisma, type ProviderProfile } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
@@ -52,21 +52,6 @@ export class ProviderRepository {
     data: Prisma.ProviderProfileUncheckedUpdateInput,
   ): Promise<ProviderProfile> {
     return this.db.providerProfile.update({ where: { id }, data });
-  }
-
-  /** Verifies (or rejects) a provider and, on verify, grants the PROVIDER role — atomically. */
-  async setStatusAndRole(
-    profileId: string,
-    userId: string,
-    status: 'VERIFIED' | 'REJECTED',
-    userType: UserType,
-  ): Promise<ProviderProfile> {
-    return this.db.$transaction(async (tx) => {
-      if (status === 'VERIFIED') {
-        await tx.user.update({ where: { id: userId }, data: { userType } });
-      }
-      return tx.providerProfile.update({ where: { id: profileId }, data: { status } });
-    });
   }
 
   // ─── activity ──────────────────────────────────────────────────────────────

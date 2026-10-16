@@ -550,7 +550,7 @@ async function seedDemoUsers(): Promise<number> {
     { phone: '+971500000003', name: 'Asha Menon', userType: UserType.ADMIN },
     { phone: '+971500000004', name: 'Rahul Nair', userType: UserType.ADMIN },
     { phone: '+971500000001', name: 'Demo User', userType: UserType.USER },
-    { phone: '+971500000002', name: 'Demo Provider', userType: UserType.PROVIDER },
+    { phone: '+971500000002', name: 'Demo Seller', userType: UserType.USER },
   ];
 
   for (const { phone, name, userType } of demo) {
@@ -1217,24 +1217,22 @@ async function seedTestAccounts(): Promise<void> {
   );
 }
 
-// ─── Home-services professionals (demo) ──────────────────────────────────────
+// ─── Home-services company (demo) ────────────────────────────────────────────
 
 /**
- * Two professionals with jobs around today, and the customer who booked them,
- * so the professional's screens have something on every tab. Their phones are
- * test numbers (OTP_TEST_PHONES) — sign in with OTP_TEST_CODE.
- * The jobs are rewritten on every run, dated from today, so the demo never
- * goes stale.
+ * A company's professionals and jobs around today, so the admin dashboard has
+ * bookings waiting to be assigned and the super admin has a professional to
+ * approve. The company is the ADMIN with SEED_DEMO_COMPANY_PHONE, or else
+ * the oldest ADMIN; nothing is seeded when there is none. Jobs are rewritten on every run, dated from today.
  */
 const DEMO_PROFESSIONALS = [
-  {
-    phone: '+914444444444',
-    name: 'Suresh Babu',
-    years: 6,
-    skills: 'Home, Kitchen, Bathroom, Sofa',
-  },
-  { phone: '+913333333333', name: 'Meera Joseph', years: 3, skills: 'Plumbing, Electrical, AC' },
-];
+  // prettier-ignore
+  { name: 'Suresh Babu', phone: '+914444444444', email: 'suresh.babu@example.com', years: 6, status: 'APPROVED', categories: ['cln', 'deep', 'bth', 'kit', 'sof'] },
+  // prettier-ignore
+  { name: 'Meera Joseph', phone: '+913333333333', email: 'meera.joseph@example.com', years: 3, status: 'APPROVED', categories: ['plm', 'elc', 'ac'] },
+  // prettier-ignore
+  { name: 'Arjun Das', phone: '+918590000003', email: 'arjun.das@example.com', years: 2, status: 'PENDING', categories: ['cln', 'crp', 'tnk'] },
+] as const;
 const DEMO_CUSTOMER = { phone: '+912222222222', name: 'Priya Menon' };
 
 async function seedDemoProfessionals(): Promise<void> {
@@ -1243,11 +1241,26 @@ async function seedDemoProfessionals(): Promise<void> {
   if (process.env.SEED_TEST_ACCOUNTS !== 'true' && process.env.SEED_DEMO_PROFESSIONALS !== 'true') {
     return;
   }
+  // SEED_DEMO_COMPANY_PHONE picks the company; otherwise the oldest admin.
+  const companyPhone = process.env.SEED_DEMO_COMPANY_PHONE;
+  const company = await prisma.user.findFirst({
+    where: {
+      userType: UserType.ADMIN,
+      deletedAt: null,
+      ...(companyPhone ? { phone: companyPhone } : {}),
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!company) {
+    console.log('Skipped demo professionals: no ADMIN account to be their company');
+    return;
+  }
 
   const location =
-    (await prisma.serviceLocation.findFirst({ where: { active: true } })) ??
+    (await prisma.serviceLocation.findFirst({ where: { companyId: company.id, active: true } })) ??
     (await prisma.serviceLocation.create({
       data: {
+        companyId: company.id,
         area: 'Kakkanad',
         district: 'Ernakulam',
         pincode: '682030',
@@ -1257,28 +1270,28 @@ async function seedDemoProfessionals(): Promise<void> {
       },
     }));
 
-  const pros: string[] = [];
+  const pros: { id: string; name: string; phone: string }[] = [];
   for (const d of DEMO_PROFESSIONALS) {
-    const user = await prisma.user.upsert({
-      where: { phone: d.phone },
-      update: { name: d.name, userType: UserType.PROFESSIONAL },
-      create: { phone: d.phone, name: d.name, userType: UserType.PROFESSIONAL },
+    const existing = await prisma.professional.findFirst({
+      where: { companyId: company.id, phone: d.phone },
     });
-    const digits = d.phone.slice(-10);
     const data = {
       name: d.name,
-      phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`,
+      email: d.email,
       experienceYears: d.years,
-      skills: d.skills,
-      locationId: location.id,
-      onDuty: true,
+      status: d.status,
+      decidedAt: d.status === 'APPROVED' ? new Date() : null,
     };
-    const pro = await prisma.professional.upsert({
-      where: { userId: user.id },
-      update: data,
-      create: { ...data, userId: user.id },
+    const pro = existing
+      ? await prisma.professional.update({ where: { id: existing.id }, data })
+      : await prisma.professional.create({
+          data: { ...data, companyId: company.id, phone: d.phone },
+        });
+    await prisma.professionalCategory.deleteMany({ where: { professionalId: pro.id } });
+    await prisma.professionalCategory.createMany({
+      data: d.categories.map((category) => ({ professionalId: pro.id, category })),
     });
-    pros.push(pro.id);
+    pros.push(pro);
   }
 
   const customer = await prisma.user.upsert({
@@ -1287,8 +1300,9 @@ async function seedDemoProfessionals(): Promise<void> {
     create: { phone: DEMO_CUSTOMER.phone, name: DEMO_CUSTOMER.name },
   });
   const cleaning = await prisma.homeService.findFirst({ where: { category: 'cln' } });
-  const repair = await prisma.homeService.findFirst({ where: { category: 'plm' } });
-  if (!cleaning || !repair) return;
+  const bathroom = await prisma.homeService.findFirst({ where: { category: 'bth' } });
+  const plumbing = await prisma.homeService.findFirst({ where: { category: 'plm' } });
+  if (!cleaning || !bathroom || !plumbing) return;
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const day = (offset: number) =>
@@ -1296,72 +1310,18 @@ async function seedDemoProfessionals(): Promise<void> {
   const [suresh, meera] = pros;
   const S = ServiceBookingStatus;
   const jobs = [
-    {
-      code: 'ELK-S-DEMO1',
-      pro: suresh,
-      service: cleaning,
-      offset: -1,
-      slot: '10:00',
-      status: S.COMPLETED,
-      hours: 3,
-      people: 2,
-      materials: true,
-    },
-    {
-      code: 'ELK-S-DEMO2',
-      pro: suresh,
-      service: cleaning,
-      offset: 0,
-      slot: '11:00',
-      status: S.CONFIRMED,
-      hours: 2,
-      people: 1,
-      materials: true,
-    },
-    {
-      code: 'ELK-S-DEMO3',
-      pro: suresh,
-      service: cleaning,
-      offset: 0,
-      slot: '16:00',
-      status: S.CONFIRMED,
-      hours: 3,
-      people: 2,
-      materials: false,
-    },
-    {
-      code: 'ELK-S-DEMO4',
-      pro: suresh,
-      service: cleaning,
-      offset: 2,
-      slot: '09:00',
-      status: S.CONFIRMED,
-      hours: 4,
-      people: 2,
-      materials: true,
-    },
-    {
-      code: 'ELK-S-DEMO5',
-      pro: meera,
-      service: repair,
-      offset: 0,
-      slot: '14:00',
-      status: S.CONFIRMED,
-      hours: 1,
-      people: 1,
-      materials: true,
-    },
-    {
-      code: 'ELK-S-DEMO6',
-      pro: meera,
-      service: repair,
-      offset: 1,
-      slot: '10:00',
-      status: S.CONFIRMED,
-      hours: 2,
-      people: 1,
-      materials: false,
-    },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO1', pro: suresh, service: cleaning, offset: -1, slot: '10:00', status: S.COMPLETED, hours: 3, people: 2, materials: true },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO2', pro: null, service: cleaning, offset: 0, slot: '11:00', status: S.PENDING, hours: 2, people: 1, materials: true },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO3', pro: suresh, service: cleaning, offset: 0, slot: '16:00', status: S.CONFIRMED, hours: 3, people: 2, materials: false },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO4', pro: null, service: bathroom, offset: 2, slot: '09:00', status: S.PENDING, hours: 2, people: 1, materials: true },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO5', pro: null, service: plumbing, offset: 0, slot: '14:00', status: S.PENDING, hours: 1, people: 1, materials: true },
+    // prettier-ignore
+    { code: 'ELK-S-DEMO6', pro: meera, service: plumbing, offset: 1, slot: '10:00', status: S.CONFIRMED, hours: 2, people: 1, materials: false },
   ];
   for (const j of jobs) {
     const rate = Number(j.service.hourlyRate);
@@ -1385,13 +1345,16 @@ async function seedDemoProfessionals(): Promise<void> {
       directions: 'Second tower on the left. Call when you reach the gate.',
       contactPhone: DEMO_CUSTOMER.phone,
       locationId: location.id,
-      professionalId: j.pro,
+      companyId: company.id,
+      professionalId: j.pro?.id ?? null,
+      professionalName: j.pro?.name ?? null,
+      professionalPhone: j.pro?.phone ?? null,
       status: j.status,
       baseAmount: base,
       materialsAmount: materials,
       discountAmount: 0,
       totalAmount: base + materials,
-      confirmedAt: new Date(),
+      confirmedAt: j.pro ? new Date() : null,
       startedAt: j.status === S.COMPLETED ? day(j.offset) : null,
       completedAt: j.status === S.COMPLETED ? day(j.offset) : null,
       cancelledAt: null,
@@ -1403,8 +1366,8 @@ async function seedDemoProfessionals(): Promise<void> {
     });
   }
   console.log(
-    `Seeded ${DEMO_PROFESSIONALS.length} demo professionals with ${jobs.length} jobs ` +
-      `(customer ${DEMO_CUSTOMER.name}, ${DEMO_CUSTOMER.phone})`,
+    `Seeded ${DEMO_PROFESSIONALS.length} demo professionals and ${jobs.length} jobs for ` +
+      `${company.name ?? company.phone} (customer ${DEMO_CUSTOMER.name}, ${DEMO_CUSTOMER.phone})`,
   );
 }
 

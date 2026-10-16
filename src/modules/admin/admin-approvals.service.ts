@@ -15,6 +15,7 @@ import {
   type ChangeRow,
 } from './service-change.repository';
 import { priceOf, startingPrice, termsOf, type ServiceTerms } from './service-terms';
+import { ProfessionalApprovalsService } from './professional-approvals.service';
 
 const { PENDING, APPROVED, REJECTED } = ServiceChangeStatus;
 
@@ -30,14 +31,19 @@ export class AdminApprovalsService {
   constructor(
     private readonly changes: ServiceChangeRepository,
     private readonly catalog: AdminRepository,
+    private readonly professionals: ProfessionalApprovalsService,
   ) {}
 
   async summary(): Promise<ApprovalsSummaryDto> {
-    const counts = await this.changes.counts();
+    const [counts, professionals] = await Promise.all([
+      this.changes.counts(),
+      this.professionals.waiting(),
+    ]);
     return {
-      waiting: counts.NEW_SERVICE + counts.PRICE_CHANGE,
+      waiting: counts.NEW_SERVICE + counts.PRICE_CHANGE + professionals,
       newServices: counts.NEW_SERVICE,
       priceChanges: counts.PRICE_CHANGE,
+      professionals,
     };
   }
 

@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { Prisma, ServiceChangeKind, ServiceChangeStatus, ServiceVertical } from '@prisma/client';
 import { ResourceNotFoundException } from '@/common/errors/domain.exceptions';
+import { ProfessionalApprovalsService } from '@/modules/admin/professional-approvals.service';
 import { AdminApprovalsService } from '@/modules/admin/admin-approvals.service';
 import { ApprovalsQueryDto } from '@/modules/admin/admin.dto';
 import { AdminRepository } from '@/modules/admin/admin.repository';
@@ -66,6 +67,10 @@ describe('AdminApprovalsService', () => {
       providers: [
         AdminApprovalsService,
         {
+          provide: ProfessionalApprovalsService,
+          useValue: { waiting: jest.fn().mockResolvedValue(3) },
+        },
+        {
           provide: ServiceChangeRepository,
           useValue: {
             counts: jest.fn().mockResolvedValue({ NEW_SERVICE: 1, PRICE_CHANGE: 1 }),
@@ -88,7 +93,12 @@ describe('AdminApprovalsService', () => {
   });
 
   it('counts what is waiting, by kind', async () => {
-    await expect(svc.summary()).resolves.toEqual({ waiting: 2, newServices: 1, priceChanges: 1 });
+    await expect(svc.summary()).resolves.toEqual({
+      waiting: 5,
+      newServices: 1,
+      priceChanges: 1,
+      professionals: 3,
+    });
   });
 
   it('shows a waiting price change against what the app charges now', async () => {

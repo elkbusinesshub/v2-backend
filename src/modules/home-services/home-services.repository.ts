@@ -1,10 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  HomeService,
-  Prisma,
-  PromoCode,
-  ServiceLocation,
-  ServiceVertical,
+import {
+  AdminModule,
+  ServiceBookingStatus,
+  UserType,
+  type HomeService,
+  type Prisma,
+  type PromoCode,
+  type ServiceLocation,
+  type ServiceVertical,
 } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
@@ -38,8 +41,22 @@ export class HomeServicesRepository {
     return this.db.promoCode.findUnique({ where: { code: code.trim().toUpperCase() } });
   }
 
-  async activeAreas(): Promise<ServiceLocation[]> {
-    return this.db.serviceLocation.findMany({ where: { active: true } });
+  /**
+   * Areas that can take a [vertical] booking: active, and owned by a company
+   * that is still an ADMIN and runs that vertical (ELK Clean or ELK Repair).
+   */
+  async activeAreas(vertical: ServiceVertical): Promise<ServiceLocation[]> {
+    const module = vertical === 'REPAIR' ? AdminModule.REPAIR : AdminModule.CLEAN;
+    return this.db.serviceLocation.findMany({
+      where: {
+        active: true,
+        company: {
+          userType: UserType.ADMIN,
+          deletedAt: null,
+          adminModules: { some: { module } },
+        },
+      },
+    });
   }
 
   async createBooking(data: Prisma.ServiceBookingUncheckedCreateInput): Promise<ServiceBookingRow> {
@@ -48,6 +65,18 @@ export class HomeServicesRepository {
 
   async findBooking(id: string): Promise<ServiceBookingRow | null> {
     return this.db.serviceBooking.findUnique({ where: { id }, include: bookingInclude });
+  }
+
+  /**
+   * Cancels only from one of [from], so two cancels racing each other can't
+   * both go through (and both refund). Null when it was no longer in [from].
+   */
+  async cancelBooking(id: string, from: ServiceBookingStatus[]): Promise<ServiceBookingRow | null> {
+    const { count } = await this.db.serviceBooking.updateMany({
+      where: { id, status: { in: from } },
+      data: { status: ServiceBookingStatus.CANCELLED, cancelledAt: new Date() },
+    });
+    return count === 1 ? this.findBooking(id) : null;
   }
 
   async updateBooking(

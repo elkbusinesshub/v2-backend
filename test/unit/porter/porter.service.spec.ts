@@ -7,6 +7,7 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 import { PorterBookingsRepository } from '@/modules/porter/porter-bookings.repository';
 import { PorterCatalogRepository } from '@/modules/porter/porter-catalog.repository';
 import { PorterService } from '@/modules/porter/porter.service';
@@ -80,6 +81,7 @@ describe('PorterService', () => {
   /** The row `create` last wrote — what `findById` reads back. */
   let stored: Record<string, unknown> | null = null;
   let dispatch: jest.Mocked<DispatchService>;
+  let wallet: jest.Mocked<WalletService>;
 
   let service: PorterService;
   let catalog: jest.Mocked<PorterCatalogRepository>;
@@ -156,11 +158,21 @@ describe('PorterService', () => {
         },
         { provide: DispatchGateway, useValue: { joinTrip: jest.fn(), emitTrip: jest.fn() } },
         { provide: DispatchScheduler, useValue: { scheduleExpiry: jest.fn() } },
+        {
+          provide: WalletService,
+          useValue: {
+            payForBooking: jest.fn((_u: string, method: string) =>
+              Promise.resolve(method === 'wallet'),
+            ),
+            refundBooking: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = moduleRef.get(PorterService);
     dispatch = moduleRef.get(DispatchService);
+    wallet = moduleRef.get(WalletService);
     catalog = moduleRef.get(PorterCatalogRepository);
     bookings = moduleRef.get(PorterBookingsRepository);
     locations = moduleRef.get(LocationsRepository);
@@ -228,6 +240,22 @@ describe('PorterService', () => {
       const breakdown = booking.breakdown as Record<string, number>;
       expect(breakdown.totalAmount).toBe(40.43);
       expect(booking.paidAt).not.toBeNull();
+    });
+
+    it('debits a wallet-paid delivery, and leaves other methods alone', async () => {
+      await service.createBooking(user, {
+        ...base,
+        paymentMethod: 'wallet',
+        pickupLat: 12.9352,
+        pickupLng: 77.6245,
+      });
+      expect(wallet.payForBooking).toHaveBeenCalledWith(
+        'u-1',
+        'wallet',
+        40.43,
+        expect.stringMatching(/^Delivery ELK-/),
+      );
+      expect(wallet.refundBooking).not.toHaveBeenCalled();
     });
 
     it('offers the job to partners around the pickup', async () => {

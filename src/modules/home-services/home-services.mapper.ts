@@ -45,12 +45,17 @@ export function toBookingJson(b: ServiceBookingRow): ServiceBookingDto {
     contactPhone: b.contactPhone,
     customerName: b.user.name ?? 'ELK customer',
     location: b.location,
-    professional: b.professional,
+    professional:
+      b.professional ??
+      (b.professionalName
+        ? { id: null, name: b.professionalName, phone: b.professionalPhone ?? '' }
+        : null),
     baseAmount: Number(b.baseAmount),
     materialsAmount: Number(b.materialsAmount),
     discountAmount: Number(b.discountAmount),
     totalAmount: Number(b.totalAmount),
     promoCode: b.promoCode,
+    paymentMethod: b.paymentMethod,
     createdAt: b.createdAt.toISOString(),
   };
 }

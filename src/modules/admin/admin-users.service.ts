@@ -51,22 +51,6 @@ export class AdminUsersService {
     const held = user.adminModules.map((m) => m.module);
     if (user.userType === role && held.join() === wanted.join()) return this.userJson(user);
 
-    // Professionals are linked to their account from the Professionals tab;
-    // taking the role away here would leave the link behind.
-    if (user.userType === UserType.PROFESSIONAL && role !== user.userType && user.professional) {
-      throw new DomainException(
-        HttpStatus.CONFLICT,
-        'IS_PROFESSIONAL',
-        'Remove this person from Professionals first',
-      );
-    }
-    // The job screens set a professional up from the account's phone.
-    if (role === UserType.PROFESSIONAL && !user.phone) {
-      throw new ValidationFailedException([
-        { field: 'role', message: 'A professional needs a phone number' },
-      ]);
-    }
-
     const updated = await this.repo.setAccess(id, role, wanted);
     this.logger.log(
       `access changed: user=${id} ${user.userType}[${held.join()}] -> ${role}[${wanted.join()}] by ${superAdminId}`,

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, ServiceVertical } from '@prisma/client';
+import { Prisma, ProfessionalStatus, ServiceVertical } from '@prisma/client';
 import {
   DomainException,
   DuplicateResourceException,
@@ -9,6 +9,7 @@ import {
 import { AdminCatalogService } from '@/modules/admin/admin-catalog.service';
 import { AdminRepository } from '@/modules/admin/admin.repository';
 import { ServiceChangeRepository } from '@/modules/admin/service-change.repository';
+import { HomeServicesRepository } from '@/modules/home-services/home-services.repository';
 import { PlacesService } from '@/modules/places/places.service';
 
 const newService = {
@@ -36,6 +37,19 @@ const liveService = {
 };
 
 const BOTH = [ServiceVertical.CLEANING, ServiceVertical.REPAIR];
+
+const approvedPro = {
+  id: 'pr-1',
+  companyId: 'co-1',
+  name: 'Anil Kumar',
+  phone: '+919847021456',
+  email: 'anil@example.com',
+  experienceYears: 4,
+  status: ProfessionalStatus.APPROVED,
+  note: '',
+  categories: [{ category: 'cln' }],
+  decidedBy: null,
+};
 
 describe('AdminCatalogService', () => {
   let svc: AdminCatalogService;
@@ -68,9 +82,22 @@ describe('AdminCatalogService', () => {
             createPromoCode: jest
               .fn()
               .mockImplementation((data) => Promise.resolve({ id: 'p-1', ...data })),
-            professional: jest.fn().mockResolvedValue({ id: 'pr-1', name: 'Anil Kumar' }),
+            professional: jest.fn().mockResolvedValue(approvedPro),
             hasActiveAssignments: jest.fn().mockResolvedValue(false),
             deleteProfessional: jest.fn(),
+            createProfessional: jest.fn().mockImplementation((data, categories: string[]) =>
+              Promise.resolve({
+                ...approvedPro,
+                ...data,
+                status: ProfessionalStatus.PENDING,
+                categories: categories.map((category) => ({ category })),
+              }),
+            ),
+            updateProfessional: jest
+              .fn()
+              .mockImplementation((_id, data) => Promise.resolve({ ...approvedPro, ...data })),
+            professionalsOnJob: jest.fn().mockResolvedValue(new Set()),
+            jobsOnDay: jest.fn().mockResolvedValue(new Map()),
           },
         },
         {
@@ -95,6 +122,10 @@ describe('AdminCatalogService', () => {
             withdraw: jest.fn(),
             openChanges: jest.fn().mockResolvedValue(new Map()),
           },
+        },
+        {
+          provide: HomeServicesRepository,
+          useValue: { findBooking: jest.fn() },
         },
         {
           provide: PlacesService,
@@ -224,7 +255,7 @@ describe('AdminCatalogService', () => {
   });
 
   it('finds an area’s centre on the map when it is added', async () => {
-    const created = await svc.createLocation({
+    const created = await svc.createLocation('co-1', {
       area: 'Kakkanad',
       district: 'Ernakulam',
       pincode: '682030',
@@ -236,7 +267,7 @@ describe('AdminCatalogService', () => {
 
   it('still saves an area it cannot find on the map, matching by pincode alone', async () => {
     places.search.mockRejectedValue(new Error('no key'));
-    const created = await svc.createLocation({
+    const created = await svc.createLocation('co-1', {
       area: 'Kakkanad',
       district: 'Ernakulam',
       pincode: '682030',
@@ -274,9 +305,79 @@ describe('AdminCatalogService', () => {
     ).rejects.toBeInstanceOf(ValidationFailedException);
   });
 
+  it('gives a new area to the company that added it', async () => {
+    await svc.createLocation('co-1', {
+      area: 'Kakkanad',
+      district: 'Ernakulam',
+      pincode: '682030',
+      radiusKm: 6,
+    });
+    expect(repo.createLocation).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId: 'co-1' }),
+    );
+  });
+
   it('will not remove a professional who still has jobs', async () => {
     repo.hasActiveAssignments.mockResolvedValue(true);
-    await expect(svc.deleteProfessional('pr-1')).rejects.toBeInstanceOf(DomainException);
+    await expect(svc.deleteProfessional('co-1', 'pr-1')).rejects.toBeInstanceOf(DomainException);
     expect(repo.deleteProfessional).not.toHaveBeenCalled();
+  });
+
+  it('adds a professional to the company, waiting for the super admin', async () => {
+    const created = await svc.createProfessional(
+      'co-1',
+      {
+        name: 'Anil Kumar',
+        phone: '98470 21456',
+        email: ' Anil@Example.com ',
+        categories: ['bth', 'cln'],
+      },
+      [ServiceVertical.CLEANING],
+    );
+    expect(repo.createProfessional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: 'co-1',
+        phone: '+919847021456',
+        email: 'anil@example.com',
+      }),
+      ['bth', 'cln'],
+    );
+    expect(created).toMatchObject({
+      status: ProfessionalStatus.PENDING,
+      categories: ['bth', 'cln'],
+    });
+  });
+
+  it('refuses categories outside the admin’s verticals', async () => {
+    await expect(
+      svc.createProfessional(
+        'co-1',
+        { name: 'Anil', phone: '9847021456', email: 'a@b.co', categories: ['plm'] },
+        [ServiceVertical.CLEANING],
+      ),
+    ).rejects.toBeInstanceOf(ValidationFailedException);
+  });
+
+  it('sends an approved professional back for approval when their phone changes', async () => {
+    await svc.updateProfessional('co-1', 'pr-1', { phone: '9000000001' }, [
+      ServiceVertical.CLEANING,
+    ]);
+    expect(repo.updateProfessional).toHaveBeenCalledWith(
+      'pr-1',
+      expect.objectContaining({ phone: '+919000000001', status: ProfessionalStatus.PENDING }),
+      undefined,
+    );
+  });
+
+  it('keeps an approved professional approved when only their name changes', async () => {
+    await svc.updateProfessional('co-1', 'pr-1', { name: 'Anil K' }, [ServiceVertical.CLEANING]);
+    expect(repo.updateProfessional.mock.calls[0]![1]).not.toHaveProperty('status');
+  });
+
+  it('does not let one company edit another company’s professional', async () => {
+    repo.professional.mockResolvedValue(null);
+    await expect(
+      svc.updateProfessional('co-2', 'pr-1', { name: 'X' }, [ServiceVertical.CLEANING]),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

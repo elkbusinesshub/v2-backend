@@ -62,16 +62,21 @@ export class AdOrdersRepository {
     });
   }
 
+  /**
+   * Moves an order on only if it is still [from], so two taps racing each
+   * other can't both cancel (and both refund). Null when it had moved.
+   */
   async updateStatus(
     id: string,
+    from: AdOrderStatus,
     status: AdOrderStatus,
     stamps: Partial<Pick<AdOrder, 'acceptedAt' | 'completedAt' | 'cancelledAt'>>,
-  ): Promise<AdOrderRow> {
-    return this.db.adOrder.update({
-      where: { id },
+  ): Promise<AdOrderRow | null> {
+    const { count } = await this.db.adOrder.updateMany({
+      where: { id, status: from },
       data: { status, ...stamps },
-      include: withParties,
     });
+    return count === 1 ? this.findById(id) : null;
   }
 
   /** Per-status tallies for the seller's order tabs, in one query. */

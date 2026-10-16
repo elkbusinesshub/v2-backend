@@ -10,6 +10,7 @@ import { HomeServicesRepository } from '@/modules/home-services/home-services.re
 import { HomeServicesService } from '@/modules/home-services/home-services.service';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { UsersRepository } from '@/modules/users/users.repository';
+import { WalletService } from '@/modules/wallet/wallet.service';
 
 const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 const FUTURE = '2099-01-10';
@@ -72,6 +73,7 @@ const base = {
 describe('HomeServicesService', () => {
   let svc: HomeServicesService;
   let repo: jest.Mocked<HomeServicesRepository>;
+  let wallet: jest.Mocked<WalletService>;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -101,6 +103,7 @@ describe('HomeServicesService', () => {
             ),
             findBooking: jest.fn(),
             updateBooking: jest.fn(),
+            cancelBooking: jest.fn(),
           },
         },
         {
@@ -111,10 +114,20 @@ describe('HomeServicesService', () => {
           provide: UsersRepository,
           useValue: { findById: jest.fn().mockResolvedValue({ phone: '+919000000001' }) },
         },
+        {
+          provide: WalletService,
+          useValue: {
+            payForBooking: jest.fn((_u: string, method: string) =>
+              Promise.resolve(method === 'wallet'),
+            ),
+            refundBooking: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     svc = moduleRef.get(HomeServicesService);
     repo = moduleRef.get(HomeServicesRepository);
+    wallet = moduleRef.get(WalletService);
   });
 
   it('prices a booking from the stored rates and files it under the matching area', async () => {
@@ -198,7 +211,7 @@ describe('HomeServicesService', () => {
   it('lets the customer cancel before the job starts, but not after', async () => {
     const row = { id: 'b-1', userId: 'u-1', status: ServiceBookingStatus.CONFIRMED };
     repo.findBooking.mockResolvedValue(row as never);
-    repo.updateBooking.mockResolvedValue({
+    repo.cancelBooking.mockResolvedValue({
       ...row,
       status: ServiceBookingStatus.CANCELLED,
       scheduledDate: new Date(),
@@ -221,5 +234,47 @@ describe('HomeServicesService', () => {
   it('does not let one customer cancel another’s booking', async () => {
     repo.findBooking.mockResolvedValue({ id: 'b-1', userId: 'someone-else' } as never);
     await expect(svc.cancel(user, 'b-1')).rejects.toBeInstanceOf(ResourceNotFoundException);
+  });
+
+  it('debits the wallet for the total when the customer pays with it', async () => {
+    const booking = await svc.book(user, { ...base, paymentMethod: 'wallet' });
+
+    expect(wallet.payForBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
+    expect(repo.createBooking).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentMethod: 'wallet', totalAmount: 1944 }),
+    );
+    expect(booking.paymentMethod).toBe('wallet');
+  });
+
+  it('refunds the wallet when the booking fails to save after the debit', async () => {
+    repo.createBooking.mockRejectedValueOnce(new Error('db down'));
+    await expect(svc.book(user, { ...base, paymentMethod: 'wallet' })).rejects.toThrow('db down');
+    expect(wallet.refundBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
+  });
+
+  it('refunds a wallet booking the customer cancels, once', async () => {
+    const row = { id: 'b-1', userId: 'u-1', status: ServiceBookingStatus.PENDING };
+    repo.findBooking.mockResolvedValue(row as never);
+    repo.cancelBooking.mockResolvedValue({
+      ...row,
+      status: ServiceBookingStatus.CANCELLED,
+      paymentMethod: 'wallet',
+      serviceName: 'Bathroom deep clean',
+      scheduledDate: new Date(),
+      createdAt: new Date(),
+      user: { name: null },
+      baseAmount: 0,
+      materialsAmount: 0,
+      discountAmount: 0,
+      totalAmount: 1944,
+    } as never);
+    await svc.cancel(user, 'b-1');
+    expect(wallet.refundBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
+
+    // A second cancel that loses the race refunds nothing.
+    wallet.refundBooking.mockClear();
+    repo.cancelBooking.mockResolvedValue(null);
+    await expect(svc.cancel(user, 'b-1')).rejects.toBeInstanceOf(DomainException);
+    expect(wallet.refundBooking).not.toHaveBeenCalled();
   });
 });
