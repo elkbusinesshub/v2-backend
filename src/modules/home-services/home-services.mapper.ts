@@ -1,4 +1,5 @@
 import type { HomeService } from '@prisma/client';
+import type { RazorpayCheckoutDto } from '@/modules/razorpay/razorpay.dto';
 import type { HomeServiceDto, ServiceBookingDto } from './home-services.dto';
 import type { ServiceBookingRow } from './home-services.repository';
 
@@ -23,7 +24,10 @@ export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function toBookingJson(b: ServiceBookingRow): ServiceBookingDto {
+export function toBookingJson(
+  b: ServiceBookingRow,
+  checkout: RazorpayCheckoutDto | null = null,
+): ServiceBookingDto {
   return {
     id: b.id,
     code: b.code,
@@ -56,6 +60,8 @@ export function toBookingJson(b: ServiceBookingRow): ServiceBookingDto {
     totalAmount: Number(b.totalAmount),
     promoCode: b.promoCode,
     paymentMethod: b.paymentMethod,
+    cancellationFee: Number(b.cancellationFee),
+    checkout,
     createdAt: b.createdAt.toISOString(),
   };
 }

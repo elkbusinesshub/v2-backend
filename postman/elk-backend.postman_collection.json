@@ -1081,7 +1081,7 @@
     },
     {
       "name": "Home services (Cleaning & Repair)",
-      "description": "ELK's own cleaning and repair services, as the mobile app uses them. The admin sets them up in the admin panel. A booking is priced on the server: hourlyRate \u00d7 hours + extraProRate \u00d7 hours \u00d7 (professionals \u2212 1), plus materialsFee when withMaterials is true, minus the promo discount. It starts PENDING until the admin assigns a professional. The address must fall inside an active service location, otherwise 422 AREA_NOT_SERVED.",
+      "description": "ELK's own cleaning and repair services, as the mobile app uses them. The admin sets them up in the admin panel. A booking is priced on the server: hourlyRate \u00d7 hours + extraProRate \u00d7 hours \u00d7 (professionals \u2212 1), plus materialsFee when withMaterials is true, minus the promo discount. The address must fall inside an active service location, otherwise 422 AREA_NOT_SERVED.\n\nPaying: paymentMethod is razorpay (default) or wallet. A wallet booking is debited at once and starts PENDING. A Razorpay booking starts AWAITING_PAYMENT (hidden from the admin and My Bookings) and its response carries `checkout` \u2014 open Razorpay checkout with it (the app, or the test checkout page), then send the result to \"Confirm Razorpay payment\". It becomes PENDING once paid, until the admin assigns a professional.\n\nRazorpay test run: 1) Book a service (Razorpay) saves razorpayKeyId, razorpayOrderId and razorpayAmount. 2) Pay on the test checkout page with UPI success@razorpay. 3) Copy razorpayPaymentId and razorpaySignature from the page into the environment. 4) Confirm Razorpay payment. 5) Cancel my booking \u2014 refunded through Razorpay: in full within 2 hours of booking, 90% after.",
       "item": [
         {
           "name": "Cleaning services live in the app",
@@ -1194,7 +1194,7 @@
           ]
         },
         {
-          "name": "Book a service",
+          "name": "Book a service (Razorpay)",
           "request": {
             "method": "POST",
             "header": [
@@ -1214,14 +1214,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"hours\": 3,\n  \"professionals\": 2,\n  \"withMaterials\": true,\n  \"date\": \"2026-10-02\",\n  \"timeSlot\": \"11:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"promoCode\": \"{{promoCode}}\"\n}",
+              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"hours\": 3,\n  \"professionals\": 1,\n  \"withMaterials\": false,\n  \"date\": \"2026-11-15\",\n  \"timeSlot\": \"11:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"razorpay\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "date is YYYY-MM-DD (India), today or later; timeSlot HH:MM. hours \u2265 the service's minHours, \u2264 12; professionals 1\u20134. promoCode is optional; a code that does not apply rejects the booking (422 PROMO_REJECTED) rather than being dropped silently."
+            "description": "date is YYYY-MM-DD (India), today or later; timeSlot HH:MM. hours \u2265 the service's minHours, \u2264 12; professionals 1\u20134. Add \"promoCode\" to apply one; a code that does not apply rejects the booking (422 PROMO_REJECTED). Responds AWAITING_PAYMENT with data.checkout = { keyId, orderId, amount (paise), currency }, and saves those into the environment. 503 PAYMENTS_UNAVAILABLE while RAZORPAY_ENABLED is false."
           },
           "event": [
             {
@@ -1231,9 +1231,104 @@
                 "exec": [
                   "pm.test('status is 201', () => pm.response.to.have.status(201));",
                   "if (pm.response.code < 300) {",
-                  "  const v = pm.response.json().data.id;",
-                  "  if (v) pm.environment.set('serviceBookingId', v);",
+                  "  const d = pm.response.json().data;",
+                  "  pm.environment.set('serviceBookingId', d.id);",
+                  "  if (d.checkout) {",
+                  "    pm.test('waits for payment', () => pm.expect(d.status).to.eql('AWAITING_PAYMENT'));",
+                  "    pm.environment.set('razorpayKeyId', d.checkout.keyId);",
+                  "    pm.environment.set('razorpayOrderId', d.checkout.orderId);",
+                  "    pm.environment.set('razorpayAmount', String(d.checkout.amount));",
+                  "    console.log('Paste into the test checkout page:', d.checkout);",
+                  "  }",
                   "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Book a service (ELK Wallet)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/service-bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "service-bookings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"hours\": 3,\n  \"professionals\": 1,\n  \"withMaterials\": false,\n  \"date\": \"2026-11-15\",\n  \"timeSlot\": \"11:00\",\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"wallet\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Debits the wallet at once and starts PENDING; no checkout. 402 INSUFFICIENT_BALANCE when the wallet cannot cover it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) {",
+                  "  pm.environment.set('serviceBookingId', pm.response.json().data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm Razorpay payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/service-bookings/{{serviceBookingId}}/payment/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "service-bookings", "{{serviceBookingId}}", "payment", "verify"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpayOrderId\": \"{{razorpayOrderId}}\",\n  \"razorpayPaymentId\": \"{{razorpayPaymentId}}\",\n  \"razorpaySignature\": \"{{razorpaySignature}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The three values Razorpay's checkout returns on success. Set razorpayPaymentId and razorpaySignature in the environment from the test checkout page (razorpayOrderId is saved by the booking). The server checks the signature, then fetches the payment from Razorpay and checks its order and amount, and moves the booking to PENDING. Safe to repeat. 400 INVALID_PAYMENT_SIGNATURE for a wrong signature."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('booking is now PENDING', () => pm.expect(pm.response.json().data.status).to.eql('PENDING'));"
                 ]
               }
             }
@@ -1254,9 +1349,66 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "service-bookings", "{{serviceBookingId}}", "cancel"]
             },
-            "description": "Allowed while PENDING or CONFIRMED; 409 once IN_PROGRESS."
+            "description": "Allowed while PENDING or CONFIRMED; 409 once IN_PROGRESS. Within 2 hours of booking: full refund. After that: 10% is kept (data.cancellationFee) and the rest refunded. Razorpay bookings are refunded to the original payment method by a background job (needs Redis); wallet bookings go back to the wallet."
           },
           "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const d = pm.response.json().data;",
+                  "  console.log('Cancelled. Fee kept:', d.cancellationFee, 'Refunded:', d.totalAmount - d.cancellationFee);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulate Razorpay webhook: payment.captured",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Razorpay-Signature",
+                "value": "{{razorpayWebhookSignature}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/razorpay/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "razorpay", "webhook"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"payment.captured\",\n  \"payload\": {\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"{{razorpayPaymentId}}\",\n        \"order_id\": \"{{razorpayOrderId}}\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Tests the webhook without ngrok: the pre-request script signs the body with razorpayWebhookSecret, which must equal RAZORPAY_WEBHOOK_SECRET in .env. Use it instead of \"Confirm Razorpay payment\" after paying on the test page; the booking should turn PENDING. The server still fetches the payment from Razorpay, so it must be a real test payment. No access token needed."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const secret = pm.environment.get('razorpayWebhookSecret');",
+                  "pm.environment.set('razorpayWebhookSignature', CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex));"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {

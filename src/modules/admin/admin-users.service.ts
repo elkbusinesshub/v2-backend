@@ -6,7 +6,7 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import { paginationMeta, type PaginationMeta } from '@/common/http/pagination';
-import type { AdminUserDto, AdminUsersQueryDto } from './admin.dto';
+import type { AdminStatsDto, AdminUserDto, AdminUsersQueryDto } from './admin.dto';
 import { AdminUsersRepository, type UserRow } from './admin-users.repository';
 
 /**
@@ -23,6 +23,16 @@ export class AdminUsersService {
   async list(query: AdminUsersQueryDto): Promise<{ items: AdminUserDto[]; meta: PaginationMeta }> {
     const [rows, total] = await this.repo.page(query.search, query.skip, query.limit);
     return { items: rows.map((u) => this.userJson(u)), meta: paginationMeta(query, total) };
+  }
+
+  async stats(): Promise<AdminStatsDto> {
+    const [customers, admins, superAdmins, active, paused, draft, cleaning, repair] =
+      await this.repo.stats();
+    return {
+      users: { customers, admins, superAdmins, total: customers + admins + superAdmins },
+      listings: { active, paused, draft, total: active + paused + draft },
+      providerListings: { cleaning, repair, total: cleaning + repair },
+    };
   }
 
   /**

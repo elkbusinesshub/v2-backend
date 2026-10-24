@@ -76,8 +76,9 @@ export class UnifiedBookingsRepository {
           seller: { select: { name: true } },
         },
       }),
+      // A checkout the customer never paid is not a booking they made.
       this.db.serviceBooking.findMany({
-        where: { userId },
+        where: { userId, status: { not: 'AWAITING_PAYMENT' } },
         include: { professional: { select: { name: true } } },
       }),
     ]);

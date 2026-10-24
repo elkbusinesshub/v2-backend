@@ -217,7 +217,12 @@ export class AdminRepository {
     take = 500,
   ): Promise<ServiceBookingRow[]> {
     return this.db.serviceBooking.findMany({
-      where: { companyId, vertical: { in: verticals }, ...(status ? { status } : {}) },
+      where: {
+        companyId,
+        vertical: { in: verticals },
+        // An unpaid Razorpay booking is not the company's to act on yet.
+        status: status ?? { not: ServiceBookingStatus.AWAITING_PAYMENT },
+      },
       include: bookingInclude,
       orderBy: [{ scheduledDate: 'desc' }, { timeSlot: 'asc' }],
       take,

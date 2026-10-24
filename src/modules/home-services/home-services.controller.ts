@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
+import { VerifyRazorpayPaymentDto } from '@/modules/razorpay/razorpay.dto';
 import {
   CheckPromoDto,
   CreateServiceBookingDto,
@@ -49,6 +50,17 @@ export class HomeServicesController {
     @Body() dto: CreateServiceBookingDto,
   ): Promise<ApiResponse<ServiceBookingDto>> {
     return ApiResponse.of(await this.service.book(user, dto), 'Booking received');
+  }
+
+  @Post('service-bookings/:id/payment/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm a booking with the Razorpay checkout’s result' })
+  async verifyPayment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VerifyRazorpayPaymentDto,
+  ): Promise<ApiResponse<ServiceBookingDto>> {
+    return ApiResponse.of(await this.service.verifyPayment(user, id, dto), 'Payment received');
   }
 
   @Post('service-bookings/:id/cancel')

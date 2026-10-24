@@ -7,12 +7,13 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 /**
- * Orders (chat + tracking) against real MySQL/Redis: the seeded seller chat
- * thread, sending a customer message, the status-derived tracking timeline,
- * order cancellation, and per-user ownership isolation.
+ * Orders (chat + tracking) against real MySQL/Redis: opening the seller chat
+ * from an order, sending a customer message, the status-derived tracking
+ * timeline, order cancellation, and per-user ownership isolation.
  *
  * Everything here hangs off an order placed against a listing — the only kind
- * of order there is.
+ * of order there is. The chat itself is the buyer–seller conversation, which
+ * the order screen finds through /chat/order/:id/contact.
  */
 describe('Orders — chat & tracking (integration)', () => {
   let mysql: StartedMySqlContainer;
@@ -70,43 +71,54 @@ describe('Orders — chat & tracking (integration)', () => {
   const http = (): App => app.getHttpServer();
   const bearer = (t: string) => `Bearer ${t}`;
 
-  it('serves the seeded chat thread with seller contact + 3 messages', async () => {
+  let sellerId: string;
+
+  it('opens the seeded buyer–seller chat from the order, with 3 messages', async () => {
+    const contact = await request(http())
+      .get(`/api/v1/chat/order/${orderId}/contact`)
+      .set('Authorization', bearer(userToken))
+      .expect(200);
+    sellerId = contact.body.data.contactId;
+
     const res = await request(http())
-      .get(`/api/v1/orders/${orderId}/chat`)
+      .get(`/api/v1/chat/threads/${sellerId}`)
       .set('Authorization', bearer(userToken))
       .expect(200);
 
     const thread = res.body.data;
     expect(thread).toMatchObject({
-      contactName: 'Demo Provider',
-      contactStatus: '● Online · Service Provider',
+      contactName: 'Demo Seller',
+      contactStatus: 'Tap to view profile',
     });
     expect(thread.contactInitials).toHaveLength(2);
     expect(thread.messages).toHaveLength(3);
-    // first is a seller message → incoming with initials
-    expect(thread.messages[0]).toMatchObject({ isOutgoing: false });
-    expect(thread.messages[0].senderInitials).not.toBeNull();
-    // second is the customer → outgoing, no initials
-    expect(thread.messages[1]).toMatchObject({ isOutgoing: true, senderInitials: null });
+    // The seller's messages are incoming with initials; the buyer's are outgoing without.
+    expect(thread.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ isOutgoing: false, senderInitials: expect.any(String) }),
+        expect.objectContaining({ isOutgoing: true, senderInitials: null }),
+      ]),
+    );
   });
 
   it('sends a customer message that persists as outgoing', async () => {
     const send = await request(http())
-      .post(`/api/v1/orders/${orderId}/chat`)
+      .post(`/api/v1/chat/threads/${sellerId}`)
       .set('Authorization', bearer(userToken))
       .send({ text: 'Please call when you arrive' })
       .expect(201);
     expect(send.body.data).toMatchObject({ isOutgoing: true, senderInitials: null });
 
     const thread = await request(http())
-      .get(`/api/v1/orders/${orderId}/chat`)
+      .get(`/api/v1/chat/threads/${sellerId}`)
       .set('Authorization', bearer(userToken))
       .expect(200);
     expect(thread.body.data.messages).toHaveLength(4);
-    expect(thread.body.data.messages[3]).toMatchObject({
-      text: 'Please call when you arrive',
-      isOutgoing: true,
-    });
+    expect(thread.body.data.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Please call when you arrive', isOutgoing: true }),
+      ]),
+    );
   });
 
   it('serves a CONFIRMED tracking timeline', async () => {
@@ -134,19 +146,20 @@ describe('Orders — chat & tracking (integration)', () => {
     expect(res.body.data.lng).toBeCloseTo(77.6245);
   });
 
-  it("404s another user's order for chat, tracking, and cancel", async () => {
+  it("keeps another user out of the order's chat, tracking and cancel", async () => {
     await request(http())
-      .get(`/api/v1/orders/${orderId}/chat`)
+      .get(`/api/v1/chat/order/${orderId}/contact`)
       .set('Authorization', bearer(adminToken))
       .expect(404);
     await request(http())
       .get(`/api/v1/orders/${orderId}/tracking`)
       .set('Authorization', bearer(adminToken))
       .expect(404);
+    // Cancel goes through the marketplace's status rules, which answer 403.
     await request(http())
       .post(`/api/v1/orders/${orderId}/cancel`)
       .set('Authorization', bearer(adminToken))
-      .expect(404);
+      .expect(403);
   });
 
   it('refuses a buyer cancel once the seller has started work', async () => {
@@ -183,7 +196,7 @@ describe('Orders — chat & tracking (integration)', () => {
   });
 
   it('requires auth on every route', async () => {
-    await request(http()).get(`/api/v1/orders/${orderId}/chat`).expect(401);
+    await request(http()).get(`/api/v1/chat/order/${orderId}/contact`).expect(401);
     await request(http()).get(`/api/v1/orders/${orderId}/tracking`).expect(401);
     await request(http()).post(`/api/v1/orders/${orderId}/cancel`).expect(401);
   });

@@ -58,6 +58,9 @@ describe('Marketplace — seller listings (integration)', () => {
     sellerToken = (await auth.issueTokenPair(seller!, {})).accessToken;
     otherToken = (await auth.issueTokenPair(other!, {})).accessToken;
     adminToken = (await auth.issueTokenPair(admin!, {})).accessToken;
+    // The demo admin runs ELK Rental, which is what lets an admin manage
+    // someone else's rental listing.
+    await prisma.adminModuleAccess.create({ data: { userId: admin!.id, module: 'RENTAL' } });
   });
 
   afterAll(async () => {
@@ -226,11 +229,23 @@ describe('Marketplace — seller listings (integration)', () => {
     expect(mine.body.data.map((a: { id: string }) => a.id)).not.toContain(draftId);
   });
 
-  it('lets an admin delete a listing they do not own', async () => {
+  it('lets an ELK Rental admin delete a rental listing they do not own, and nothing else', async () => {
+    const rental = await request(http())
+      .post('/api/v1/marketplace/ads')
+      .set('Authorization', bearer(sellerToken))
+      .send({ title: 'Swift Dzire, self-drive', categorySlug: 'car_rental', price: 1800 })
+      .expect(201);
+
+    await request(http())
+      .delete(`/api/v1/marketplace/ads/${rental.body.data.id}`)
+      .set('Authorization', bearer(adminToken))
+      .expect(200);
+
+    // A cleaning listing is not ELK Rental's to remove.
     await request(http())
       .delete(`/api/v1/marketplace/ads/${publishedId}`)
       .set('Authorization', bearer(adminToken))
-      .expect(200);
+      .expect(403);
   });
 
   it('404s an unknown listing rather than 403', async () => {

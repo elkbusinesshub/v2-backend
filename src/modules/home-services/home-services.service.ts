@@ -8,6 +8,8 @@ import {
 } from '@/common/errors/domain.exceptions';
 import type { AuthUser } from '@/common/types/auth.types';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
+import type { VerifyRazorpayPaymentDto } from '@/modules/razorpay/razorpay.dto';
+import { RazorpayService } from '@/modules/razorpay/razorpay.service';
 import { UsersRepository } from '@/modules/users/users.repository';
 import { WalletService } from '@/modules/wallet/wallet.service';
 import type {
@@ -18,7 +20,14 @@ import type {
 } from './home-services.dto';
 import { isoDay, toBookingJson, toServiceJson } from './home-services.mapper';
 import { HomeServicesRepository } from './home-services.repository';
-import { applyPromo, matchArea, quote, todayInIndia, type PromoRule } from './home-services.rules';
+import {
+  applyPromo,
+  cancellationFee,
+  matchArea,
+  quote,
+  todayInIndia,
+  type PromoRule,
+} from './home-services.rules';
 
 const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
@@ -53,6 +62,7 @@ export class HomeServicesService {
     private readonly addresses: LocationsRepository,
     private readonly users: UsersRepository,
     private readonly wallet: WalletService,
+    private readonly razorpay: RazorpayService,
   ) {}
 
   async listLive(vertical?: ServiceVertical): Promise<HomeServiceDto[]> {
@@ -131,11 +141,23 @@ export class HomeServicesService {
 
     const account = await this.users.findById(user.id);
     const total = q.subtotal - discount;
-    const paymentMethod = dto.paymentMethod ?? 'card';
+    const paymentMethod = dto.paymentMethod ?? 'razorpay';
+    // Razorpay takes no zero-rupee orders; a booking a promo made free has
+    // nothing to collect.
+    const online = paymentMethod === 'razorpay' && total > 0;
+    if (online && !this.razorpay.enabled) {
+      throw new DomainException(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'PAYMENTS_UNAVAILABLE',
+        'Online payment is not available right now. Pay with your ELK Wallet instead.',
+      );
+    }
     const paid = await this.wallet.payForBooking(user.id, paymentMethod, total, service.name);
     const booking = await this.repo
       .createBooking({
         code: `ELK-S-${this.randomCode()}`,
+        // Hidden from the admin until Razorpay confirms the payment.
+        status: online ? ServiceBookingStatus.AWAITING_PAYMENT : ServiceBookingStatus.PENDING,
         userId: user.id,
         serviceId: service.id,
         serviceName: service.name,
@@ -167,7 +189,31 @@ export class HomeServicesService {
         if (paid) await this.wallet.refundBooking(user.id, paymentMethod, total, service.name);
         throw err;
       });
-    return toBookingJson(booking);
+    if (!online) return toBookingJson(booking);
+
+    const checkout = await this.razorpay
+      .checkout({ id: booking.id, code: booking.code, total })
+      .catch(async (err: unknown) => {
+        // No order to pay against: close the booking rather than leave it
+        // waiting for a payment that cannot come.
+        await this.repo.cancelBooking(booking.id, [ServiceBookingStatus.AWAITING_PAYMENT]);
+        throw err;
+      });
+    return toBookingJson(booking, checkout);
+  }
+
+  /** The Razorpay checkout's result for the customer's own booking. */
+  async verifyPayment(
+    user: AuthUser,
+    id: string,
+    dto: VerifyRazorpayPaymentDto,
+  ): Promise<ServiceBookingDto> {
+    const booking = await this.repo.findBooking(id);
+    if (!booking || booking.userId !== user.id) {
+      throw new ResourceNotFoundException('Booking');
+    }
+    await this.razorpay.verify(id, dto);
+    return toBookingJson((await this.repo.findBooking(id))!);
   }
 
   async cancel(user: AuthUser, id: string): Promise<ServiceBookingDto> {
@@ -183,7 +229,9 @@ export class HomeServicesService {
         'This booking has already started and can no longer be cancelled',
       );
     }
-    const cancelled = await this.repo.cancelBooking(id, CUSTOMER_CANCELLABLE);
+    const total = Number(booking.totalAmount);
+    const fee = cancellationFee(total, booking.createdAt);
+    const cancelled = await this.repo.cancelBooking(id, CUSTOMER_CANCELLABLE, fee);
     if (!cancelled) {
       throw new DomainException(
         HttpStatus.CONFLICT,
@@ -191,12 +239,16 @@ export class HomeServicesService {
         'This booking can no longer be cancelled',
       );
     }
-    await this.wallet.refundBooking(
-      user.id,
-      cancelled.paymentMethod,
-      Number(cancelled.totalAmount),
-      cancelled.serviceName,
-    );
+    if (cancelled.paymentMethod === 'razorpay') {
+      await this.razorpay.refund(id, total - fee);
+    } else {
+      await this.wallet.refundBooking(
+        user.id,
+        cancelled.paymentMethod,
+        total - fee,
+        cancelled.serviceName,
+      );
+    }
     return toBookingJson(cancelled);
   }
 

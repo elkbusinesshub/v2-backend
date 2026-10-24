@@ -10,6 +10,7 @@ import { AdminBookingsService } from '@/modules/admin/admin-bookings.service';
 import { AdminRepository } from '@/modules/admin/admin.repository';
 import { HomeServicesRepository } from '@/modules/home-services/home-services.repository';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { RazorpayService } from '@/modules/razorpay/razorpay.service';
 import { WalletService } from '@/modules/wallet/wallet.service';
 import { WhatsappService } from '@/modules/whatsapp/whatsapp.service';
 
@@ -79,6 +80,7 @@ describe('AdminBookingsService', () => {
   let bookings: jest.Mocked<HomeServicesRepository>;
   let notifications: jest.Mocked<NotificationsService>;
   let wallet: jest.Mocked<WalletService>;
+  let razorpay: jest.Mocked<RazorpayService>;
   let whatsapp: jest.Mocked<WhatsappService>;
 
   beforeEach(async () => {
@@ -115,6 +117,7 @@ describe('AdminBookingsService', () => {
           provide: WalletService,
           useValue: { refundBooking: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: RazorpayService, useValue: { refund: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationsService, useValue: { create: jest.fn().mockResolvedValue({}) } },
         {
           provide: WhatsappService,
@@ -134,6 +137,7 @@ describe('AdminBookingsService', () => {
     bookings = moduleRef.get(HomeServicesRepository);
     notifications = moduleRef.get(NotificationsService);
     wallet = moduleRef.get(WalletService);
+    razorpay = moduleRef.get(RazorpayService);
     whatsapp = moduleRef.get(WhatsappService);
   });
 
@@ -240,6 +244,18 @@ describe('AdminBookingsService', () => {
       1944,
       expect.any(String),
     );
+  });
+
+  it('refunds a Razorpay booking in full when the company cancels, however late', async () => {
+    bookings.findBooking.mockResolvedValue(
+      row({ status: CONFIRMED, createdAt: new Date('2000-01-01T00:00:00Z') }),
+    );
+    bookings.cancelBooking.mockResolvedValue(
+      row({ status: CANCELLED, paymentMethod: 'razorpay', totalAmount: 1944 }),
+    );
+    await svc.setStatus('co-1', 'b-1', CANCELLED, BOTH);
+    expect(razorpay.refund).toHaveBeenCalledWith('b-1', 1944);
+    expect(wallet.refundBooking).not.toHaveBeenCalled();
   });
 
   it('refuses to cancel a job already under way', async () => {

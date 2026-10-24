@@ -11,6 +11,7 @@ import { RedisIoAdapter } from '@/sockets/redis-io.adapter';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true, // hold logs until pino takes over
+    rawBody: true, // Razorpay webhook signatures are over the exact bytes sent
   });
 
   const logger = app.get(Logger);

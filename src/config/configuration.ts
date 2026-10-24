@@ -52,6 +52,12 @@ export function configuration() {
       templateName: env.WHATSAPP_TEMPLATE_NAME,
       templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,
     },
+    razorpay: {
+      enabled: env.RAZORPAY_ENABLED,
+      keyId: env.RAZORPAY_KEY_ID,
+      keySecret: env.RAZORPAY_KEY_SECRET,
+      webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
+    },
     places: {
       googleMapsApiKey: env.GOOGLE_MAPS_API_KEY,
       regionCode: env.PLACES_REGION_CODE.toUpperCase(),

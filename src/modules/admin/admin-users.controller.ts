@@ -6,7 +6,7 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
 import { AdminUsersService } from './admin-users.service';
-import { AdminUserDto, AdminUsersQueryDto, SetUserRoleDto } from './admin.dto';
+import { AdminStatsDto, AdminUserDto, AdminUsersQueryDto, SetUserRoleDto } from './admin.dto';
 
 /** The super admin's Users tab. */
 @ApiTags('admin')
@@ -21,6 +21,14 @@ export class AdminUsersController {
   async list(@Query() query: AdminUsersQueryDto): Promise<ApiResponse<AdminUserDto[]>> {
     const { items, meta } = await this.users.list(query);
     return ApiResponse.of(items, 'OK', meta);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Dashboard counts: users by role, seller listings, and admin-run services',
+  })
+  async stats(): Promise<AdminStatsDto> {
+    return this.users.stats();
   }
 
   @Patch(':id/role')

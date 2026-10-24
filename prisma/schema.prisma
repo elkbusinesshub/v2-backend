@@ -1242,6 +1242,9 @@ model PromoCode {
 }
 
 enum ServiceBookingStatus {
+  /// Booked with Razorpay and not yet paid. Hidden from the customer's and the
+  /// admin's lists; becomes PENDING once the payment is captured.
+  AWAITING_PAYMENT
   PENDING
   CONFIRMED
   IN_PROGRESS
@@ -1249,7 +1252,8 @@ enum ServiceBookingStatus {
   CANCELLED
 }
 
-/// A customer's booking of a [HomeService]. Arrives PENDING and is confirmed
+/// A customer's booking of a [HomeService]. Arrives PENDING (or
+/// AWAITING_PAYMENT until a Razorpay payment is captured) and is confirmed
 /// when the admin assigns a professional. Prices are snapshotted: the admin
 /// may reprice the service later.
 model ServiceBooking {
@@ -1296,9 +1300,12 @@ model ServiceBooking {
   discountAmount  Decimal              @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal              @db.Decimal(10, 2)
   promoCode       String?              @db.VarChar(20)
-  /// card, apple or wallet. A wallet booking is debited when made and
-  /// refunded when cancelled.
-  paymentMethod   String               @default("card") @db.VarChar(20)
+  /// razorpay or wallet (card and apple on bookings made before Razorpay). A
+  /// wallet booking is debited when made; a Razorpay one is paid at checkout.
+  /// Either is refunded when cancelled, less any cancellation fee.
+  paymentMethod   String               @default("razorpay") @db.VarChar(20)
+  /// Kept from the refund when the customer cancels late. Zero otherwise.
+  cancellationFee Decimal              @default(0) @db.Decimal(10, 2)
 
   confirmedAt DateTime?
   startedAt   DateTime?
@@ -1308,10 +1315,44 @@ model ServiceBooking {
   updatedAt   DateTime  @updatedAt
 
   whatsappMessages WhatsappMessage[]
+  payment          ServicePayment?
 
   @@index([userId])
   @@index([status, scheduledDate])
   @@index([professionalId])
   @@index([companyId, status])
   @@map("service_bookings")
+}
+
+enum ServicePaymentStatus {
+  /// Razorpay order made; the customer has not paid yet.
+  CREATED
+  CAPTURED
+  /// Refund asked of Razorpay; it settles to the customer's account later.
+  REFUND_PENDING
+  REFUNDED
+}
+
+/// The Razorpay payment for one [ServiceBooking]. Amounts are rupees, like the
+/// booking's; Razorpay's paise exist only at the API boundary.
+model ServicePayment {
+  id        String         @id @default(uuid(7)) @db.Char(36)
+  bookingId String         @unique @db.Char(36)
+  booking   ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  status            ServicePaymentStatus @default(CREATED)
+  amount            Decimal              @db.Decimal(10, 2)
+  razorpayOrderId   String               @unique @db.VarChar(40)
+  razorpayPaymentId String?              @unique @db.VarChar(40)
+  /// upi, card, netbanking, ... as Razorpay reports it once paid.
+  method            String?              @db.VarChar(20)
+  refundAmount      Decimal?             @db.Decimal(10, 2)
+  razorpayRefundId  String?              @unique @db.VarChar(40)
+
+  capturedAt DateTime?
+  refundedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("service_payments")
 }

@@ -314,6 +314,19 @@ export class AdminUserDto {
   joinedAt!: string;
 }
 
+/** The super admin's dashboard counts. Deleted accounts and listings are left out. */
+export class AdminStatsDto {
+  /** `total` includes admins and super admins; `customers` is role USER only. */
+  users!: { customers: number; admins: number; superAdmins: number; total: number };
+  /** Sellers' marketplace listings (`Ad`), every category. */
+  listings!: { active: number; paused: number; draft: number; total: number };
+  /**
+   * ELK's own services that admins run (`HomeService`), including ones still
+   * waiting for approval. Rental has no admin-run catalogue, so it is absent.
+   */
+  providerListings!: { cleaning: number; repair: number; total: number };
+}
+
 // ── approvals ───────────────────────────────────────────────────────────────
 
 export const APPROVAL_VIEWS = ['pending', 'decided'] as const;

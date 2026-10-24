@@ -70,11 +70,16 @@ export class HomeServicesRepository {
   /**
    * Cancels only from one of [from], so two cancels racing each other can't
    * both go through (and both refund). Null when it was no longer in [from].
+   * [cancellationFee] is what the refund keeps back.
    */
-  async cancelBooking(id: string, from: ServiceBookingStatus[]): Promise<ServiceBookingRow | null> {
+  async cancelBooking(
+    id: string,
+    from: ServiceBookingStatus[],
+    cancellationFee = 0,
+  ): Promise<ServiceBookingRow | null> {
     const { count } = await this.db.serviceBooking.updateMany({
       where: { id, status: { in: from } },
-      data: { status: ServiceBookingStatus.CANCELLED, cancelledAt: new Date() },
+      data: { status: ServiceBookingStatus.CANCELLED, cancelledAt: new Date(), cancellationFee },
     });
     return count === 1 ? this.findBooking(id) : null;
   }

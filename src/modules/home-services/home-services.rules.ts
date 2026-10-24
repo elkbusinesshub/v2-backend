@@ -89,6 +89,17 @@ export function applyPromo(
   };
 }
 
+/** A customer who cancels within this long of booking gets everything back. */
+export const FREE_CANCELLATION_HOURS = 2;
+/** What a later cancel by the customer keeps, as a percentage of the total. */
+export const CANCELLATION_FEE_PERCENT = 10;
+
+/** The fee kept when the customer cancels at [now] a booking made at [bookedAt]. */
+export function cancellationFee(total: number, bookedAt: Date, now = new Date()): number {
+  if (now.getTime() - bookedAt.getTime() <= FREE_CANCELLATION_HOURS * 3_600_000) return 0;
+  return Math.round(total * CANCELLATION_FEE_PERCENT) / 100;
+}
+
 /** Today's date in India, YYYY-MM-DD — bookings and promo expiry are Indian calendar days. */
 export function todayInIndia(now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {

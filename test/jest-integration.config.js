@@ -10,6 +10,10 @@ module.exports = {
   rootDir: '..',
   roots: ['<rootDir>/test/integration'],
   testRegex: '.*\\.e2e-spec\\.ts$',
+  // Porter and rides are on hold while the product focuses on cleaning,
+  // repair, ELK Stay and ELK Rental. Their specs stay in the repo; remove a
+  // line here to run it again.
+  testPathIgnorePatterns: ['/node_modules/', 'porter\\.e2e-spec\\.ts$', 'rides\\.e2e-spec\\.ts$'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },

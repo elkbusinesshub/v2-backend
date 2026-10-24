@@ -59,6 +59,15 @@ export const envSchema = z
     // it must never be committed (see .gitignore).
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default('secrets/firebase-service-account.json'),
 
+    // Razorpay checkout for ELK's cleaning and repair bookings. Disabled →
+    // those bookings can only be paid from the ELK Wallet. Test keys
+    // (rzp_test_...) for development; the webhook secret is the one typed in
+    // when creating the webhook in the Razorpay dashboard.
+    RAZORPAY_ENABLED: boolString('false'),
+    RAZORPAY_KEY_ID: z.string().default(''),
+    RAZORPAY_KEY_SECRET: z.string().default(''),
+    RAZORPAY_WEBHOOK_SECRET: z.string().default(''),
+
     // Google Geocoding + Places. Empty key → /places returns 502 rather than
     // silently proxying an unauthenticated request.
     GOOGLE_MAPS_API_KEY: z.string().default(''),
@@ -92,6 +101,21 @@ export const envSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required when WHATSAPP_ENABLED=true`,
+          });
+        }
+      }
+    }
+    if (env.RAZORPAY_ENABLED) {
+      for (const key of [
+        'RAZORPAY_KEY_ID',
+        'RAZORPAY_KEY_SECRET',
+        'RAZORPAY_WEBHOOK_SECRET',
+      ] as const) {
+        if (env[key].length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when RAZORPAY_ENABLED=true`,
           });
         }
       }

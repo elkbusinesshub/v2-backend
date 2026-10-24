@@ -1,5 +1,6 @@
 import {
   applyPromo,
+  cancellationFee,
   matchArea,
   quote,
   todayInIndia,
@@ -20,6 +21,21 @@ describe('quote', () => {
 
   it('adds materials once per booking when asked for', () => {
     expect(quote(price, 5, 1, true)).toEqual({ base: 2245, materials: 299, subtotal: 2544 });
+  });
+});
+
+describe('cancellationFee', () => {
+  const booked = new Date('2026-10-24T10:00:00Z');
+  const after = (minutes: number) => new Date(booked.getTime() + minutes * 60_000);
+
+  it('is free up to and including 2 hours after booking', () => {
+    expect(cancellationFee(1944, booked, after(5))).toBe(0);
+    expect(cancellationFee(1944, booked, after(120))).toBe(0);
+  });
+
+  it('keeps 10% of the total after that, to the paisa', () => {
+    expect(cancellationFee(1944, booked, after(121))).toBe(194.4);
+    expect(cancellationFee(1999.99, booked, after(600))).toBe(200);
   });
 });
 

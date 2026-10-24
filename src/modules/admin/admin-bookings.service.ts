@@ -14,16 +14,19 @@ import {
 } from '@/modules/home-services/home-services.repository';
 import { todayInIndia } from '@/modules/home-services/home-services.rules';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { RazorpayService } from '@/modules/razorpay/razorpay.service';
 import { WalletService } from '@/modules/wallet/wallet.service';
 import { jobMessageParams } from '@/modules/whatsapp/job-message';
 import { WhatsappService } from '@/modules/whatsapp/whatsapp.service';
 import { assertVertical } from './admin-scope';
 import { AdminRepository, type ProfessionalRow } from './admin.repository';
 
-const { PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED } = ServiceBookingStatus;
+const { AWAITING_PAYMENT, PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED } =
+  ServiceBookingStatus;
 
 /** Where the admin may move a booking from each status. Confirming is done by assigning. */
 const TRANSITIONS: Record<ServiceBookingStatus, ServiceBookingStatus[]> = {
+  [AWAITING_PAYMENT]: [],
   [PENDING]: [CANCELLED],
   [CONFIRMED]: [IN_PROGRESS, CANCELLED],
   [IN_PROGRESS]: [COMPLETED],
@@ -71,6 +74,7 @@ export class AdminBookingsService {
     private readonly notifications: NotificationsService,
     private readonly whatsapp: WhatsappService,
     private readonly wallet: WalletService,
+    private readonly razorpay: RazorpayService,
   ) {}
 
   async list(
@@ -195,7 +199,10 @@ export class AdminBookingsService {
         'This booking just changed. Refresh and try again.',
       );
     }
-    if (next === CANCELLED) {
+    // The company cancelling is never the customer's fault: always a full refund.
+    if (next === CANCELLED && updated.paymentMethod === 'razorpay') {
+      await this.razorpay.refund(updated.id, Number(updated.totalAmount));
+    } else if (next === CANCELLED) {
       await this.wallet.refundBooking(
         updated.userId,
         updated.paymentMethod,
@@ -224,7 +231,7 @@ export class AdminBookingsService {
         this.repo.countBookings({
           ...mine,
           createdAt: { gte: monthStart },
-          status: { not: CANCELLED },
+          status: { notIn: [CANCELLED, AWAITING_PAYMENT] },
         }),
         this.repo.sumTotals({ ...mine, status: COMPLETED, completedAt: { gte: monthStart } }),
         this.repo.bookingsWhere({ ...mine, status: PENDING }),

@@ -1,5 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { UserType, type AdminModule, type Prisma, type User } from '@prisma/client';
+import {
+  AdStatus,
+  ServiceVertical,
+  UserType,
+  type AdminModule,
+  type Prisma,
+  type User,
+} from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
@@ -38,6 +45,28 @@ export class AdminUsersRepository {
         take,
       }),
       this.db.user.count({ where }),
+    ]);
+  }
+  /**
+   * Account counts per role, seller listing counts per status, and ELK's own
+   * admin-run services per vertical, for the dashboard. One transaction so the
+   * numbers come from the same moment.
+   */
+  async stats(): Promise<[number, number, number, number, number, number, number, number]> {
+    const users = (userType: UserType) =>
+      this.db.user.count({ where: { deletedAt: null, userType } });
+    const ads = (status: AdStatus) => this.db.ad.count({ where: { deletedAt: null, status } });
+    const services = (vertical: ServiceVertical) =>
+      this.db.homeService.count({ where: { vertical } });
+    return this.db.$transaction([
+      users(UserType.USER),
+      users(UserType.ADMIN),
+      users(UserType.SUPER_ADMIN),
+      ads(AdStatus.ACTIVE),
+      ads(AdStatus.PAUSED),
+      ads(AdStatus.DRAFT),
+      services(ServiceVertical.CLEANING),
+      services(ServiceVertical.REPAIR),
     ]);
   }
   async user(id: string): Promise<UserRow | null> {

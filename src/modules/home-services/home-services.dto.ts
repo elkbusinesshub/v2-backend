@@ -15,10 +15,14 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import type { RazorpayCheckoutDto } from '@/modules/razorpay/razorpay.dto';
 import { MAX_HOURS, MAX_PROFESSIONALS } from './home-services.rules';
 
-/** The ways the cleaning and repair checkout lets a customer pay. */
-export const SERVICE_PAYMENT_METHODS = ['card', 'apple', 'wallet'] as const;
+/**
+ * The ways the cleaning and repair checkout lets a customer pay: Razorpay
+ * (UPI, card or netbanking, chosen inside its checkout) or the ELK Wallet.
+ */
+export const SERVICE_PAYMENT_METHODS = ['razorpay', 'wallet'] as const;
 
 export class ServicesQueryDto {
   @IsOptional()
@@ -94,7 +98,10 @@ export class CreateServiceBookingDto {
   @MaxLength(20)
   promoCode?: string;
 
-  /** card or apple (mock charges for now), or wallet, which is debited. Defaults to card. */
+  /**
+   * razorpay (the booking waits for the checkout to be paid) or wallet, which
+   * is debited at once. Defaults to razorpay.
+   */
   @IsOptional()
   @IsIn(SERVICE_PAYMENT_METHODS)
   paymentMethod?: (typeof SERVICE_PAYMENT_METHODS)[number];
@@ -130,5 +137,12 @@ export class ServiceBookingDto {
   totalAmount!: number;
   promoCode!: string | null;
   paymentMethod!: string;
+  /** Kept from the refund when the customer cancelled late. */
+  cancellationFee!: number;
+  /**
+   * Only on the response to a Razorpay booking: open the checkout with this,
+   * then send its result to POST /service-bookings/:id/payment/verify.
+   */
+  checkout!: RazorpayCheckoutDto | null;
   createdAt!: string;
 }
