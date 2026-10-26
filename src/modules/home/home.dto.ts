@@ -9,7 +9,7 @@ export class PromoBannerDto {
   icon!: string;
 }
 
-/** One tile on the home grid — navigates to a vertical (taxi, stay, ...). */
+/** One tile on the home grid — navigates to a vertical (stay, cleaning, ...). */
 export class HomeCategoryDto {
   id!: string;
   name!: string;

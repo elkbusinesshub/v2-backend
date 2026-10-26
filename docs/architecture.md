@@ -64,15 +64,14 @@ the entire family is revoked, forcing re-login on the affected device chain.
   auto-filter, deletes become updates. Add a model to `SOFT_DELETE_MODELS`
   to opt in. `findUnique` is exempt (use `findFirst` for soft models).
 - Transactions: inject `PRISMA` in a repository and use
-  `db.$transaction(async (tx) => { … })` for multi-step invariants
-  (wallet/ledger operations later).
+  `db.$transaction(async (tx) => { … })` for multi-step invariants.
 
 ## Realtime scaling
 
 One Socket.IO server per API instance; the Redis adapter broadcasts
 across instances, so `server.to('user:123').emit(...)` reaches the user no
 matter which instance holds their socket. Rooms: `user:{id}` (joined at
-connect) plus per-feature rooms (`order:{id}`, `ride:{id}`).
+connect) plus per-feature rooms (e.g. `order:{id}`).
 
 ## Error handling
 

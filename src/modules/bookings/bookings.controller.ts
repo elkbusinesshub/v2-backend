@@ -9,9 +9,9 @@ import { BookingsService } from './bookings.service';
 /**
  * `GET /bookings` — the "My Bookings" list.
  *
- * Read-only: a booking is created by whichever vertical owns it (a porter job,
- * a ride, or an order against a listing), and cancelled through that same
- * vertical's endpoint, because each enforces its own rules.
+ * Read-only: a booking is created by whichever vertical owns it (an order
+ * against a listing, or a cleaning or repair booking), and cancelled through
+ * that same vertical's endpoint, because each enforces its own rules.
  */
 @ApiTags('bookings')
 @ApiBearerAuth()

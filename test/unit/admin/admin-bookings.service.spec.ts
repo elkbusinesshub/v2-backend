@@ -11,7 +11,6 @@ import { AdminRepository } from '@/modules/admin/admin.repository';
 import { HomeServicesRepository } from '@/modules/home-services/home-services.repository';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { RazorpayService } from '@/modules/razorpay/razorpay.service';
-import { WalletService } from '@/modules/wallet/wallet.service';
 import { WhatsappService } from '@/modules/whatsapp/whatsapp.service';
 
 const { PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED } = ServiceBookingStatus;
@@ -79,7 +78,6 @@ describe('AdminBookingsService', () => {
   let repo: jest.Mocked<AdminRepository>;
   let bookings: jest.Mocked<HomeServicesRepository>;
   let notifications: jest.Mocked<NotificationsService>;
-  let wallet: jest.Mocked<WalletService>;
   let razorpay: jest.Mocked<RazorpayService>;
   let whatsapp: jest.Mocked<WhatsappService>;
 
@@ -109,13 +107,9 @@ describe('AdminBookingsService', () => {
             cancelBooking: jest
               .fn()
               .mockResolvedValue(
-                row({ status: CANCELLED, paymentMethod: 'wallet', totalAmount: 1944 }),
+                row({ status: CANCELLED, paymentMethod: 'razorpay', totalAmount: 1944 }),
               ),
           },
-        },
-        {
-          provide: WalletService,
-          useValue: { refundBooking: jest.fn().mockResolvedValue(undefined) },
         },
         { provide: RazorpayService, useValue: { refund: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationsService, useValue: { create: jest.fn().mockResolvedValue({}) } },
@@ -136,7 +130,6 @@ describe('AdminBookingsService', () => {
     repo = moduleRef.get(AdminRepository);
     bookings = moduleRef.get(HomeServicesRepository);
     notifications = moduleRef.get(NotificationsService);
-    wallet = moduleRef.get(WalletService);
     razorpay = moduleRef.get(RazorpayService);
     whatsapp = moduleRef.get(WhatsappService);
   });
@@ -232,20 +225,6 @@ describe('AdminBookingsService', () => {
     );
   });
 
-  it('refunds the customer’s wallet when the company cancels', async () => {
-    bookings.findBooking.mockResolvedValue(row({ status: CONFIRMED }));
-    await expect(svc.setStatus('co-1', 'b-1', CANCELLED, BOTH)).resolves.toMatchObject({
-      status: CANCELLED,
-    });
-    expect(bookings.cancelBooking).toHaveBeenCalledWith('b-1', [CONFIRMED]);
-    expect(wallet.refundBooking).toHaveBeenCalledWith(
-      expect.any(String),
-      'wallet',
-      1944,
-      expect.any(String),
-    );
-  });
-
   it('refunds a Razorpay booking in full when the company cancels, however late', async () => {
     bookings.findBooking.mockResolvedValue(
       row({ status: CONFIRMED, createdAt: new Date('2000-01-01T00:00:00Z') }),
@@ -254,8 +233,8 @@ describe('AdminBookingsService', () => {
       row({ status: CANCELLED, paymentMethod: 'razorpay', totalAmount: 1944 }),
     );
     await svc.setStatus('co-1', 'b-1', CANCELLED, BOTH);
+    expect(bookings.cancelBooking).toHaveBeenCalledWith('b-1', [CONFIRMED]);
     expect(razorpay.refund).toHaveBeenCalledWith('b-1', 1944);
-    expect(wallet.refundBooking).not.toHaveBeenCalled();
   });
 
   it('refuses to cancel a job already under way', async () => {

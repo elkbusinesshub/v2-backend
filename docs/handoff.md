@@ -90,8 +90,7 @@ additive `npm run db:migrate` — regenerating an applied migration corrupts mig
 - Auth/session storage is a SharedPreferences boolean — no tokens are stored anywhere. Wiring
   order that makes sense: secure token storage → Dio auth interceptor (attach bearer, refresh on 401) → swap repositories one at a time (auth first). Backend response shapes were built to match
   the existing Flutter `fromJson` models field-for-field, so the swaps should be mechanical.
-- The endpoints the app expects that don't exist yet are listed in progress.md §3 (each vertical —
-  rides/elkstay/rentals/porter — is its own future backend module by design).
+- The endpoints the app expects that don't exist yet are listed in progress.md §3.
 - The map picker draws a fake map (`CustomPainter`); real maps SDK + GPS packages are not yet in
   `pubspec.yaml`. Address text + lat/lng are resolved client-side by decision — the backend never
   geocodes.

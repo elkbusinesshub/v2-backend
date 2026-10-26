@@ -82,17 +82,7 @@ describe('PlacesService', () => {
     google = {
       autocomplete: jest.fn().mockResolvedValue([]),
       placeDetails: jest.fn().mockResolvedValue(detailsResult()),
-      staticMap: jest.fn().mockResolvedValue({
-        body: Buffer.from('PNGBYTES'),
-        contentType: 'image/png',
-      }),
       reverseGeocode: jest.fn().mockResolvedValue([geocodeResult()]),
-      computeRoute: jest.fn().mockResolvedValue({
-        distanceMeters: 8340,
-        duration: '907s',
-        // Two points near Bengaluru, in Google's encoded polyline format.
-        polyline: { encodedPolyline: '_p~iF~ps|U_ulLnnqC' },
-      }),
       get isConfigured() {
         return configured;
       },
@@ -277,104 +267,6 @@ describe('PlacesService', () => {
     await expect(service.reverse(10, 76)).rejects.toBeInstanceOf(UpstreamServiceException);
     await expect(service.details('x')).rejects.toBeInstanceOf(UpstreamServiceException);
     expect(google.autocomplete).not.toHaveBeenCalled();
-  });
-
-  describe('static map', () => {
-    const req = { lat: 12.9352, lng: 77.6245, zoom: 15, width: 400, height: 200 };
-
-    it('fetches and caches the image', async () => {
-      const image = await service.staticMap(req);
-
-      expect(image.body.toString()).toBe('PNGBYTES');
-      expect(google.staticMap).toHaveBeenCalledWith(req);
-      // Cached as base64 — every miss is a billed Google call for a picture
-      // that does not change.
-      expect(cache.set).toHaveBeenCalledWith(
-        expect.stringContaining('places:map:12.9352,77.6245'),
-        { body: Buffer.from('PNGBYTES').toString('base64'), contentType: 'image/png' },
-        expect.any(Number),
-      );
-    });
-
-    it('serves a cache hit without calling Google', async () => {
-      cache.get.mockResolvedValue({
-        body: Buffer.from('CACHED').toString('base64'),
-        contentType: 'image/png',
-      });
-
-      const image = await service.staticMap(req);
-
-      expect(image.body.toString()).toBe('CACHED');
-      expect(google.staticMap).not.toHaveBeenCalled();
-    });
-
-    it('keys on rounded coordinates so GPS jitter still hits', async () => {
-      await service.staticMap({ ...req, lat: 12.93521234 });
-
-      expect(cache.get).toHaveBeenCalledWith(expect.stringContaining('12.9352,77.6245'));
-    });
-
-    it('keys separately per size and zoom', async () => {
-      await service.staticMap(req);
-      await service.staticMap({ ...req, zoom: 12 });
-
-      const keys = cache.get.mock.calls.map((call: unknown[]) => call[0]);
-      expect(new Set(keys).size).toBe(2);
-    });
-  });
-
-  describe('route', () => {
-    const trip = { originLat: 12.9716, originLng: 77.5946, destLat: 12.9352, destLng: 77.6245 };
-
-    it('decodes the polyline and normalises the duration', async () => {
-      const route = await service.route(trip);
-
-      // The app gets plain coordinates — only the backend speaks Google's
-      // encoded-polyline format.
-      expect(route).toEqual({
-        points: [
-          [38.5, -120.2],
-          [40.7, -120.95],
-        ],
-        distanceMeters: 8340,
-        // "907s" → 907
-        durationSeconds: 907,
-      });
-    });
-
-    it('caches the computed route', async () => {
-      await service.route(trip);
-
-      expect(cache.set).toHaveBeenCalledWith(
-        expect.stringContaining('places:route:12.9716,77.5946:12.9352,77.6245'),
-        expect.objectContaining({ distanceMeters: 8340 }),
-        expect.any(Number),
-      );
-    });
-
-    it('serves a cache hit without calling Google', async () => {
-      cache.get.mockResolvedValue({ points: [[1, 2]], distanceMeters: 10, durationSeconds: 5 });
-
-      await expect(service.route(trip)).resolves.toEqual({
-        points: [[1, 2]],
-        distanceMeters: 10,
-        durationSeconds: 5,
-      });
-      expect(google.computeRoute).not.toHaveBeenCalled();
-    });
-
-    it('returns null when Google knows no road route, so callers can fall back', async () => {
-      google.computeRoute.mockResolvedValue(null);
-
-      await expect(service.route(trip)).resolves.toBeNull();
-      expect(cache.set).not.toHaveBeenCalled();
-    });
-
-    it('returns null rather than an empty shape when the route carries no polyline', async () => {
-      google.computeRoute.mockResolvedValue({ distanceMeters: 8340, duration: '907s' });
-
-      await expect(service.route(trip)).resolves.toBeNull();
-    });
   });
 });
 

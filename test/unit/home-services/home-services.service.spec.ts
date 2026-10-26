@@ -11,7 +11,6 @@ import { HomeServicesService } from '@/modules/home-services/home-services.servi
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { RazorpayService } from '@/modules/razorpay/razorpay.service';
 import { UsersRepository } from '@/modules/users/users.repository';
-import { WalletService } from '@/modules/wallet/wallet.service';
 
 const user: AuthUser = { id: 'u-1', role: UserType.USER, jti: 'j', exp: 9999999999 };
 const FUTURE = '2099-01-10';
@@ -77,7 +76,6 @@ const base = {
 describe('HomeServicesService', () => {
   let svc: HomeServicesService;
   let repo: jest.Mocked<HomeServicesRepository>;
-  let wallet: jest.Mocked<WalletService>;
   let razorpay: jest.Mocked<RazorpayService>;
 
   beforeEach(async () => {
@@ -119,15 +117,6 @@ describe('HomeServicesService', () => {
           useValue: { findById: jest.fn().mockResolvedValue({ phone: '+919000000001' }) },
         },
         {
-          provide: WalletService,
-          useValue: {
-            payForBooking: jest.fn((_u: string, method: string) =>
-              Promise.resolve(method === 'wallet'),
-            ),
-            refundBooking: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-        {
           provide: RazorpayService,
           useValue: {
             enabled: true,
@@ -140,7 +129,6 @@ describe('HomeServicesService', () => {
     }).compile();
     svc = moduleRef.get(HomeServicesService);
     repo = moduleRef.get(HomeServicesRepository);
-    wallet = moduleRef.get(WalletService);
     razorpay = moduleRef.get(RazorpayService);
   });
 
@@ -203,7 +191,28 @@ describe('HomeServicesService', () => {
       total: 1944,
     });
     expect(booking.checkout).toEqual(checkout);
-    expect(wallet.payForBooking).toHaveBeenCalledWith('u-1', 'razorpay', 1944, expect.any(String));
+  });
+
+  it('places a booking a promo made free at once, with nothing for Razorpay to collect', async () => {
+    repo.findPromo.mockResolvedValue({
+      id: 'p',
+      code: 'FREE100',
+      percent: 100,
+      maxDiscount: 100000 as never,
+      minOrder: 0 as never,
+      validTill: new Date('2099-12-31T00:00:00Z'),
+      active: true,
+      description: '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const booking = await svc.book(user, { ...base, promoCode: 'FREE100' });
+
+    expect(repo.createBooking).toHaveBeenCalledWith(
+      expect.objectContaining({ status: ServiceBookingStatus.PENDING, totalAmount: 0 }),
+    );
+    expect(razorpay.checkout).not.toHaveBeenCalled();
+    expect(booking.checkout).toBeNull();
   });
 
   it('closes the booking when Razorpay cannot open an order', async () => {
@@ -287,7 +296,7 @@ describe('HomeServicesService', () => {
   });
 
   it('lets the customer cancel before the job starts, but not after', async () => {
-    cancellable('wallet', 0, 0);
+    cancellable('razorpay', 0, 0);
     await expect(svc.cancel(user, 'b-1')).resolves.toMatchObject({ status: 'CANCELLED' });
 
     repo.findBooking.mockResolvedValue({
@@ -312,19 +321,6 @@ describe('HomeServicesService', () => {
     expect(repo.cancelBooking).toHaveBeenCalledWith('b-1', expect.any(Array), 194.4);
     expect(razorpay.refund).toHaveBeenCalledWith('b-1', 1944 - 194.4);
     expect(cancelled.cancellationFee).toBe(194.4);
-    expect(wallet.refundBooking).not.toHaveBeenCalled();
-  });
-
-  it('applies the same fee to a late-cancelled wallet booking', async () => {
-    cancellable('wallet', 1944, 3);
-    await svc.cancel(user, 'b-1');
-    expect(wallet.refundBooking).toHaveBeenCalledWith(
-      'u-1',
-      'wallet',
-      1944 - 194.4,
-      'Bathroom deep clean',
-    );
-    expect(razorpay.refund).not.toHaveBeenCalled();
   });
 
   it('does not let one customer cancel another’s booking', async () => {
@@ -332,32 +328,16 @@ describe('HomeServicesService', () => {
     await expect(svc.cancel(user, 'b-1')).rejects.toBeInstanceOf(ResourceNotFoundException);
   });
 
-  it('debits the wallet for the total when the customer pays with it', async () => {
-    const booking = await svc.book(user, { ...base, paymentMethod: 'wallet' });
-
-    expect(wallet.payForBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
-    expect(repo.createBooking).toHaveBeenCalledWith(
-      expect.objectContaining({ paymentMethod: 'wallet', totalAmount: 1944 }),
-    );
-    expect(booking.paymentMethod).toBe('wallet');
-  });
-
-  it('refunds the wallet when the booking fails to save after the debit', async () => {
-    repo.createBooking.mockRejectedValueOnce(new Error('db down'));
-    await expect(svc.book(user, { ...base, paymentMethod: 'wallet' })).rejects.toThrow('db down');
-    expect(wallet.refundBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
-  });
-
-  it('refunds a wallet booking the customer cancels, once', async () => {
-    cancellable('wallet', 1944, 0);
+  it('refunds a cancelled booking once', async () => {
+    cancellable('razorpay', 1944, 0);
     await svc.cancel(user, 'b-1');
-    expect(wallet.refundBooking).toHaveBeenCalledWith('u-1', 'wallet', 1944, 'Bathroom deep clean');
+    expect(razorpay.refund).toHaveBeenCalledWith('b-1', 1944);
 
     // A second cancel that loses the race refunds nothing.
-    wallet.refundBooking.mockClear();
+    razorpay.refund.mockClear();
     repo.cancelBooking.mockReset();
     repo.cancelBooking.mockResolvedValue(null);
     await expect(svc.cancel(user, 'b-1')).rejects.toBeInstanceOf(DomainException);
-    expect(wallet.refundBooking).not.toHaveBeenCalled();
+    expect(razorpay.refund).not.toHaveBeenCalled();
   });
 });

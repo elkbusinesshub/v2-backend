@@ -20,7 +20,7 @@ import { createWsAuthMiddleware } from './ws-auth.middleware';
  *   3. every socket joins its user room `user:{id}` so other services can
  *      target a person across all their devices:
  *        server.to(`user:${id}`).emit(...)
- *   4. business rooms (order:{id}, ride:{id}) joined per feature
+ *   4. business rooms (e.g. order:{id}) joined per feature
  */
 @WebSocketGateway({ namespace: '/system' })
 export class SystemGateway implements OnGatewayInit, OnGatewayConnection {

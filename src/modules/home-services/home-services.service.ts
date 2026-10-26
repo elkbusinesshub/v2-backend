@@ -11,7 +11,6 @@ import { LocationsRepository } from '@/modules/locations/locations.repository';
 import type { VerifyRazorpayPaymentDto } from '@/modules/razorpay/razorpay.dto';
 import { RazorpayService } from '@/modules/razorpay/razorpay.service';
 import { UsersRepository } from '@/modules/users/users.repository';
-import { WalletService } from '@/modules/wallet/wallet.service';
 import type {
   CreateServiceBookingDto,
   HomeServiceDto,
@@ -61,7 +60,6 @@ export class HomeServicesService {
     private readonly repo: HomeServicesRepository,
     private readonly addresses: LocationsRepository,
     private readonly users: UsersRepository,
-    private readonly wallet: WalletService,
     private readonly razorpay: RazorpayService,
   ) {}
 
@@ -144,51 +142,44 @@ export class HomeServicesService {
     const paymentMethod = dto.paymentMethod ?? 'razorpay';
     // Razorpay takes no zero-rupee orders; a booking a promo made free has
     // nothing to collect.
-    const online = paymentMethod === 'razorpay' && total > 0;
+    const online = total > 0;
     if (online && !this.razorpay.enabled) {
       throw new DomainException(
         HttpStatus.SERVICE_UNAVAILABLE,
         'PAYMENTS_UNAVAILABLE',
-        'Online payment is not available right now. Pay with your ELK Wallet instead.',
+        'Online payment is not available right now. Please try again later.',
       );
     }
-    const paid = await this.wallet.payForBooking(user.id, paymentMethod, total, service.name);
-    const booking = await this.repo
-      .createBooking({
-        code: `ELK-S-${this.randomCode()}`,
-        // Hidden from the admin until Razorpay confirms the payment.
-        status: online ? ServiceBookingStatus.AWAITING_PAYMENT : ServiceBookingStatus.PENDING,
-        userId: user.id,
-        serviceId: service.id,
-        serviceName: service.name,
-        vertical: service.vertical,
-        category: service.category,
-        hours: dto.hours,
-        professionals: dto.professionals,
-        withMaterials,
-        scheduledDate: new Date(`${dto.date}T00:00:00.000Z`),
-        timeSlot: dto.timeSlot,
-        addressLabel: address.label,
-        addressText,
-        lat: address.lat,
-        lng: address.lng,
-        directions: address.directions,
-        contactPhone: account?.phone ?? '',
-        locationId: area.id,
-        // The company whose area this is takes the booking.
-        companyId: area.companyId,
-        baseAmount: q.base,
-        materialsAmount: q.materials,
-        discountAmount: discount,
-        totalAmount: total,
-        promoCode,
-        paymentMethod,
-      })
-      .catch(async (err: unknown) => {
-        // Charged but not booked: give the money back before failing.
-        if (paid) await this.wallet.refundBooking(user.id, paymentMethod, total, service.name);
-        throw err;
-      });
+    const booking = await this.repo.createBooking({
+      code: `ELK-S-${this.randomCode()}`,
+      // Hidden from the admin until Razorpay confirms the payment.
+      status: online ? ServiceBookingStatus.AWAITING_PAYMENT : ServiceBookingStatus.PENDING,
+      userId: user.id,
+      serviceId: service.id,
+      serviceName: service.name,
+      vertical: service.vertical,
+      category: service.category,
+      hours: dto.hours,
+      professionals: dto.professionals,
+      withMaterials,
+      scheduledDate: new Date(`${dto.date}T00:00:00.000Z`),
+      timeSlot: dto.timeSlot,
+      addressLabel: address.label,
+      addressText,
+      lat: address.lat,
+      lng: address.lng,
+      directions: address.directions,
+      contactPhone: account?.phone ?? '',
+      locationId: area.id,
+      // The company whose area this is takes the booking.
+      companyId: area.companyId,
+      baseAmount: q.base,
+      materialsAmount: q.materials,
+      discountAmount: discount,
+      totalAmount: total,
+      promoCode,
+      paymentMethod,
+    });
     if (!online) return toBookingJson(booking);
 
     const checkout = await this.razorpay
@@ -239,16 +230,8 @@ export class HomeServicesService {
         'This booking can no longer be cancelled',
       );
     }
-    if (cancelled.paymentMethod === 'razorpay') {
-      await this.razorpay.refund(id, total - fee);
-    } else {
-      await this.wallet.refundBooking(
-        user.id,
-        cancelled.paymentMethod,
-        total - fee,
-        cancelled.serviceName,
-      );
-    }
+    // A no-op when nothing was captured (a free booking, or one never paid).
+    await this.razorpay.refund(id, total - fee);
     return toBookingJson(cancelled);
   }
 

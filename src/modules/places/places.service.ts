@@ -9,7 +9,7 @@ import {
   type GeocodeResult,
   type PlaceDetailsResult,
 } from './google-places.client';
-import type { PlaceSuggestionDto, PlaceType, ResolvedPlaceDto, RouteDto } from './places.dto';
+import type { PlaceSuggestionDto, PlaceType, ResolvedPlaceDto } from './places.dto';
 
 /**
  * Google's terms allow caching place content for up to 30 days. Resolved
@@ -22,49 +22,6 @@ const RESOLVED_TTL_SECONDS = 30 * 24 * 60 * 60;
  * same cache entry, fine enough that neighbouring streets stay distinct.
  */
 const COORD_PRECISION = 4;
-
-/**
- * Routes go stale as roads and traffic change, so they are cached far more
- * briefly than places. Long enough that redrawing the same trip across the
- * booking steps is one call, short enough that a route is never a day old.
- */
-const ROUTE_TTL_SECONDS = 15 * 60;
-
-/**
- * Decodes Google's encoded polyline into `[lat, lng]` pairs.
- *
- * The format stores each point as a signed offset from the previous one, in
- * chunks of five bits with a continuation flag — see
- * https://developers.google.com/maps/documentation/utilities/polylinealgorithm
- *
- * Done here rather than in the app so only one codebase speaks the format.
- */
-export function decodePolyline(encoded: string): [number, number][] {
-  const points: [number, number][] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  const nextDelta = (): number => {
-    let result = 0;
-    let shift = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    // Odd values are negative — the sign is carried in the low bit.
-    return result & 1 ? ~(result >> 1) : result >> 1;
-  };
-
-  while (index < encoded.length) {
-    lat += nextDelta();
-    lng += nextDelta();
-    points.push([lat / 1e5, lng / 1e5]);
-  }
-  return points;
-}
 
 /** Component shape shared by the two Google APIs after normalisation. */
 interface Component {
@@ -133,42 +90,6 @@ export class PlacesService {
     const resolved = this.fromGeocode(results[0]!);
     await this.cache.set(key, resolved, RESOLVED_TTL_SECONDS);
     return resolved;
-  }
-
-  /**
-   * The driving route between two points, for the polyline on ride and porter
-   * maps.
-   *
-   * Returns null when Google knows no road route; callers fall back to a
-   * straight line rather than showing no route at all.
-   */
-  async route(params: {
-    originLat: number;
-    originLng: number;
-    destLat: number;
-    destLng: number;
-  }): Promise<RouteDto | null> {
-    this.assertConfigured();
-
-    const p = COORD_PRECISION;
-    const key =
-      `places:route:${params.originLat.toFixed(p)},${params.originLng.toFixed(p)}` +
-      `:${params.destLat.toFixed(p)},${params.destLng.toFixed(p)}`;
-    const cached = await this.cache.get<RouteDto>(key);
-    if (cached) return cached;
-
-    const computed = await this.google.computeRoute(params);
-    const encoded = computed?.polyline?.encodedPolyline;
-    if (!computed || !encoded) return null;
-
-    const route: RouteDto = {
-      points: decodePolyline(encoded),
-      distanceMeters: computed.distanceMeters ?? 0,
-      // Routes API gives duration as a seconds string, e.g. "907s".
-      durationSeconds: Number.parseInt(computed.duration ?? '0', 10) || 0,
-    };
-    await this.cache.set(key, route, ROUTE_TTL_SECONDS);
-    return route;
   }
 
   private assertConfigured(): void {
@@ -271,41 +192,5 @@ export class PlacesService {
     if (levels.district) return 'district';
     if (levels.state) return 'state';
     return 'country';
-  }
-  /**
-   * Renders a map image for a coordinate.
-   *
-   * Cached for 30 days like the geocoding results: the same branch or service
-   * area is drawn on every screen open, and each miss is a billed Google call.
-   * The key is rounded to 4 dp (~11 m) so tiny GPS jitter still hits.
-   */
-  async staticMap(params: {
-    lat: number;
-    lng: number;
-    zoom: number;
-    width: number;
-    height: number;
-  }): Promise<{ body: Buffer; contentType: string }> {
-    const key =
-      `places:map:${params.lat.toFixed(4)},${params.lng.toFixed(4)}` +
-      `:${params.zoom}:${params.width}x${params.height}`;
-
-    // Base64 through CacheService rather than a raw Redis buffer, so this
-    // stays on the same cache abstraction as the geocoding results.
-    const cached = await this.cache.get<{ body: string; contentType: string }>(key);
-    if (cached) {
-      return {
-        body: Buffer.from(cached.body, 'base64'),
-        contentType: cached.contentType,
-      };
-    }
-
-    const image = await this.google.staticMap(params);
-    await this.cache.set(
-      key,
-      { body: image.body.toString('base64'), contentType: image.contentType },
-      RESOLVED_TTL_SECONDS,
-    );
-    return image;
   }
 }

@@ -1,24 +1,16 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { type Ad, AdOrderStatus } from '@prisma/client';
+import { AdOrderStatus } from '@prisma/client';
 import {
   DomainException,
   ForbiddenResourceException,
   ResourceNotFoundException,
-  ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import { AdminAccessService } from '@/common/admin-access/admin-access.service';
 import type { AuthUser } from '@/common/types/auth.types';
 import { displayDate } from '@/common/utils/display-date';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
-import { WalletService } from '@/modules/wallet/wallet.service';
 import { AdOrdersRepository, type AdOrderRow } from './ad-orders.repository';
-import {
-  type HourlyQuote,
-  CleaningPricingService,
-  DEFAULT_CLEANING_SUB_CATEGORY,
-} from './cleaning-pricing.service';
-import { DEFAULT_REPAIR_SUB_CATEGORY, RepairPricingService } from './repair-pricing.service';
 import type { AdOrderDto, CreateAdOrderDto } from './marketplace.dto';
 import { MarketplaceRepository } from './marketplace.repository';
 
@@ -57,10 +49,7 @@ export class AdOrdersService {
     private readonly orders: AdOrdersRepository,
     private readonly ads: MarketplaceRepository,
     private readonly notifications: NotificationsService,
-    private readonly cleaningPricing: CleaningPricingService,
-    private readonly repairPricing: RepairPricingService,
     private readonly access: AdminAccessService,
-    private readonly wallet: WalletService,
   ) {}
 
   /** A buyer orders a listing. */
@@ -91,50 +80,33 @@ export class AdOrdersService {
     }
 
     const quantity = dto.quantity ?? 1;
-    const hourly = await this.hourlyQuote(ad, dto);
-    // Computed here, never taken from the client — the buyer's device does
-    // not get to say what it owes. An enquiry costs nothing: asking to view
-    // a room is not the same as taking it for a month.
-    const amount = dto.isEnquiry ? 0 : (hourly?.amount ?? Number(ad.price) * quantity);
-    const feesAmount = hourly?.feesAmount ?? dto.feesAmount ?? 0;
-    const taxAmount = dto.taxAmount ?? 0;
-    const paymentMethod = dto.isEnquiry ? null : (dto.paymentMethod ?? null);
-    const total = amount + feesAmount + taxAmount;
-    const paid = await this.wallet.payForBooking(user.id, paymentMethod, total, ad.title);
-    const order = await this.orders
-      .create({
-        code: `ELK-A-${this.randomCode()}`,
-        adId: ad.id,
-        buyerId: user.id,
-        // Snapshotted, not joined: a listing that changes hands or is repriced
-        // must not rewrite who was owed what for work already ordered.
-        sellerId: ad.sellerId,
-        amount,
-        isEnquiry: dto.isEnquiry ?? false,
-        quantity,
-        serviceName: ad.title,
-        addressText: dto.addressText,
-        lat: dto.lat ?? null,
-        lng: dto.lng ?? null,
-        contactPhone: dto.contactPhone,
-        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
-        endAt: dto.endAt ? new Date(dto.endAt) : null,
-        durationMonths: dto.durationMonths ?? null,
-        depositAmount: dto.depositAmount ?? null,
-        feesAmount,
-        hours: hourly ? dto.hours : null,
-        professionals: hourly ? dto.professionals : null,
-        withMaterials:
-          hourly && ad.categorySlug === 'cleaning' ? (dto.withMaterials ?? false) : false,
-        withParts: hourly && ad.categorySlug === 'repairing' ? (dto.withParts ?? false) : false,
-        taxAmount,
-        paymentMethod,
-        note: dto.note ?? null,
-      })
-      .catch(async (err: unknown) => {
-        if (paid) await this.wallet.refundBooking(user.id, paymentMethod, total, ad.title);
-        throw err;
-      });
+    const order = await this.orders.create({
+      code: `ELK-A-${this.randomCode()}`,
+      adId: ad.id,
+      buyerId: user.id,
+      // Snapshotted, not joined: a listing that changes hands or is repriced
+      // must not rewrite who was owed what for work already ordered.
+      sellerId: ad.sellerId,
+      // Computed here, never taken from the client — the buyer's device does
+      // not get to say what it owes. An enquiry costs nothing: asking to view
+      // a room is not the same as taking it for a month.
+      amount: dto.isEnquiry ? 0 : Number(ad.price) * quantity,
+      isEnquiry: dto.isEnquiry ?? false,
+      quantity,
+      serviceName: ad.title,
+      addressText: dto.addressText,
+      lat: dto.lat ?? null,
+      lng: dto.lng ?? null,
+      contactPhone: dto.contactPhone,
+      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+      endAt: dto.endAt ? new Date(dto.endAt) : null,
+      durationMonths: dto.durationMonths ?? null,
+      depositAmount: dto.depositAmount ?? null,
+      feesAmount: dto.feesAmount ?? 0,
+      taxAmount: dto.taxAmount ?? 0,
+      paymentMethod: dto.isEnquiry ? null : (dto.paymentMethod ?? null),
+      note: dto.note ?? null,
+    });
 
     // The seller has no live connection to the panel, so this is the only way
     // they learn an order arrived. Failure must not fail the order.
@@ -155,45 +127,6 @@ export class AdOrdersService {
     }
 
     return this.toJson(order);
-  }
-
-  /**
-   * The admin price of a cleaning or repair job, when the buyer booked one by
-   * the hour.
-   *
-   * Null for anything else — other categories, an enquiry, or an older app
-   * that does not send hours — which keeps the listing-price path unchanged.
-   */
-  private async hourlyQuote(ad: Ad, dto: CreateAdOrderDto): Promise<HourlyQuote | null> {
-    const hourlyCategory = ad.categorySlug === 'cleaning' || ad.categorySlug === 'repairing';
-    if (!hourlyCategory || dto.isEnquiry || dto.hours === undefined) {
-      return null;
-    }
-    if (dto.professionals === undefined) {
-      throw new ValidationFailedException([
-        { field: 'professionals', message: 'professionals is required with hours' },
-      ]);
-    }
-    const attributes = (ad.attributes ?? {}) as Record<string, unknown>;
-    const tile = typeof attributes.subCategory === 'string' ? attributes.subCategory : null;
-
-    if (ad.categorySlug === 'repairing') {
-      const quote = await this.repairPricing.quote(
-        tile ?? DEFAULT_REPAIR_SUB_CATEGORY,
-        dto.hours,
-        dto.professionals,
-        dto.withParts ?? false,
-      );
-      // The visit fee is still the screen's to add, once per visit; the parts
-      // fee is priced here and added to it.
-      return { ...quote, feesAmount: quote.feesAmount + (dto.feesAmount ?? 0) };
-    }
-    return this.cleaningPricing.quote(
-      tile ?? DEFAULT_CLEANING_SUB_CATEGORY,
-      dto.hours,
-      dto.professionals,
-      dto.withMaterials ?? false,
-    );
   }
 
   async listForSeller(user: AuthUser, status?: AdOrderStatus): Promise<AdOrderDto[]> {
@@ -244,14 +177,6 @@ export class AdOrdersService {
         HttpStatus.CONFLICT,
         'INVALID_TRANSITION',
         'This order just changed. Refresh and try again.',
-      );
-    }
-    if (next === AdOrderStatus.CANCELLED) {
-      await this.wallet.refundBooking(
-        updated.buyerId,
-        updated.paymentMethod,
-        Number(updated.amount) + Number(updated.feesAmount) + Number(updated.taxAmount),
-        updated.serviceName,
       );
     }
 

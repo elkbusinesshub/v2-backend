@@ -1,7 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { Prisma, UserType } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { UnauthenticatedException } from '@/common/errors/domain.exceptions';
 import { AuthService } from '@/modules/auth/auth.service';
 import { OtpService } from '@/modules/auth/otp.service';
@@ -20,7 +20,6 @@ const user = {
   userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
-  walletBalance: new Prisma.Decimal(0),
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,

@@ -18,11 +18,8 @@ import {
 import type { RazorpayCheckoutDto } from '@/modules/razorpay/razorpay.dto';
 import { MAX_HOURS, MAX_PROFESSIONALS } from './home-services.rules';
 
-/**
- * The ways the cleaning and repair checkout lets a customer pay: Razorpay
- * (UPI, card or netbanking, chosen inside its checkout) or the ELK Wallet.
- */
-export const SERVICE_PAYMENT_METHODS = ['razorpay', 'wallet'] as const;
+/** How the cleaning and repair checkout takes payment: Razorpay (UPI, card or netbanking, chosen inside its checkout). */
+export const SERVICE_PAYMENT_METHODS = ['razorpay'] as const;
 
 export class ServicesQueryDto {
   @IsOptional()
@@ -98,10 +95,7 @@ export class CreateServiceBookingDto {
   @MaxLength(20)
   promoCode?: string;
 
-  /**
-   * razorpay (the booking waits for the checkout to be paid) or wallet, which
-   * is debited at once. Defaults to razorpay.
-   */
+  /** razorpay: the booking waits for the checkout to be paid. The default. */
   @IsOptional()
   @IsIn(SERVICE_PAYMENT_METHODS)
   paymentMethod?: (typeof SERVICE_PAYMENT_METHODS)[number];

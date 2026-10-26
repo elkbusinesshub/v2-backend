@@ -36,16 +36,16 @@ describe('BookingsService', () => {
           createdAt: new Date('2026-07-01T00:00:00.000Z'),
         },
         {
-          id: 'rd-1',
-          vertical: 'rides',
-          categorySlug: 'taxi',
-          reference: 'ELK-7781-QQ',
-          serviceName: 'ELK Go ride',
-          serviceIcon: '🚕',
+          id: 'sb-1',
+          vertical: 'service',
+          categorySlug: 'repairing',
+          reference: 'ELK-S-QQ781',
+          serviceName: 'AC service',
+          serviceIcon: '🔧',
           providerName: 'Suresh K.',
           status: 'CONFIRMED',
           scheduledAt: new Date('2026-07-07T10:00:00.000Z'),
-          addressText: 'Indiranagar → MG Road',
+          addressText: 'Indiranagar',
           total: 210,
           createdAt: new Date('2026-07-01T00:00:00.000Z'),
         },
@@ -54,7 +54,7 @@ describe('BookingsService', () => {
       const items = await bookingsService.list('u-1');
 
       // The app routes a cancel by this field, so it must survive the mapping.
-      expect(items.map((i) => i.vertical)).toEqual(['marketplace', 'rides']);
+      expect(items.map((i) => i.vertical)).toEqual(['marketplace', 'service']);
       expect(items[0]).toEqual({
         id: 'ao-1',
         vertical: 'marketplace',
@@ -73,16 +73,16 @@ describe('BookingsService', () => {
     it('serialises a booking with no schedule as a null date rather than crashing', async () => {
       unified.findAllByUser.mockResolvedValue([
         {
-          id: 'po-1',
-          vertical: 'porter',
-          categorySlug: 'porter',
-          reference: 'ELK-4390-LX',
-          serviceName: 'Bike delivery',
-          serviceIcon: '📦',
-          providerName: 'ELK Porter',
-          status: 'CONFIRMED',
-          scheduledAt: null, // "pickup now" carries no scheduled time
-          addressText: 'Indiranagar → MG Road',
+          id: 'ao-2',
+          vertical: 'marketplace',
+          categorySlug: 'cleaning',
+          reference: 'ELK-A-4390L',
+          serviceName: 'Sofa shampoo',
+          serviceIcon: '🛋️',
+          providerName: 'Royal Shine',
+          status: 'NEW',
+          scheduledAt: null, // "as soon as possible" carries no scheduled time
+          addressText: 'Indiranagar',
           total: 60,
           createdAt: new Date('2026-07-01T00:00:00.000Z'),
         },

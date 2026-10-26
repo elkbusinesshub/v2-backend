@@ -60,7 +60,7 @@ export const envSchema = z
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default('secrets/firebase-service-account.json'),
 
     // Razorpay checkout for ELK's cleaning and repair bookings. Disabled →
-    // those bookings can only be paid from the ELK Wallet. Test keys
+    // those bookings are refused until it is switched on. Test keys
     // (rzp_test_...) for development; the webhook secret is the one typed in
     // when creating the webhook in the Razorpay dashboard.
     RAZORPAY_ENABLED: boolString('false'),

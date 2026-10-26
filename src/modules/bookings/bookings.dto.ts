@@ -4,7 +4,7 @@ export class BookingListItemDto {
   id!: string;
   /**
    * Which vertical the booking belongs to. The app needs it to route a cancel:
-   * porter and rides own theirs, and everything else is a listing order.
+   * a listing order or one of ELK's own cleaning and repair bookings.
    */
   vertical!: BookingVertical;
   reference!: string;
@@ -14,12 +14,11 @@ export class BookingListItemDto {
   /** Each vertical has its own status enum; they share CONFIRMED/COMPLETED/CANCELLED. */
   status!: string;
   /**
-   * The listing's category (`cleaning`, `repairing`, `car_rental`, `elkstay`),
-   * or `porter` / `taxi` for the two verticals that are not listings. Drives
+   * The category (`cleaning`, `repairing`, `car_rental`, `elkstay`). Drives
    * the category filter on My Bookings.
    */
   categorySlug!: string;
-  /** Null for a booking with no date yet (an immediate porter pickup). */
+  /** Null for a booking with no date yet. */
   scheduledAt!: string | null;
   addressText!: string;
   total!: number;

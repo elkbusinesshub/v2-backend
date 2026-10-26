@@ -158,7 +158,7 @@ Request:
   "timeSlot": "11:00",
   "addressId": "01a0…",
   "promoCode": "WELCOME15",
-  "paymentMethod": "wallet"
+  "paymentMethod": "razorpay"
 }
 ```
 
@@ -172,9 +172,9 @@ Request:
 | `timeSlot`      | `HH:MM`. The app offers 09:00, 11:00, 13:00, 15:00, 17:00, 19:00           |
 | `addressId`     | One of the caller's saved addresses (`/locations`)                         |
 | `promoCode`     | Optional. A code that doesn't apply rejects the whole booking (see errors) |
-| `paymentMethod` | Optional. `card` (default), `apple` or `wallet`                            |
+| `paymentMethod` | Optional. `razorpay`, the only value and the default                       |
 
-With `wallet`, the total is debited from the customer's ELK Wallet as the booking is made (`402 INSUFFICIENT_BALANCE` if it can't cover it) and refunded when the customer or the company cancels. Taxi, porter and marketplace orders work the same way.
+The booking is paid through Razorpay. It is created `AWAITING_PAYMENT` with a `checkout` (`keyId`, `orderId`, `amount` in paise, `currency`) and stays hidden from the customer's and the admin's lists until paid. The app opens Razorpay's checkout with it, then sends the result to `POST /service-bookings/:id/payment/verify`; Razorpay's webhook confirms it too. Once paid, the booking becomes `PENDING`. A booking a promo made free is placed `PENDING` at once, with no `checkout`.
 
 The address must fall inside an active service location. That means either within the location's radius of its centre, or carrying its pincode in the address text. Its flat number and building are included in the booking's `addressText`, and its directions are copied onto the booking.
 
@@ -213,7 +213,14 @@ Response `data`: a **booking**, the same shape the admin sees:
   "discountAmount": 300,
   "totalAmount": 1793,
   "promoCode": "WELCOME15",
-  "paymentMethod": "wallet",
+  "paymentMethod": "razorpay",
+  "cancellationFee": 0,
+  "checkout": {
+    "keyId": "rzp_test_…",
+    "orderId": "order_…",
+    "amount": 179300,
+    "currency": "INR"
+  },
   "createdAt": "2026-09-28T07:40:12.000Z"
 }
 ```
@@ -222,16 +229,21 @@ Response `data`: a **booking**, the same shape the admin sees:
 
 Errors:
 
-| Status | `error`            | When                                                                                                    |
-| ------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| 404    | `NOT_FOUND`        | Service missing, offline or inactive; address not the caller's                                          |
-| 400    | `VALIDATION_ERROR` | Fewer hours than `minHours`; date in the past; bad field                                                |
-| 422    | `AREA_NOT_SERVED`  | No active location covers the address. Message: `We don't serve this address yet. Try another address.` |
-| 422    | `PROMO_REJECTED`   | The promo code does not apply. The message is the reason, as in `/promo-codes/check`                    |
+| Status | `error`                | When                                                                                                    |
+| ------ | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| 404    | `NOT_FOUND`            | Service missing, offline or inactive; address not the caller's                                          |
+| 400    | `VALIDATION_ERROR`     | Fewer hours than `minHours`; date in the past; bad field                                                |
+| 422    | `AREA_NOT_SERVED`      | No active location covers the address. Message: `We don't serve this address yet. Try another address.` |
+| 422    | `PROMO_REJECTED`       | The promo code does not apply. The message is the reason, as in `/promo-codes/check`                    |
+| 503    | `PAYMENTS_UNAVAILABLE` | Razorpay is switched off on the server (`RAZORPAY_ENABLED=false`)                                       |
+
+### `POST /service-bookings/:id/payment/verify`
+
+The Razorpay checkout's result for the customer's own booking: `{ razorpayOrderId, razorpayPaymentId, razorpaySignature }`. The server checks the signature and the payment with Razorpay, then returns the booking, now `PENDING`. `400 INVALID_PAYMENT_SIGNATURE` for a result that doesn't verify.
 
 ### `POST /service-bookings/:id/cancel`
 
-The customer cancels their own booking. Returns the booking with `status: "CANCELLED"`.
+The customer cancels their own booking. Returns the booking with `status: "CANCELLED"`. The payment is refunded to the customer's original method through Razorpay: in full within 2 hours of booking, less a 10% `cancellationFee` after that. A company cancelling always refunds in full.
 
 | Status | `error`              | When                                              |
 | ------ | -------------------- | ------------------------------------------------- |
@@ -594,10 +606,6 @@ Three optional fields were added, and are returned on every address:
 | `directions` | 500        |
 
 `label` carries Home, Work or Other.
-
-### Tile pricing (superseded)
-
-`GET /cleaning/pricing`, `PUT /cleaning/pricing/:tile`, `GET /repair/pricing` and `PUT /repair/pricing/:tile` set per-tile hourly prices. So do the `hours`, `professionals`, `withMaterials` and `withParts` fields on marketplace orders. All were added on 25–26 Sep and still work, but the app no longer uses them: cleaning and repair are booked through `/service-bookings`.
 
 ---
 

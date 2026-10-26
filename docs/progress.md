@@ -48,7 +48,7 @@ Conventions: UUID v7 PKs, `createdAt/updatedAt` everywhere, soft delete (`delete
 1. **MySQL** instead of PostgreSQL (user decision). Roles stored as JSON since MySQL has no array columns.
 2. **OTP-only auth** — no passwords, no Google sign-in.
 3. **Client-side geocoding** — the app's maps SDK resolves lat/lng → address; backend only stores.
-4. **One module per vertical** — Taxi, ELK Stay, Car Rental, Porter each get their own future module; the current `services` module is only home-services.
+4. **One module per vertical** — ELK Stay and Car Rental each get their own future module; the current `services` module is only home-services.
 5. **Server is the price authority** — booking totals are computed from the DB, never trusted from the client.
 
 ---
@@ -87,13 +87,13 @@ OTP from the server console, set it in the environment, then run the rest top-to
 3. **Reviews** — `POST /bookings/:id/reviews`, review targets; starts replacing seeded rating fields with real aggregates.
 4. **Notifications** — table + `GET /notifications`, `mark-all-read`; push delivery (FCM) later.
 5. **Offers / config** — `GET /offers`, `GET /config/languages` (mostly static content, quick).
-6. **Payments & wallet** — `payments/methods`, `charge`, `wallet` + ledger. ⚠️ Blocked on a decision: **which payment gateway?** (Stripe, Telr, PayTabs, Razorpay…). Until then bookings stay pay-on-delivery-style `CONFIRMED`.
+6. **Payments** — Razorpay for cleaning and repair bookings (done). Rentals, stays and listing orders are paid on service until Razorpay covers them. No wallet.
 
 ### Tier 3 — second persona & verticals (each is its own project)
 
 7. **Provider app surface** — registration, dashboard, earnings, schedule, request accept/reject (`PROVIDER` role already exists).
-8. **Vertical modules**, one at a time: `rides/` (taxi types, request, estimate), `elkstay/` (stays, stay detail, stay bookings), `rentals/` (car fleet), `porter/` (options, bookings).
-9. **Realtime** — order tracking + chat over Socket.IO (`src/sockets/` is already scaffolded with Redis adapter + handshake auth); live location for rides.
+8. **Vertical modules**, one at a time: `elkstay/` (stays, stay detail, stay bookings), `rentals/` (car fleet).
+9. **Realtime** — order tracking + chat over Socket.IO (`src/sockets/` is already scaffolded with Redis adapter + handshake auth).
 
 ### Ongoing / when convenient
 

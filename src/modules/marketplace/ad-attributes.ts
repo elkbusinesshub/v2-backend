@@ -32,9 +32,7 @@ type FieldSpec =
 /**
  * Categories absent from this map take no attributes at all.
  *
- * Taxi and porter are deliberately absent: they are dispatch products still
- * served by their own modules, and an ad in those categories carries nothing
- * extra. Every field is optional — a seller fills in what they know.
+ * Every field is optional — a seller fills in what they know.
  */
 /**
  * The tile a listing sits under on its vertical's home grid.

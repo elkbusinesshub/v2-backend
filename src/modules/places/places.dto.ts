@@ -1,16 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsInt,
-  IsLatitude,
-  IsLongitude,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsLatitude, IsLongitude, IsString, MaxLength, MinLength } from 'class-validator';
 
 /** The administrative level a resolved place sits at, coarsest last. */
 export const PLACE_TYPES = ['locality', 'city', 'district', 'state', 'country'] as const;
@@ -84,85 +74,4 @@ export class ResolvedPlaceDto {
 
   @ApiProperty({ nullable: true })
   country!: string | null;
-}
-
-export class RouteQueryDto {
-  @ApiProperty({ example: 12.9716 })
-  @Type(() => Number)
-  @IsLatitude()
-  originLat!: number;
-
-  @ApiProperty({ example: 77.5946 })
-  @Type(() => Number)
-  @IsLongitude()
-  originLng!: number;
-
-  @ApiProperty({ example: 12.9352 })
-  @Type(() => Number)
-  @IsLatitude()
-  destLat!: number;
-
-  @ApiProperty({ example: 77.6245 })
-  @Type(() => Number)
-  @IsLongitude()
-  destLng!: number;
-}
-
-/**
- * A driving route between two points.
- *
- * `points` is decoded server-side rather than shipping Google's encoded
- * polyline, so the app does not carry a decoder for a format only this one
- * endpoint speaks.
- */
-export class RouteDto {
-  @ApiProperty({
-    description: 'Route shape, origin first',
-    type: 'array',
-    items: { type: 'array' },
-  })
-  points!: [number, number][];
-
-  distanceMeters!: number;
-  durationSeconds!: number;
-}
-
-/**
- * Static map request. Bounded on every axis: the endpoint proxies a metered
- * Google account, so an unbounded size or zoom is a way to run up the bill.
- */
-export class StaticMapQueryDto {
-  @ApiProperty({ example: 12.9352 })
-  @Type(() => Number)
-  @IsLatitude()
-  lat!: number;
-
-  @ApiProperty({ example: 77.6245 })
-  @Type(() => Number)
-  @IsLongitude()
-  lng!: number;
-
-  @ApiPropertyOptional({ minimum: 1, maximum: 20, default: 15 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(20)
-  zoom: number = 15;
-
-  @ApiPropertyOptional({ minimum: 80, maximum: 640, default: 400 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(80)
-  @Max(640)
-  width: number = 400;
-
-  @ApiPropertyOptional({ minimum: 80, maximum: 640, default: 200 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(80)
-  @Max(640)
-  height: number = 200;
 }

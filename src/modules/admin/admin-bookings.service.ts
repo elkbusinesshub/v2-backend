@@ -15,7 +15,6 @@ import {
 import { todayInIndia } from '@/modules/home-services/home-services.rules';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { RazorpayService } from '@/modules/razorpay/razorpay.service';
-import { WalletService } from '@/modules/wallet/wallet.service';
 import { jobMessageParams } from '@/modules/whatsapp/job-message';
 import { WhatsappService } from '@/modules/whatsapp/whatsapp.service';
 import { assertVertical } from './admin-scope';
@@ -73,7 +72,6 @@ export class AdminBookingsService {
     private readonly bookings: HomeServicesRepository,
     private readonly notifications: NotificationsService,
     private readonly whatsapp: WhatsappService,
-    private readonly wallet: WalletService,
     private readonly razorpay: RazorpayService,
   ) {}
 
@@ -200,15 +198,8 @@ export class AdminBookingsService {
       );
     }
     // The company cancelling is never the customer's fault: always a full refund.
-    if (next === CANCELLED && updated.paymentMethod === 'razorpay') {
+    if (next === CANCELLED) {
       await this.razorpay.refund(updated.id, Number(updated.totalAmount));
-    } else if (next === CANCELLED) {
-      await this.wallet.refundBooking(
-        updated.userId,
-        updated.paymentMethod,
-        Number(updated.totalAmount),
-        updated.serviceName,
-      );
     }
     const message = {
       [IN_PROGRESS]: `Your ${updated.serviceName} has started.`,

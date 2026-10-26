@@ -1,12 +1,4 @@
-import {
-  DriverService,
-  DriverVerification,
-  Gender,
-  Prisma,
-  PrismaClient,
-  ServiceBookingStatus,
-  UserType,
-} from '@prisma/client';
+import { Prisma, PrismaClient, ServiceBookingStatus, UserType } from '@prisma/client';
 
 /**
  * Idempotent seed — safe to run repeatedly (uses upsert / stable keys).
@@ -14,67 +6,9 @@ import {
  *
  * Everything a seller offers is an ad. There is no separate catalogue of
  * services, stays, cars, cleans or repairs any more, so this file seeds
- * listings under the six categories the app groups by, plus the two dispatch
- * products (porter, rides) that still have their own tables.
+ * listings under the categories the app groups by.
  */
 const prisma = new PrismaClient();
-
-// ─── ELK Porter fixtures (mirror porter_screen.dart) ─────────────────────────
-
-const PORTER_VEHICLES = [
-  // prettier-ignore
-  { slug: 'bike', name: 'Bike', emoji: '🏍️', iconKey: 'veh_bike', capacityLabel: 'Up to 20 kg', etaMinutes: 12, baseFare: 25, badge: 'FASTEST' as string | null },
-  // prettier-ignore
-  { slug: 'car', name: 'Car', emoji: '🚐', iconKey: 'veh_car', capacityLabel: 'Up to 100 kg', etaMinutes: 18, baseFare: 65, badge: null },
-  // prettier-ignore
-  { slug: 'truck', name: 'Truck', emoji: '🚚', iconKey: 'veh_truck', capacityLabel: 'Up to 3 Ton', etaMinutes: 25, baseFare: 180, badge: null },
-];
-
-const PORTER_ADDONS = [
-  { key: 'helper', label: 'Loading helper', price: 30 },
-  { key: 'fragile', label: 'Fragile handling', price: 15 },
-  { key: 'insure', label: 'Insurance', price: 10 },
-];
-
-async function seedPorter(): Promise<void> {
-  for (const [i, vehicle] of PORTER_VEHICLES.entries()) {
-    await prisma.porterVehicle.upsert({
-      where: { slug: vehicle.slug },
-      update: {},
-      create: { ...vehicle, sortOrder: i },
-    });
-  }
-  for (const [i, addon] of PORTER_ADDONS.entries()) {
-    await prisma.porterAddon.upsert({
-      where: { key: addon.key },
-      update: {},
-      create: { ...addon, sortOrder: i },
-    });
-  }
-}
-
-// ─── Rides (Taxi) fixtures (mirror taxi_screen.dart) ─────────────────────────
-
-const RIDE_TYPES = [
-  // prettier-ignore
-  { slug: 'auto', name: 'Auto', emoji: '🛺', iconKey: 'car_auto', seats: 3, etaMinutes: 4, baseFare: 8, cancellationFee: 6.0, badge: 'FASTER' as string | null },
-  // prettier-ignore
-  { slug: 'economy', name: 'Economy', emoji: '🚗', iconKey: 'car_sedan', seats: 4, etaMinutes: 5, baseFare: 15, cancellationFee: 10.0, badge: null },
-  // prettier-ignore
-  { slug: 'premium', name: 'Premium', emoji: '🚙', iconKey: 'car_premium', seats: 4, etaMinutes: 6, baseFare: 28, cancellationFee: 15.0, badge: 'POPULAR' },
-  // prettier-ignore
-  { slug: 'xl', name: 'ELK XL', emoji: '🚐', iconKey: 'car_van', seats: 6, etaMinutes: 7, baseFare: 35, cancellationFee: 15.0, badge: null },
-];
-
-async function seedRides(): Promise<void> {
-  for (const [i, rideType] of RIDE_TYPES.entries()) {
-    await prisma.rideType.upsert({
-      where: { slug: rideType.slug },
-      update: {},
-      create: { ...rideType, sortOrder: i },
-    });
-  }
-}
 
 // ─── Offers fixtures (mirror dummyOffersJson) ────────────────────────────────
 
@@ -565,7 +499,7 @@ async function seedDemoUsers(): Promise<number> {
 
 /**
  * Records the integration suite reads back: a live order with a chat thread, a
- * completed order to review, a wallet ledger, and notifications.
+ * completed order to review, reward points, and notifications.
  */
 async function seedDemoRecords(): Promise<void> {
   if (process.env.SEED_DEMO_USERS !== 'true') return;
@@ -648,66 +582,11 @@ async function seedDemoRecords(): Promise<void> {
     });
   }
 
-  // Wallet: balance and reward points live on the user; the ledger is its own
-  // table. Both are read back by the wallet, payments and offers specs.
+  // Reward points live on the user; the offers spec reads them back.
   await prisma.user.update({
     where: { id: buyer.id },
-    data: { walletBalance: 240.5, rewardPoints: 150 },
+    data: { rewardPoints: 150 },
   });
-
-  if ((await prisma.walletTransaction.count({ where: { userId: buyer.id } })) === 0) {
-    // Newest first is what the summary returns, so these are created oldest
-    // first and the last one here is the one the spec reads as [0].
-    await prisma.walletTransaction.createMany({
-      data: [
-        {
-          userId: buyer.id,
-          icon: '🚕',
-          title: 'Airport Ride',
-          amount: 320,
-          isCredit: false,
-          colorHex: 0xfffee2e2,
-          createdAt: new Date('2026-05-02T10:00:00.000Z'),
-        },
-        {
-          userId: buyer.id,
-          icon: '💰',
-          title: 'Wallet Top-Up',
-          amount: 500,
-          isCredit: true,
-          colorHex: 0xffd1fae5,
-          createdAt: new Date('2026-05-08T10:00:00.000Z'),
-        },
-        {
-          userId: buyer.id,
-          icon: '🔧',
-          title: 'AC Service',
-          amount: 260,
-          isCredit: false,
-          colorHex: 0xfffee2e2,
-          createdAt: new Date('2026-05-13T10:00:00.000Z'),
-        },
-        {
-          userId: buyer.id,
-          icon: '🎁',
-          title: 'Referral Bonus',
-          amount: 100,
-          isCredit: true,
-          colorHex: 0xffd1fae5,
-          createdAt: new Date('2026-05-16T10:00:00.000Z'),
-        },
-        {
-          userId: buyer.id,
-          icon: '🧹',
-          title: 'Deep Home Cleaning',
-          amount: 119,
-          isCredit: false,
-          colorHex: 0xfffee2e2,
-          createdAt: new Date('2026-05-19T10:00:00.000Z'),
-        },
-      ],
-    });
-  }
 
   // Notifications: two unread, newest first.
   if ((await prisma.notification.count({ where: { userId: buyer.id } })) === 0) {
@@ -734,19 +613,19 @@ async function seedDemoRecords(): Promise<void> {
         },
         {
           userId: buyer.id,
-          icon: '💰',
+          icon: '✅',
           colorHex: 0xffd1fae5,
-          title: 'Wallet Topped Up',
-          message: '₹500 added to your wallet.',
+          title: 'Booking Confirmed',
+          message: 'Your home cleaning is booked.',
           isRead: true,
           createdAt: minutesAgo(60 * 24),
         },
         {
           userId: buyer.id,
-          icon: '📦',
+          icon: '🚗',
           colorHex: 0xfffee2e2,
-          title: 'Delivery Completed',
-          message: 'Your package was delivered.',
+          title: 'Rental Completed',
+          message: 'Your car rental is complete.',
           isRead: false,
           createdAt: minutesAgo(90),
         },
@@ -795,52 +674,13 @@ async function seedDemoRecords(): Promise<void> {
  * refuses to boot with that list non-empty under NODE_ENV=production, which is
  * what keeps these out of a real deployment.
  *
- * Two drive, three sell — between them they cover every screen the app has.
+ * Three sellers, between them covering every listing screen the app has.
  */
 const TEST_ACCOUNTS = [
-  { phone: '+919999999999', name: 'Test Driver', role: 'RIDE' as const },
-  { phone: '+918888888888', name: 'Test Porter', role: 'PORTER' as const },
-  { phone: '+917777777777', name: 'Test Seller One', role: 'SELLER' as const },
-  { phone: '+916666666666', name: 'Test Seller Two', role: 'SELLER' as const },
-  { phone: '+915555555555', name: 'Test Seller Three', role: 'SELLER' as const },
+  { phone: '+917777777777', name: 'Test Seller One' },
+  { phone: '+916666666666', name: 'Test Seller Two' },
+  { phone: '+915555555555', name: 'Test Seller Three' },
 ];
-
-/**
- * The vehicle each driving account runs, and the paperwork behind it.
- *
- * Registration requires identity and three documents, so a seeded partner
- * carries them too — otherwise the test accounts would sit in a state the app
- * can no longer produce. The document keys point at nothing in storage: they
- * are what an upload would have returned, which is all any of this reads.
- */
-const TEST_VEHICLES = {
-  RIDE: {
-    vehicleSlug: 'auto',
-    vehicleLabel: 'Bajaj RE · Yellow',
-    plateNumber: 'KA05TA1111',
-    fullName: 'Test Driver',
-    dateOfBirth: new Date('1992-04-17'),
-    gender: Gender.MALE,
-    licenceNumber: 'KA0520110001234',
-    licenceExpiry: new Date('2032-04-16'),
-    licenceFrontKey: 'provider-docs/seed/test-driver-licence-front.jpg',
-    licenceBackKey: 'provider-docs/seed/test-driver-licence-back.jpg',
-    vehicleDocKey: 'provider-docs/seed/test-driver-rc.jpg',
-  },
-  PORTER: {
-    vehicleSlug: 'bike',
-    vehicleLabel: 'Hero Splendor · Black',
-    plateNumber: 'KA05PT2222',
-    fullName: 'Test Porter',
-    dateOfBirth: new Date('1995-11-02'),
-    gender: Gender.FEMALE,
-    licenceNumber: 'KA0520140005678',
-    licenceExpiry: new Date('2034-11-01'),
-    licenceFrontKey: 'provider-docs/seed/test-porter-licence-front.jpg',
-    licenceBackKey: 'provider-docs/seed/test-porter-licence-back.jpg',
-    vehicleDocKey: 'provider-docs/seed/test-porter-rc.jpg',
-  },
-};
 
 /**
  * One listing for **every sub-category** of the four seller categories, per
@@ -850,9 +690,6 @@ const TEST_VEHICLES = {
  * has listings — an empty tile is a dead end. Seeding two listings meant the
  * cleaning and repair screens showed two tiles out of eight and six, which
  * read as a half-built app rather than an empty shelf.
- *
- * Taxi and porter are absent by design: they are dispatch products served by
- * the two driving accounts, and nobody posts an ad for them.
  */
 const TEST_AD_TEMPLATES: AdFixture[] = [
   {
@@ -1142,77 +979,31 @@ async function seedTestAccounts(): Promise<void> {
       create: { phone: account.phone, name: account.name },
     });
 
-    // Authoritative: a test account ends up exactly as described here, even
-    // if earlier manual testing left it registered for something else.
-    const intended =
-      account.role === 'RIDE'
-        ? DriverService.RIDE
-        : account.role === 'PORTER'
-          ? DriverService.PORTER
-          : null;
-    await prisma.driverProfile.deleteMany({
-      where: { userId: user.id, ...(intended ? { service: { not: intended } } : {}) },
-    });
-
-    if (account.role === 'SELLER') {
-      // Each selling account gets its own copy of the whole set, so every
-      // tile on every category screen has several sellers to choose between
-      // rather than one seller's list repeated.
-      for (const template of TEST_AD_TEMPLATES) {
-        const coords = LOCALITY_COORDS[template.locality];
-        const data = {
-          ...template,
-          lat: coords?.lat ?? null,
-          lng: coords?.lng ?? null,
-        };
-        const existing = await prisma.ad.findFirst({
-          where: { title: data.title, sellerId: user.id },
-        });
-        if (existing) {
-          await prisma.ad.update({ where: { id: existing.id }, data });
-        } else {
-          await prisma.ad.create({ data: { ...data, sellerId: user.id } });
-        }
-        ads += 1;
+    // Each selling account gets its own copy of the whole set, so every
+    // tile on every category screen has several sellers to choose between
+    // rather than one seller's list repeated.
+    for (const template of TEST_AD_TEMPLATES) {
+      const coords = LOCALITY_COORDS[template.locality];
+      const data = {
+        ...template,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+      };
+      const existing = await prisma.ad.findFirst({
+        where: { title: data.title, sellerId: user.id },
+      });
+      if (existing) {
+        await prisma.ad.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.ad.create({ data: { ...data, sellerId: user.id } });
       }
-      continue;
+      ads += 1;
     }
-
-    // A driving account: registered, on duty, and placed in the middle of the
-    // seeded localities so it is immediately dispatchable. `lastSeenAt` is set
-    // to now — the app's own heartbeat keeps it fresh from there.
-    const service = intended!;
-    await prisma.driverProfile.upsert({
-      where: { userId_service: { userId: user.id, service } },
-      // The vehicle is rewritten too: a profile left over from earlier manual
-      // testing must end up as described here, not keep whatever it had.
-      update: {
-        ...TEST_VEHICLES[account.role],
-        // A test account is meant to be immediately usable, so its paperwork
-        // is treated as already checked. A real registration lands PENDING.
-        verification: DriverVerification.VERIFIED,
-        isOnline: true,
-        lat: 12.9352,
-        lng: 77.6245,
-        lastSeenAt: new Date(),
-        activeBookingId: null,
-      },
-      create: {
-        userId: user.id,
-        service,
-        ...TEST_VEHICLES[account.role],
-        verification: DriverVerification.VERIFIED,
-        isOnline: true,
-        lat: 12.9352,
-        lng: 77.6245,
-        lastSeenAt: new Date(),
-      },
-    });
   }
 
   console.log(
     `Seeded ${TEST_ACCOUNTS.length} test accounts (SEED_TEST_ACCOUNTS=true): ` +
-      `1 taxi driver, 1 delivery partner, 3 sellers with ${ads} listings ` +
+      `${ads} listings ` +
       `covering every sub-category`,
   );
 }
@@ -1376,11 +1167,8 @@ async function main(): Promise<void> {
   const demoUsers = await seedDemoUsers();
   if (demoUsers > 0) console.log(`Seeded ${demoUsers} demo users (SEED_DEMO_USERS=true)`);
 
-  // Catalogue rows no seller ever creates: ride classes, porter vehicles and
-  // promo banners are configuration, not somebody's listing. They must come
-  // back after a wipe or the taxi and porter screens have nothing to show.
-  await seedPorter();
-  await seedRides();
+  // Promo banners are configuration, not somebody's listing: they must come
+  // back after a wipe.
   await seedOffers();
 
   // Listings are a seller's work, so a database cleared on purpose can ask to
@@ -1399,8 +1187,6 @@ async function main(): Promise<void> {
         : 'Skipped marketplace listings: no user to own them yet',
   );
   console.log(`Seeded offers: ${OFFERS.length} banners`);
-  console.log(`Seeded porter: ${PORTER_VEHICLES.length} vehicles, ${PORTER_ADDONS.length} add-ons`);
-  console.log(`Seeded rides: ${RIDE_TYPES.length} ride types`);
 }
 
 main()

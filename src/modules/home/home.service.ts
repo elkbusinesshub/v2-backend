@@ -15,12 +15,10 @@ const TOP_SELLER_COUNT = 10;
  * id routes to its own app section (and, later, its own backend module).
  */
 const HOME_CATEGORIES: HomeCategoryDto[] = [
-  { id: 'taxi', name: 'Taxi / Ride', icon: '🚕', colorHex: 0xffe0f7f5 },
   { id: 'elkstay', name: 'ELK Stay', icon: '🏨', colorHex: 0xffe6efea },
   { id: 'cleaning', name: 'Cleaning', icon: '🧹', colorHex: 0xfffef3c7 },
   { id: 'car_rental', name: 'Car Rental', icon: '🚗', colorHex: 0xffede9fe },
   { id: 'repair', name: 'Repair', icon: '🔧', colorHex: 0xfffce7f3 },
-  { id: 'porter', name: 'Porter', icon: '📦', colorHex: 0xffd1fae5 },
 ];
 
 /** Static until a promo/campaign engine exists. */

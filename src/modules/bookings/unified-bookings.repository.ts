@@ -4,12 +4,9 @@ import type { ExtendedPrismaClient } from '@/database/prisma.extension';
 
 /**
  * The vertical a booking came from. The app uses this to route a cancel to the
- * right endpoint — porter and rides each own theirs, with their own rules, so
- * there is no single cancel that fits all three.
+ * right endpoint: listing orders and ELK's own services each have their own.
  */
 export const BOOKING_VERTICALS = [
-  'porter',
-  'rides',
   /**
    * An order placed against a seller's listing. Home services, cleaning,
    * repair, rental and stay bookings are all this now — the vertical screens
@@ -37,12 +34,10 @@ export interface UnifiedBooking {
   status: string;
   /**
    * Which category of listing this was, e.g. `cleaning` or `elkstay`, so the
-   * app can group My Bookings the way the user shops. Porter and rides are
-   * not listings and carry their own vertical name instead — every row has
-   * something to file itself under.
+   * app can group My Bookings the way the user shops.
    */
   categorySlug: string;
-  /** Null for a booking with no date yet (an unscheduled porter pickup). */
+  /** Null for a booking with no date yet. */
   scheduledAt: Date | null;
   addressText: string;
   total: number;
@@ -50,23 +45,16 @@ export interface UnifiedBooking {
 }
 
 /**
- * Reads a user's bookings across the three systems that still hold them.
- *
- * Five verticals used to keep their own booking table with their own columns;
- * all five now write an `ad_order` against the seller's listing, so what is
- * left is porter, rides, and everything else. This maps the three onto one
- * shape.
+ * Reads a user's bookings across the two tables that hold them: orders against
+ * a seller's listing, and ELK's own cleaning and repair bookings. This maps
+ * both onto one shape.
  */
 @Injectable()
 export class UnifiedBookingsRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
 
   async findAllByUser(userId: string): Promise<UnifiedBooking[]> {
-    const where = { userId };
-
-    const [porters, rides, adOrders, serviceBookings] = await Promise.all([
-      this.db.porterBooking.findMany({ where, include: { vehicle: true } }),
-      this.db.rideBooking.findMany({ where, include: { rideType: true } }),
+    const [adOrders, serviceBookings] = await Promise.all([
       // Scoped to the buyer: a seller's own listings appear in their Orders
       // tab, not in the list of things they have booked.
       this.db.adOrder.findMany({
@@ -84,36 +72,6 @@ export class UnifiedBookingsRepository {
     ]);
 
     const rows: UnifiedBooking[] = [
-      ...porters.map((b) => ({
-        id: b.id,
-        vertical: 'porter' as const,
-        reference: b.code,
-        serviceName: `${b.vehicle.name} delivery`,
-        serviceIcon: '📦',
-        providerName: 'ELK Porter',
-        status: b.status,
-        categorySlug: 'porter',
-        // Null for "pickup now" jobs, which carry no scheduled time.
-        scheduledAt: b.scheduledAt,
-        addressText: `${b.pickupAddress} → ${b.dropAddress}`,
-        total: Number(b.totalAmount),
-        createdAt: b.createdAt,
-      })),
-      ...rides.map((b) => ({
-        id: b.id,
-        vertical: 'rides' as const,
-        reference: b.code,
-        serviceName: `${b.rideType.name} ride`,
-        serviceIcon: '🚕',
-        // Null until a driver accepts; the row still has to list.
-        providerName: b.driverName ?? 'Finding a driver',
-        status: b.status,
-        categorySlug: 'taxi',
-        scheduledAt: b.createdAt,
-        addressText: `${b.pickupAddress} → ${b.dropAddress}`,
-        total: Number(b.fare),
-        createdAt: b.createdAt,
-      })),
       ...adOrders.map((o) => ({
         id: o.id,
         vertical: 'marketplace' as const,

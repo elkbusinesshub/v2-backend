@@ -65,23 +65,19 @@ model AdminModuleAccess {
 
 /// Application user. Soft-deletable (see src/database/prisma.extension.ts).
 model User {
-  id            String   @id @default(uuid(7)) @db.Char(36)
-  phone         String?  @unique
-  email         String?  @unique
+  id           String   @id @default(uuid(7)) @db.Char(36)
+  phone        String?  @unique
+  email        String?  @unique
   /// null until the user completes their profile — phone/OTP signup collects
   /// no name up front
-  name          String?
+  name         String?
   /// The account's role. The super admin sets ADMIN or SUPER_ADMIN from the
   /// Users tab; everyone else is USER.
-  userType      UserType @default(USER)
+  userType     UserType @default(USER)
   /// ISO 639-1 code of the user's preferred app language
-  language      String   @default("en")
+  language     String   @default("en")
   /// Loyalty points balance — earned by leaving reviews, redeemable via offers.
-  rewardPoints  Int      @default(0)
-  /// ELK Wallet balance. Top-up/withdraw and /payments/charge (wallet method)
-  /// are the only things that move it — other verticals' "wallet" payment
-  /// option is a mock charge today and doesn't yet debit this balance.
-  walletBalance Decimal  @default(0) @db.Decimal(10, 2)
+  rewardPoints Int      @default(0)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -94,16 +90,12 @@ model User {
   chatThreadsAsA       ChatThread[]           @relation("ChatThreadsAsA")
   chatThreadsAsB       ChatThread[]           @relation("ChatThreadsAsB")
   chatMessagesSent     ChatMessage[]          @relation("ChatMessagesSent")
-  porterBookings       PorterBooking[]
-  rideBookings         RideBooking[]
-  driverProfiles       DriverProfile[]
   reviews              Review[]
   notifications        Notification[]
   deviceTokens         DeviceToken[]
   ads                  Ad[]
   adViews              AdView[]
   adWishlists          AdWishlist[]
-  walletTransactions   WalletTransaction[]
   providerProfile      ProviderProfile?
   serviceBookings      ServiceBooking[]
   /// As a company (ADMIN): its professionals, areas and the bookings in them.
@@ -169,359 +161,6 @@ model Address {
   @@index([userId])
   @@index([deletedAt])
   @@map("addresses")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ELK Porter module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum PorterBookingStatus {
-  /// Broadcast to nearby partners; nobody has taken it yet.
-  SEARCHING
-  /// Nobody accepted before the offer window closed.
-  NO_DRIVERS
-  /// A partner accepted and is on the way.
-  CONFIRMED
-  PICKED_UP
-  DELIVERED
-  CANCELLED
-}
-
-/// A delivery vehicle class (Bike / Car / Truck). Money is Decimal(10,2)
-/// here — porter fares carry fils (₹3.50 fee, 5% VAT), unlike the
-/// integer-priced verticals.
-model PorterVehicle {
-  id            String  @id @default(uuid(7)) @db.Char(36)
-  /// stable wire id the app selects by, e.g. "bike"
-  slug          String  @unique
-  name          String
-  /// legacy PorterVehicleModel renders `emoji`; the new cards use iconKey
-  emoji         String
-  iconKey       String
-  capacityLabel String
-  /// static arrival estimate until live dispatch exists
-  etaMinutes    Int
-  baseFare      Decimal @db.Decimal(10, 2)
-  /// "FASTEST" | null — rendered verbatim by the app
-  badge         String?
-  isActive      Boolean @default(true)
-  sortOrder     Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookings PorterBooking[]
-
-  @@map("porter_vehicles")
-}
-
-/// Flat-priced booking add-ons (loading helper, fragile handling, insurance).
-model PorterAddon {
-  id        String  @id @default(uuid(7)) @db.Char(36)
-  key       String  @unique
-  label     String
-  price     Decimal @db.Decimal(10, 2)
-  isActive  Boolean @default(true)
-  sortOrder Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookingAddons PorterBookingAddon[]
-
-  @@map("porter_addons")
-}
-
-/// One porter delivery. Addresses are text snapshots (client-side geocoding
-/// by decision); distance/ETA are static estimates until the maps layer
-/// exists. Payment is a mock/internal charge until the payments module owns
-/// real payment tables. Cancellation is a status, not a delete.
-model PorterBooking {
-  id            String              @id @default(uuid(7)) @db.Char(36)
-  /// tracking id on the success screen, e.g. ELK-4821-QF
-  code          String              @unique
-  userId        String              @db.Char(36)
-  user          User                @relation(fields: [userId], references: [id])
-  vehicleId     String              @db.Char(36)
-  vehicle       PorterVehicle       @relation(fields: [vehicleId], references: [id])
-  status        PorterBookingStatus
-  pickupAddress String
-  dropAddress   String
-  packageType   String?
-  weightLabel   String?
-  /// null = pick up now (ASAP); set = "schedule for later"
-  scheduledAt   DateTime?
-  /// display label of the chosen window, e.g. "9:00 – 10:00"
-  pickupWindow  String?
-  distanceKm    Decimal             @db.Decimal(6, 2)
-  etaMinutes    Int
-
-  baseFare    Decimal @db.Decimal(10, 2)
-  addonsTotal Decimal @db.Decimal(10, 2)
-  serviceFee  Decimal @db.Decimal(10, 2)
-  vatAmount   Decimal @db.Decimal(10, 2)
-  totalAmount Decimal @db.Decimal(10, 2)
-
-  /// The partner who accepted, once one has.
-  driverId     String?        @db.Char(36)
-  driver       DriverProfile? @relation(fields: [driverId], references: [id])
-  driverName   String?
-  vehicleLabel String?
-  plateNumber  String?
-  /// Handed over at pickup, proving the partner is really there.
-  otpCode      String?
-
-  paymentMethod String
-  paymentRef    String?
-  paidAt        DateTime?
-  pickedUpAt    DateTime?
-  deliveredAt   DateTime?
-  cancelledAt   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  addons PorterBookingAddon[]
-
-  @@index([userId])
-  @@index([vehicleId])
-  @@index([status])
-  @@map("porter_bookings")
-}
-
-/// Add-ons chosen on a booking, price snapshotted at booking time — later
-/// catalog price changes must not rewrite history.
-model PorterBookingAddon {
-  id        String        @id @default(uuid(7)) @db.Char(36)
-  bookingId String        @db.Char(36)
-  booking   PorterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  addonId   String        @db.Char(36)
-  addon     PorterAddon   @relation(fields: [addonId], references: [id])
-  label     String
-  price     Decimal       @db.Decimal(10, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([bookingId, addonId])
-  @@index([addonId])
-  @@map("porter_booking_addons")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Rides (Taxi) module
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum RideBookingStatus {
-  /// Broadcast to nearby drivers; nobody has taken it yet.
-  SEARCHING
-  /// Nobody accepted before the offer window closed.
-  NO_DRIVERS
-  /// A driver accepted and is on the way.
-  CONFIRMED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-/// A ride class (Auto / Economy / Premium / ELK XL). `baseFare` is the flat
-/// fare for the default trip estimate — there's no live meter yet, so it
-/// doubles as the total (matches the app's fixed per-class pricing).
-model RideType {
-  id              String  @id @default(uuid(7)) @db.Char(36)
-  /// stable wire id the app selects by, e.g. "auto"
-  slug            String  @unique
-  name            String
-  /// legacy RideTypeModel renders `emoji`; the new cards use iconKey (SVG)
-  emoji           String
-  iconKey         String
-  seats           Int
-  /// static arrival estimate until live dispatch exists
-  etaMinutes      Int
-  baseFare        Decimal @db.Decimal(10, 2)
-  /// informational only — no cancellation charge is processed yet
-  cancellationFee Decimal @db.Decimal(10, 2)
-  /// "FASTER" | "POPULAR" | null — rendered verbatim by the app
-  badge           String?
-  isActive        Boolean @default(true)
-  sortOrder       Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bookings RideBooking[]
-
-  @@map("ride_types")
-}
-
-/// One ride booking. Addresses are text snapshots (client-side geocoding by
-/// decision); distance/ETA are static estimates until the maps layer exists.
-/// Driver fields are a stub — plain snapshot strings, not a relation, until
-/// a real driver/provider module exists (mirrors `Service.providerName`).
-/// The OTP is shown to the rider to hand to the driver at pickup, then
-/// verified server-side to start the trip. Payment is a mock/internal
-/// charge until the payments module owns real payment tables.
-model RideBooking {
-  id         String            @id @default(uuid(7)) @db.Char(36)
-  /// tracking id on the receipt, e.g. ELK-7GK2P4W
-  code       String            @unique
-  userId     String            @db.Char(36)
-  user       User              @relation(fields: [userId], references: [id])
-  rideTypeId String            @db.Char(36)
-  rideType   RideType          @relation(fields: [rideTypeId], references: [id])
-  status     RideBookingStatus @default(CONFIRMED)
-
-  pickupAddress String
-  dropAddress   String
-  distanceKm    Decimal @db.Decimal(6, 2)
-  etaMinutes    Int
-
-  /// The partner who accepted, once one has. Null while SEARCHING and for a
-  /// request nobody took.
-  driverId     String?        @db.Char(36)
-  driver       DriverProfile? @relation(fields: [driverId], references: [id])
-  /// Snapshotted at assignment: a partner may later change vehicle or plate,
-  /// and a past trip must still show who actually drove it.
-  driverName   String?
-  vehicleLabel String?
-  plateNumber  String?
-  /// Handed to the rider at pickup, so a driver cannot start a trip they are
-  /// not actually at. Null until a driver is assigned.
-  otpCode      String?
-
-  fare            Decimal @db.Decimal(10, 2)
-  cancellationFee Decimal @db.Decimal(10, 2)
-  tipAmount       Decimal @default(0) @db.Decimal(10, 2)
-  ratingStars     Int?
-
-  paymentMethod String
-  paymentRef    String?
-  paidAt        DateTime?
-  startedAt     DateTime?
-  completedAt   DateTime?
-  cancelledAt   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([rideTypeId])
-  @@index([status])
-  @@index([driverId])
-  @@map("ride_bookings")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Dispatch (drivers & delivery partners)
-// ═════════════════════════════════════════════════════════════════════════════
-
-/// Which dispatch product a driver signed up to run.
-///
-/// Separate profiles rather than one with two flags: the same person may ride
-/// passengers on a bike and also deliver parcels, but they are online for one
-/// at a time, and each carries its own vehicle class.
-enum DriverService {
-  RIDE
-  PORTER
-}
-
-/// Where a partner's paperwork has got to.
-/// Self-declared, matched against the licence during document review.
-enum Gender {
-  MALE
-  FEMALE
-  OTHER
-}
-
-enum DriverVerification {
-  /// Documents are on file and nobody has looked at them yet.
-  PENDING
-  VERIFIED
-  REJECTED
-}
-
-/// A driver or delivery partner, and where they are right now.
-///
-/// Position lives on this row rather than in a history table: dispatch and the
-/// rider's map only ever ask "where is this partner now", and keeping a
-/// breadcrumb trail of every heartbeat would grow without bound for data
-/// nobody reads. A trail earns its own table the day a replay screen exists.
-model DriverProfile {
-  id      String        @id @default(uuid(7)) @db.Char(36)
-  userId  String        @db.Char(36)
-  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  service DriverService
-
-  /// `RideType.slug` or `PorterVehicle.slug` — the class this partner runs.
-  /// Not a foreign key: the two catalogues are separate tables and the slug is
-  /// the stable id both the app and dispatch already match on.
-  vehicleSlug  String
-  /// "Honda Activa · White" — shown to the rider once assigned.
-  vehicleLabel String
-  plateNumber  String
-
-  /// Who is actually driving, and the paperwork that says they may.
-  ///
-  /// Registration used to take a name and a plate, which proves nothing: the
-  /// person a rider gets into a car with was self-declared. These are the
-  /// licence holder's own details as printed on the licence, so they are held
-  /// here rather than on `User` — an account name is whatever somebody typed.
-  ///
-  /// Nullable only because profiles registered before this existed still have
-  /// rows; the API requires every one of them, and `verification` is what says
-  /// whether a profile is complete. Nothing is backfilled with a guess.
-  fullName        String?
-  dateOfBirth     DateTime? @db.Date
-  /// As printed on the licence. Collected because a rider may ask for a
-  /// driver of a particular gender — an option several markets require — and
-  /// because a document check cannot be made against a detail nobody holds.
-  /// `OTHER` exists so the form never forces a wrong answer.
-  gender          Gender?
-  licenceNumber   String?
-  /// When the licence stops being valid. A licence is only proof while it is
-  /// in date, so this is checked at registration and is what a future expiry
-  /// sweep would read.
-  licenceExpiry   DateTime? @db.Date
-  /// Storage keys from `POST /uploads/image` (purpose `provider-docs`), not
-  /// URLs: a URL expires, and the document has to outlive the link.
-  licenceFrontKey String?
-  licenceBackKey  String?
-  /// Registration certificate or equivalent — the document tying this vehicle
-  /// to this driver. A licence says they can drive; this says it is theirs.
-  vehicleDocKey   String?
-
-  /// Whether a human has checked the documents against the details.
-  ///
-  /// Set on registration to PENDING and moved by an admin. It does **not**
-  /// gate going on duty today — see the note in dispatch.service.ts.
-  verification DriverVerification @default(PENDING)
-
-  /// Only an online partner is offered work. Going offline does not abandon a
-  /// trip already accepted; `activeBookingId` is what says they are busy.
-  isOnline Boolean @default(false)
-
-  /// Last known position, refreshed by the partner's app while online. Null
-  /// before the first heartbeat — such a partner is not dispatchable.
-  lat        Decimal?  @db.Decimal(10, 7)
-  lng        Decimal?  @db.Decimal(10, 7)
-  lastSeenAt DateTime?
-
-  /// The trip or job in hand. Set while working so dispatch skips them, and
-  /// cleared on completion. Deliberately not a foreign key: it points at one
-  /// of two tables depending on `service`.
-  activeBookingId String? @db.Char(36)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  rideBookings   RideBooking[]
-  porterBookings PorterBooking[]
-
-  /// One profile per person per product.
-  @@unique([userId, service])
-  /// The dispatch lookup: online partners of one class, for one product.
-  @@index([service, vehicleSlug, isOnline])
-  @@map("driver_profiles")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -634,31 +273,6 @@ model Offer {
   updatedAt DateTime @updatedAt
 
   @@map("offers")
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Wallet / Payments module
-// ═════════════════════════════════════════════════════════════════════════════
-
-/// A wallet activity line: top-ups/withdrawals (which move `User.walletBalance`)
-/// and payment debits recorded for history regardless of the method actually
-/// charged (mirrors the app's mixed wallet-history fixture).
-model WalletTransaction {
-  id       String  @id @default(uuid(7)) @db.Char(36)
-  userId   String  @db.Char(36)
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  icon     String
-  title    String
-  amount   Decimal @db.Decimal(10, 2)
-  isCredit Boolean
-  /// ARGB tile background, e.g. 0xFFD1FAE5
-  colorHex Int     @db.UnsignedInt
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@map("wallet_transactions")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -839,9 +453,8 @@ model AdOrder {
   /// Tax on `amount + feesAmount`. Separate from the fees so a receipt can
   /// show what it always showed.
   taxAmount     Decimal @default(0) @db.Decimal(10, 2)
-  /// How the buyer paid: wallet, card, upi, cash… Null for an enquiry or an
-  /// order from an older app. A wallet order is debited when placed and
-  /// refunded when cancelled.
+  /// How the buyer will pay: cash on service, for now. Null for an enquiry or
+  /// an order from an older app.
   paymentMethod String? @db.VarChar(20)
   serviceName   String
 
@@ -962,37 +575,6 @@ model Ad {
   @@index([status, wishlistCount, viewCount])
   @@index([deletedAt])
   @@map("ads")
-}
-
-/// What a cleaning job costs, per tile on the cleaning grid. Set by an admin,
-/// not by sellers: a buyer picks hours and professionals, and the price is
-/// `hourlyRate × hours × professionals`, plus `materialsFee` when the crew
-/// brings the materials.
-model CleaningPrice {
-  /// The listing's `subCategory` attribute — cln, deep, tnk, sof, crp, kit, bth, lndr.
-  subCategory  String  @id @db.VarChar(20)
-  /// Per professional, per hour.
-  hourlyRate   Decimal @db.Decimal(10, 2)
-  materialsFee Decimal @db.Decimal(10, 2)
-
-  updatedAt DateTime @updatedAt
-
-  @@map("cleaning_prices")
-}
-
-/// What a repair visit costs, per tile on the repair grid — the same shape as
-/// [CleaningPrice]: `hourlyRate × hours × technicians`, plus `partsFee` when
-/// the technician brings the spare parts. Set by an admin.
-model RepairPrice {
-  /// The listing's `subCategory` attribute — ac, plm, elc, cpt, pnt, gen.
-  subCategory String  @id @db.VarChar(20)
-  /// Per technician, per hour.
-  hourlyRate  Decimal @db.Decimal(10, 2)
-  partsFee    Decimal @db.Decimal(10, 2)
-
-  updatedAt DateTime @updatedAt
-
-  @@map("repair_prices")
 }
 
 /// An uploaded photo. `key` is the S3 object key from POST /uploads/image;
@@ -1300,9 +882,8 @@ model ServiceBooking {
   discountAmount  Decimal              @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal              @db.Decimal(10, 2)
   promoCode       String?              @db.VarChar(20)
-  /// razorpay or wallet (card and apple on bookings made before Razorpay). A
-  /// wallet booking is debited when made; a Razorpay one is paid at checkout.
-  /// Either is refunded when cancelled, less any cancellation fee.
+  /// razorpay (card, apple or wallet on bookings made before Razorpay). Paid
+  /// at checkout and refunded when cancelled, less any cancellation fee.
   paymentMethod   String               @default("razorpay") @db.VarChar(20)
   /// Kept from the refund when the customer cancels late. Zero otherwise.
   cancellationFee Decimal              @default(0) @db.Decimal(10, 2)

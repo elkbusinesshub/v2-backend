@@ -20,7 +20,6 @@ import { AdminModule } from '@/modules/admin/admin.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BookingsModule } from '@/modules/bookings/bookings.module';
 import { AppConfigModule } from '@/modules/config/config.module';
-import { DispatchModule } from '@/modules/dispatch/dispatch.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { HomeModule } from '@/modules/home/home.module';
 import { HomeServicesModule } from '@/modules/home-services/home-services.module';
@@ -31,13 +30,10 @@ import { OffersModule } from '@/modules/offers/offers.module';
 import { ChatModule } from '@/modules/chat/chat.module';
 import { OrdersModule } from '@/modules/orders/orders.module';
 import { PlacesModule } from '@/modules/places/places.module';
-import { PorterModule } from '@/modules/porter/porter.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProviderModule } from '@/modules/provider/provider.module';
-import { RidesModule } from '@/modules/rides/rides.module';
 import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { UsersModule } from '@/modules/users/users.module';
-import { WalletModule } from '@/modules/wallet/wallet.module';
 import { PushModule } from '@/push/push.module';
 import { SocketsModule } from '@/sockets/sockets.module';
 import { StorageModule } from '@/storage/storage.module';
@@ -120,17 +116,13 @@ import { StorageModule } from '@/storage/storage.module';
     HealthModule,
     LocationsModule,
     MarketplaceModule,
-    DispatchModule,
     PlacesModule,
     HomeModule,
     BookingsModule,
-    PorterModule,
-    RidesModule,
     ReviewsModule,
     NotificationsModule,
     OffersModule,
     AppConfigModule,
-    WalletModule,
     ChatModule,
     OrdersModule,
     ProviderModule,

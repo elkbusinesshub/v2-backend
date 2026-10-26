@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Prisma, UserType } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { LocationsRepository } from '@/modules/locations/locations.repository';
 import { HomeService } from '@/modules/home/home.service';
 import { MarketplaceService } from '@/modules/marketplace/marketplace.service';
@@ -13,7 +13,6 @@ const user = {
   userType: UserType.USER,
   language: 'en',
   rewardPoints: 0,
-  walletBalance: new Prisma.Decimal(0),
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,
@@ -81,14 +80,11 @@ describe('HomeService', () => {
     // which of their saved addresses is selected.
     expect(feed.locationAddress).toBe('Koramangala');
     expect(feed.promo.title).toContain('20% OFF');
-    expect(feed.categories).toHaveLength(6);
     expect(feed.categories.map((c) => c.id)).toEqual([
-      'taxi',
       'elkstay',
       'cleaning',
       'car_rental',
       'repair',
-      'porter',
     ]);
     // Both rails read the same ranking now. They used to disagree — this one
     // read the seeded catalogue while the rail below it read seller listings.

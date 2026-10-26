@@ -298,7 +298,7 @@ export class CreateAdOrderDto {
   @Max(1_000_000)
   taxAmount?: number;
 
-  /** wallet, card, upi, cash… A wallet order is debited when placed. */
+  /** How the buyer will pay: `cash` on service, for now. Recorded only. */
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -308,37 +308,6 @@ export class CreateAdOrderDto {
   @IsString()
   @MaxLength(500)
   note?: string;
-
-  /**
-   * Cleaning and repair jobs: how many hours the crew stays and how many come
-   * (cleaners or technicians). Sent together; when present, the order is
-   * priced from the admin's rates for the tile rather than the listing price.
-   * For cleaning `feesAmount` is ignored; for repair it still carries the
-   * visit fee the screen adds, and the parts fee is added to it.
-   */
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(8)
-  hours?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(4)
-  professionals?: number;
-
-  /** Cleaning jobs: the crew brings the cleaning materials, for the materials fee. */
-  @IsOptional()
-  @IsBoolean()
-  withMaterials?: boolean;
-
-  /** Repair jobs: the technician brings the spare parts, for the parts fee. */
-  @IsOptional()
-  @IsBoolean()
-  withParts?: boolean;
 }
 
 export class AdOrdersQueryDto {

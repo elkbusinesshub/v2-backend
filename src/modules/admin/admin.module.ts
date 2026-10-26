@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { WalletModule } from '@/modules/wallet/wallet.module';
 import { HomeServicesModule } from '@/modules/home-services/home-services.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { PlacesModule } from '@/modules/places/places.module';
@@ -21,14 +20,7 @@ import { ServiceChangeRepository } from './service-change.repository';
 
 /** The admin panel's API. Its own folder, served by the same app as the mobile API. */
 @Module({
-  imports: [
-    HomeServicesModule,
-    NotificationsModule,
-    PlacesModule,
-    WhatsappModule,
-    WalletModule,
-    RazorpayModule,
-  ],
+  imports: [HomeServicesModule, NotificationsModule, PlacesModule, WhatsappModule, RazorpayModule],
   controllers: [
     AdminController,
     AdminApprovalsController,

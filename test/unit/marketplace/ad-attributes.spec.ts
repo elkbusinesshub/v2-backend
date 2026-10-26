@@ -84,14 +84,13 @@ describe('validateAdAttributes', () => {
     });
 
     it('refuses attributes on a category that takes none', () => {
-      // Taxi and porter are still served by their own modules.
-      const details = detailsOf(() => validateAdAttributes('taxi', { seats: 4 }));
+      const details = detailsOf(() => validateAdAttributes('services', { seats: 4 }));
 
       expect(details[0]!.message).toContain('takes no extra details');
     });
 
     it('allows an empty bag on a category that takes none', () => {
-      expect(validateAdAttributes('taxi', {})).toBeNull();
+      expect(validateAdAttributes('services', {})).toBeNull();
     });
 
     it('refuses an unrecognised category outright', () => {

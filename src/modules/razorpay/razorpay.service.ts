@@ -108,7 +108,7 @@ export class RazorpayService {
 
   /**
    * Refunds [amount] rupees of a booking's captured payment, once. A no-op for
-   * a booking with no captured Razorpay payment (wallet, or never paid).
+   * a booking with no captured Razorpay payment (free, or never paid).
    */
   async refund(bookingId: string, amount: number): Promise<void> {
     if (amount <= 0) return;
