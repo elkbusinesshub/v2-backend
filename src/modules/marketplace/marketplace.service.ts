@@ -52,7 +52,7 @@ export class MarketplaceService {
     limit = DEFAULT_TOP_SELLERS,
     categorySlug?: string,
   ): Promise<AdDto[]> {
-    return this.decorate(await this.ads.findTopSellers(limit, categorySlug), userId);
+    return this.decorate(await this.ads.findTopSellers(userId, limit, categorySlug), userId);
   }
 
   async list(
@@ -60,6 +60,7 @@ export class MarketplaceService {
     params: { categorySlug?: string; query?: string; limit?: number },
   ): Promise<AdDto[]> {
     const rows = await this.ads.findAll({
+      viewerId: userId,
       categorySlug: params.categorySlug,
       query: params.query,
       limit: params.limit ?? DEFAULT_TOP_SELLERS * 3,

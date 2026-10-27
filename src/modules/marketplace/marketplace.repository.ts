@@ -49,26 +49,40 @@ export class MarketplaceRepository {
    * act, opening one is not, so a heavily-viewed ad nobody saved should not
    * outrank one people actually want. Both columns are denormalised on `ads`
    * and covered by a composite index, so this stays a single indexed read.
+   *
+   * The viewer's own listings are left out: they manage those from the
+   * seller panel, and never browse or book them.
    */
-  async findTopSellers(limit: number, categorySlug?: string): Promise<AdWithSeller[]> {
+  async findTopSellers(
+    viewerId: string,
+    limit: number,
+    categorySlug?: string,
+  ): Promise<AdWithSeller[]> {
     return this.db.ad.findMany({
-      where: { status: AdStatus.ACTIVE, categorySlug: inCategory(categorySlug) },
+      where: {
+        status: AdStatus.ACTIVE,
+        categorySlug: inCategory(categorySlug),
+        sellerId: { not: viewerId },
+      },
       orderBy: [{ wishlistCount: 'desc' }, { viewCount: 'desc' }, { createdAt: 'desc' }],
       take: limit,
       include: withSeller,
     });
   }
 
+  /** Browse or search, leaving out the viewer's own listings. */
   async findAll(params: {
+    viewerId: string;
     categorySlug?: string;
     query?: string;
     limit: number;
   }): Promise<AdWithSeller[]> {
-    const { categorySlug, query, limit } = params;
+    const { viewerId, categorySlug, query, limit } = params;
     return this.db.ad.findMany({
       where: {
         status: AdStatus.ACTIVE,
         categorySlug: inCategory(categorySlug),
+        sellerId: { not: viewerId },
         // Matches the same fields the best-sellers search box matched
         // client-side before it was wired here: title, category and the
         // seller's display name. `sellerName` is the business name falling

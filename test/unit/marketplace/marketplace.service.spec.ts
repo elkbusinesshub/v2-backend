@@ -102,13 +102,13 @@ describe('MarketplaceService', () => {
     it('asks for the engagement-ranked list with the caller-supplied limit', async () => {
       await service.topSellers('u-1', 5, 'cleaning');
 
-      expect(repo.findTopSellers).toHaveBeenCalledWith(5, 'cleaning');
+      expect(repo.findTopSellers).toHaveBeenCalledWith('u-1', 5, 'cleaning');
     });
 
     it('defaults the limit when the client does not say', async () => {
       await service.topSellers('u-1');
 
-      expect(repo.findTopSellers).toHaveBeenCalledWith(10, undefined);
+      expect(repo.findTopSellers).toHaveBeenCalledWith('u-1', 10, undefined);
     });
 
     it('exposes both engagement counters on the card', async () => {

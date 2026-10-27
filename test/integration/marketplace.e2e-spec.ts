@@ -99,6 +99,22 @@ describe('Marketplace — seller listings (integration)', () => {
     publishedId = res.body.data.id;
   });
 
+  it('lists a listing for everyone except its own seller', async () => {
+    const ids = async (token: string, path: string): Promise<string[]> => {
+      const res = await request(http())
+        .get(`/api/v1/marketplace/${path}`)
+        .query({ category: 'cleaning' })
+        .set('Authorization', bearer(token))
+        .expect(200);
+      return (res.body.data as { id: string }[]).map((a) => a.id);
+    };
+
+    expect(await ids(otherToken, 'ads')).toContain(publishedId);
+    expect(await ids(otherToken, 'top-sellers')).toContain(publishedId);
+    expect(await ids(sellerToken, 'ads')).not.toContain(publishedId);
+    expect(await ids(sellerToken, 'top-sellers')).not.toContain(publishedId);
+  });
+
   it('saves a draft that buyers cannot see', async () => {
     const res = await request(http())
       .post('/api/v1/marketplace/ads')

@@ -23,19 +23,36 @@ describe('MarketplaceRepository.findAll', () => {
   });
 
   it('returns only active ads in the app’s four categories when no filters are given', async () => {
-    await repository.findAll({ limit: 30 });
+    await repository.findAll({ viewerId: 'u-1', limit: 30 });
 
     const { where, take } = findMany.mock.calls[0][0];
     // A listing under any other slug can't be booked from the app.
     expect(where).toEqual({
       status: AdStatus.ACTIVE,
       categorySlug: { in: ['cleaning', 'repairing', 'car_rental', 'elkstay'] },
+      sellerId: { not: 'u-1' },
     });
     expect(take).toBe(30);
   });
 
+  it('never shows the viewer their own listings', async () => {
+    // They manage those from the seller panel; browsing never lists them.
+    await repository.findAll({ viewerId: 'u-1', query: 'deep', limit: 30 });
+
+    expect(findMany.mock.calls[0][0].where.sellerId).toEqual({ not: 'u-1' });
+  });
+
+  it('leaves the viewer’s own listings out of the best sellers too', async () => {
+    await repository.findTopSellers('u-1', 10, 'elkstay');
+
+    const { where, take } = findMany.mock.calls[0][0];
+    expect(where.sellerId).toEqual({ not: 'u-1' });
+    expect(where.categorySlug).toMatchObject({ equals: 'elkstay' });
+    expect(take).toBe(10);
+  });
+
   it('searches title, category and both forms of the seller name', async () => {
-    await repository.findAll({ query: 'bright spark', limit: 30 });
+    await repository.findAll({ viewerId: 'u-1', query: 'bright spark', limit: 30 });
 
     const { where } = findMany.mock.calls[0][0];
     expect(where.status).toBe(AdStatus.ACTIVE);
@@ -49,7 +66,12 @@ describe('MarketplaceRepository.findAll', () => {
 
   it('combines a category filter with a search as AND, not OR', async () => {
     // The category chip narrows the search; it must not widen it.
-    await repository.findAll({ categorySlug: 'cleaning', query: 'deep', limit: 30 });
+    await repository.findAll({
+      viewerId: 'u-1',
+      categorySlug: 'cleaning',
+      query: 'deep',
+      limit: 30,
+    });
 
     const { where } = findMany.mock.calls[0][0];
     expect(where.categorySlug).toMatchObject({ equals: 'cleaning' });
@@ -57,7 +79,7 @@ describe('MarketplaceRepository.findAll', () => {
   });
 
   it('ranks by wishlists, then views, then recency', async () => {
-    await repository.findAll({ limit: 30 });
+    await repository.findAll({ viewerId: 'u-1', limit: 30 });
 
     expect(findMany.mock.calls[0][0].orderBy).toEqual([
       { wishlistCount: 'desc' },
