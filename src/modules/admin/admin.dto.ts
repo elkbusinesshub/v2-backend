@@ -27,6 +27,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { PaginationQuery } from '@/common/http/pagination';
 import { MAX_HOURS } from '@/modules/home-services/home-services.rules';
@@ -292,11 +293,61 @@ export class AdminUsersQueryDto extends PaginationQuery {
   search?: string;
 }
 
-export class SetUserRoleDto {
-  @IsEnum(UserType)
-  role!: UserType;
+/** The roles a super admin can give a new account. Customers sign themselves up. */
+export const STAFF_ROLES = [UserType.ADMIN, UserType.SUPER_ADMIN] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
 
-  /** Required, with at least one, when role is ADMIN; ignored otherwise. */
+/**
+ * A new admin or super admin account. The role is fixed from here on: an
+ * account is a customer or staff for life, and staff never use the customer
+ * app.
+ */
+export class CreateStaffDto {
+  @IsIn(STAFF_ROLES)
+  role!: StaffRole;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name!: string;
+
+  /** Their login number; 10 digits are read as Indian (+91). */
+  @Matches(/^\+?[0-9 ]{10,16}$/, { message: 'phone must be a mobile number' })
+  phone!: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'email must be a valid email address' })
+  @MaxLength(190)
+  email?: string;
+
+  /** What an ADMIN runs. Required, with at least one, for ADMIN; ignored otherwise. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(AdminModule, { each: true })
+  modules?: AdminModule[];
+}
+
+/** An admin's or super admin's details. The role itself never changes. */
+export class UpdateStaffDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name?: string;
+
+  @IsOptional()
+  @Matches(/^\+?[0-9 ]{10,16}$/, { message: 'phone must be a mobile number' })
+  phone?: string;
+
+  /** An empty string clears it. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== '')
+  @IsEmail({}, { message: 'email must be a valid email address' })
+  @MaxLength(190)
+  email?: string;
+
+  /** An ADMIN's modules, at least one. Not accepted for a SUPER_ADMIN. */
   @IsOptional()
   @IsArray()
   @ArrayUnique()
@@ -308,6 +359,7 @@ export class AdminUserDto {
   id!: string;
   name!: string | null;
   phone!: string | null;
+  email!: string | null;
   role!: UserType;
   /** What an ADMIN runs: CLEAN, REPAIR, RENTAL. Empty for every other role. */
   modules!: AdminModule[];

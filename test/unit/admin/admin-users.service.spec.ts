@@ -12,10 +12,20 @@ const priya = {
   id: 'u-1',
   name: 'Priya Menon',
   phone: '+912222222222',
+  email: null as string | null,
   userType: UserType.USER,
   createdAt: new Date('2026-09-01T10:00:00Z'),
   adminModules: [] as { module: AdminModule }[],
   professional: null,
+};
+
+const anu = {
+  ...priya,
+  id: 'u-2',
+  name: 'Anu (ELK Clean)',
+  phone: '+919999999999',
+  userType: UserType.ADMIN,
+  adminModules: [{ module: 'CLEAN' as AdminModule }],
 };
 
 describe('AdminUsersService', () => {
@@ -31,11 +41,23 @@ describe('AdminUsersService', () => {
           useValue: {
             page: jest.fn().mockResolvedValue([[priya], 21]),
             user: jest.fn().mockResolvedValue(priya),
-            setAccess: jest.fn().mockImplementation((id, userType, modules: AdminModule[]) =>
+            taken: jest.fn().mockResolvedValue(false),
+            createStaff: jest.fn().mockImplementation((data) =>
               Promise.resolve({
                 ...priya,
-                userType,
-                adminModules: modules.map((module) => ({ module })),
+                id: 'u-new',
+                userType: data.role,
+                name: data.name,
+                phone: data.phone,
+                email: data.email,
+                adminModules: data.modules.map((module: AdminModule) => ({ module })),
+              }),
+            ),
+            updateStaff: jest.fn().mockImplementation((id, data, modules?: AdminModule[]) =>
+              Promise.resolve({
+                ...anu,
+                ...data,
+                adminModules: (modules ?? ['CLEAN']).map((module) => ({ module })),
               }),
             ),
           },
@@ -56,6 +78,7 @@ describe('AdminUsersService', () => {
         id: 'u-1',
         name: 'Priya Menon',
         phone: '+912222222222',
+        email: null,
         role: 'USER',
         modules: [],
         joinedAt: '2026-09-01T10:00:00.000Z',
@@ -63,54 +86,95 @@ describe('AdminUsersService', () => {
     ]);
   });
 
-  it('makes someone an admin of the modules chosen', async () => {
-    const updated = await svc.setRole('u-1', UserType.ADMIN, 'u-super', ['RENTAL', 'CLEAN']);
-    expect(repo.setAccess).toHaveBeenCalledWith('u-1', UserType.ADMIN, ['CLEAN', 'RENTAL']);
-    expect(updated).toMatchObject({ role: 'ADMIN', modules: ['CLEAN', 'RENTAL'] });
+  it('creates an admin of the modules chosen, with a normalised number', async () => {
+    const created = await svc.createStaff(
+      {
+        role: UserType.ADMIN,
+        name: ' Anu ',
+        phone: '98765 43210',
+        email: 'Anu@Example.com',
+        modules: ['RENTAL', 'CLEAN'],
+      },
+      'u-super',
+    );
+    expect(repo.createStaff).toHaveBeenCalledWith({
+      role: UserType.ADMIN,
+      name: 'Anu',
+      phone: '+919876543210',
+      email: 'anu@example.com',
+      modules: ['CLEAN', 'RENTAL'],
+    });
+    expect(created).toMatchObject({ role: 'ADMIN', modules: ['CLEAN', 'RENTAL'] });
   });
 
-  it('needs at least one module for an admin', async () => {
-    await expect(svc.setRole('u-1', UserType.ADMIN, 'u-super', [])).rejects.toBeInstanceOf(
+  it('creates a super admin, who runs no modules', async () => {
+    await svc.createStaff(
+      { role: UserType.SUPER_ADMIN, name: 'Ravi', phone: '+918888888888', modules: ['CLEAN'] },
+      'u-super',
+    );
+    expect(repo.createStaff).toHaveBeenCalledWith(
+      expect.objectContaining({ role: UserType.SUPER_ADMIN, modules: [], email: null }),
+    );
+  });
+
+  it('needs at least one module for a new admin', async () => {
+    await expect(
+      svc.createStaff(
+        { role: UserType.ADMIN, name: 'Anu', phone: '9876543210', modules: [] },
+        'u-super',
+      ),
+    ).rejects.toBeInstanceOf(ValidationFailedException);
+    expect(repo.createStaff).not.toHaveBeenCalled();
+  });
+
+  it('will not make staff of a number that already has an account', async () => {
+    // A customer's number stays a customer's: an account's role never changes.
+    repo.taken.mockImplementation((field) => Promise.resolve(field === 'phone'));
+    await expect(
+      svc.createStaff(
+        { role: UserType.ADMIN, name: 'Priya', phone: '2222222222', modules: ['CLEAN'] },
+        'u-super',
+      ),
+    ).rejects.toMatchObject({ code: 'PHONE_IN_USE' });
+    expect(repo.createStaff).not.toHaveBeenCalled();
+  });
+
+  it('edits an admin’s details and modules, never the role', async () => {
+    repo.user.mockResolvedValue(anu);
+    const updated = await svc.updateStaff(
+      'u-2',
+      { name: 'Anu K', email: '', modules: ['REPAIR'] },
+      'u-super',
+    );
+    expect(repo.updateStaff).toHaveBeenCalledWith('u-2', { name: 'Anu K', email: null }, [
+      'REPAIR',
+    ]);
+    expect(updated.role).toBe('ADMIN');
+  });
+
+  it('checks a changed number against the other accounts', async () => {
+    repo.user.mockResolvedValue(anu);
+    await svc.updateStaff('u-2', { phone: '9000000001' }, 'u-super');
+    expect(repo.taken).toHaveBeenCalledWith('phone', '+919000000001', 'u-2');
+  });
+
+  it('gives a super admin no modules', async () => {
+    repo.user.mockResolvedValue({ ...anu, userType: UserType.SUPER_ADMIN, adminModules: [] });
+    await expect(svc.updateStaff('u-2', { modules: ['CLEAN'] }, 'u-super')).rejects.toBeInstanceOf(
       ValidationFailedException,
     );
-    expect(repo.setAccess).not.toHaveBeenCalled();
   });
 
-  it('changes an admin’s modules without changing the role', async () => {
-    repo.user.mockResolvedValue({
-      ...priya,
-      userType: UserType.ADMIN,
-      adminModules: [{ module: 'CLEAN' }],
+  it('does not edit customer accounts', async () => {
+    await expect(svc.updateStaff('u-1', { name: 'X' }, 'u-super')).rejects.toMatchObject({
+      code: 'CUSTOMER_ACCOUNT',
     });
-    await svc.setRole('u-1', UserType.ADMIN, 'u-super', ['REPAIR']);
-    expect(repo.setAccess).toHaveBeenCalledWith('u-1', UserType.ADMIN, ['REPAIR']);
+    expect(repo.updateStaff).not.toHaveBeenCalled();
   });
 
-  it('takes the modules away when an admin becomes something else', async () => {
-    repo.user.mockResolvedValue({
-      ...priya,
-      userType: UserType.ADMIN,
-      adminModules: [{ module: 'CLEAN' }],
-    });
-    await svc.setRole('u-1', UserType.USER, 'u-super', ['CLEAN']);
-    expect(repo.setAccess).toHaveBeenCalledWith('u-1', UserType.USER, []);
-  });
-
-  it('will not let the super admin change their own role', async () => {
-    await expect(svc.setRole('u-super', UserType.USER, 'u-super')).rejects.toMatchObject({
-      code: 'OWN_ROLE',
-    });
-    expect(repo.setAccess).not.toHaveBeenCalled();
-  });
-
-  it('does nothing when the role is already the one asked for', async () => {
-    await svc.setRole('u-1', UserType.USER, 'u-super');
-    expect(repo.setAccess).not.toHaveBeenCalled();
-  });
-
-  it('reports a user that does not exist', async () => {
+  it('reports an account that does not exist', async () => {
     repo.user.mockResolvedValue(null);
-    await expect(svc.setRole('u-9', UserType.ADMIN, 'u-super', ['CLEAN'])).rejects.toBeInstanceOf(
+    await expect(svc.updateStaff('u-9', { name: 'X' }, 'u-super')).rejects.toBeInstanceOf(
       ResourceNotFoundException,
     );
   });

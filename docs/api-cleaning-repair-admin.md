@@ -547,16 +547,19 @@ Every send is recorded in `whatsapp_messages`.
 
 `SUPER_ADMIN` accounts only. A super admin can't use the `/admin/*` company routes.
 
-| Method | Path                                          | Body                                        | Returns                                                                |
-| ------ | --------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
-| GET    | `/admin/approvals/summary`                    | none                                        | `{ waiting, professionals, newServices, priceChanges }`                |
-| GET    | `/admin/approvals/professionals?view=pending` | none                                        | professionals waiting (oldest first), or `view=decided` for history    |
-| POST   | `/admin/approvals/professionals/:id/approve`  | none                                        | the professional, `APPROVED`; 409 `ALREADY_DECIDED` if already decided |
-| POST   | `/admin/approvals/professionals/:id/reject`   | `{ "note": "…" }`                           | the professional, `REJECTED`, with the reason the company sees         |
-| GET    | `/admin/approvals?view=pending`               | none                                        | new services and price changes                                         |
-| POST   | `/admin/approvals/:id/approve` / `reject`     | reject: `{ "note" }`                        | the request                                                            |
-| GET    | `/admin/users?search=`                        | none                                        | users, newest first                                                    |
-| PATCH  | `/admin/users/:id/role`                       | `{ "role": "ADMIN", "modules": ["CLEAN"] }` | the user; an ADMIN needs at least one module                           |
+| Method | Path                                          | Body                                                                   | Returns                                                                |
+| ------ | --------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/admin/approvals/summary`                    | none                                                                   | `{ waiting, professionals, newServices, priceChanges }`                |
+| GET    | `/admin/approvals/professionals?view=pending` | none                                                                   | professionals waiting (oldest first), or `view=decided` for history    |
+| POST   | `/admin/approvals/professionals/:id/approve`  | none                                                                   | the professional, `APPROVED`; 409 `ALREADY_DECIDED` if already decided |
+| POST   | `/admin/approvals/professionals/:id/reject`   | `{ "note": "…" }`                                                      | the professional, `REJECTED`, with the reason the company sees         |
+| GET    | `/admin/approvals?view=pending`               | none                                                                   | new services and price changes                                         |
+| POST   | `/admin/approvals/:id/approve` / `reject`     | reject: `{ "note" }`                                                   | the request                                                            |
+| GET    | `/admin/users?search=`                        | none                                                                   | users, newest first                                                    |
+| POST   | `/admin/users`                                | `{ "role": "ADMIN", "name", "phone", "email"?, "modules": ["CLEAN"] }` | the new admin or super admin; 409 `PHONE_IN_USE` / `EMAIL_IN_USE`      |
+| PATCH  | `/admin/users/:id`                            | any of `{ "name", "phone", "email", "modules" }`                       | the staff account; 409 `CUSTOMER_ACCOUNT` for a customer               |
+
+Roles never change. Customers sign up themselves and stay customers; the super admin creates admin and super admin accounts, which only run ELK: they get 403 on booking, ordering and posting listings. Only staff details can be edited (an admin's modules included), never a customer's.
 
 A professional in the approvals list shows the company that added them as `company: { id, name, phone }`.
 

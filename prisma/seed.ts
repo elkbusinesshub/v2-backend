@@ -462,7 +462,12 @@ async function seedSellerId(): Promise<string | null> {
   });
   if (provider) return provider.id;
 
-  const user = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+  // A customer account only: admins and super admins never sell.
+  const user = await prisma.user.findFirst({
+    where: { userType: UserType.USER, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
   return user?.id ?? null;
 }
 

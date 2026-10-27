@@ -3159,7 +3159,47 @@
               ]
             },
             {
-              "name": "Change a role",
+              "name": "Create an admin or super admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{superAdminAccessToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/users",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "users"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"role\": \"ADMIN\",\n  \"name\": \"Anu (ELK Clean)\",\n  \"phone\": \"9876543210\",\n  \"email\": \"anu@example.com\",\n  \"modules\": [\n    \"CLEAN\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "role: ADMIN or SUPER_ADMIN, fixed for life. phone: 10 digits are read as Indian (+91). For ADMIN, modules needs at least one of CLEAN, REPAIR, RENTAL; a SUPER_ADMIN runs none. 409 PHONE_IN_USE / EMAIL_IN_USE when the number or email already has an ELK account (a customer's number never becomes staff)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Edit an admin or super admin",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -3173,20 +3213,20 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}/role",
+                  "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "admin", "users", "{{targetUserId}}", "role"]
+                  "path": ["api", "v1", "admin", "users", "{{targetUserId}}"]
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"role\": \"ADMIN\",\n  \"modules\": [\n    \"CLEAN\",\n    \"RENTAL\"\n  ]\n}",
+                  "raw": "{\n  \"name\": \"Anu K\",\n  \"email\": \"\",\n  \"modules\": [\n    \"CLEAN\",\n    \"REPAIR\"\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "role: USER, PROVIDER, ADMIN, PROFESSIONAL or SUPER_ADMIN. For ADMIN, modules is required with at least one of CLEAN (ELK Clean), REPAIR (ELK Repair), RENTAL (ELK Rental); send role ADMIN with new modules to change an admin's modules. Any other role clears the modules. 400 VALIDATION_ERROR when an admin has no modules; 409 OWN_ROLE for your own account; 409 IS_PROFESSIONAL for someone linked in Professionals (remove them there first); 400 if making someone PROFESSIONAL who has no phone."
+                "description": "Any of name, phone, email (\"\" clears it) and, for an ADMIN, modules. The role never changes. 409 CUSTOMER_ACCOUNT for a customer; 409 PHONE_IN_USE / EMAIL_IN_USE when taken."
               },
               "event": [
                 {

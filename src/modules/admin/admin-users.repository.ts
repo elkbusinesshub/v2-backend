@@ -14,12 +14,13 @@ const userSelect = {
   id: true,
   name: true,
   phone: true,
+  email: true,
   userType: true,
   createdAt: true,
   adminModules: { select: { module: true }, orderBy: { module: 'asc' } },
 } satisfies Prisma.UserSelect;
 
-export type UserRow = Pick<User, 'id' | 'name' | 'phone' | 'userType' | 'createdAt'> & {
+export type UserRow = Pick<User, 'id' | 'name' | 'phone' | 'email' | 'userType' | 'createdAt'> & {
   adminModules: { module: AdminModule }[];
 };
 
@@ -72,16 +73,50 @@ export class AdminUsersRepository {
   async user(id: string): Promise<UserRow | null> {
     return this.db.user.findFirst({ where: { id, deletedAt: null }, select: userSelect });
   }
-  /** Sets the role and, for an ADMIN, exactly [modules]; any other role holds none. */
-  async setAccess(id: string, role: UserType, modules: AdminModule[]): Promise<UserRow> {
+  /** Whether [phone] or [email] already belongs to an account other than [exceptId]. */
+  async taken(field: 'phone' | 'email', value: string, exceptId?: string): Promise<boolean> {
+    const found = await this.db.user.findFirst({
+      // Deleted accounts still hold their unique number and email.
+      where: { [field]: value, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
+  /** A new admin or super admin, with an ADMIN's modules. */
+  async createStaff(data: {
+    role: UserType;
+    name: string;
+    phone: string;
+    email: string | null;
+    modules: AdminModule[];
+  }): Promise<UserRow> {
+    return this.db.user.create({
+      data: {
+        userType: data.role,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        adminModules: { create: data.modules.map((module) => ({ module })) },
+      },
+      select: userSelect,
+    });
+  }
+
+  /** New details for a staff account; [modules], when given, replace an ADMIN's. */
+  async updateStaff(
+    id: string,
+    data: { name?: string; phone?: string; email?: string | null },
+    modules?: AdminModule[],
+  ): Promise<UserRow> {
     return this.db.$transaction(async (tx) => {
-      await tx.adminModuleAccess.deleteMany({ where: { userId: id } });
-      if (role === UserType.ADMIN) {
+      if (modules) {
+        await tx.adminModuleAccess.deleteMany({ where: { userId: id } });
         await tx.adminModuleAccess.createMany({
           data: modules.map((module) => ({ userId: id, module })),
         });
       }
-      return tx.user.update({ where: { id }, data: { userType: role }, select: userSelect });
+      return tx.user.update({ where: { id }, data, select: userSelect });
     });
   }
 }

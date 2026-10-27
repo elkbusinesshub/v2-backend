@@ -6,13 +6,24 @@ import {
   ValidationFailedException,
 } from '@/common/errors/domain.exceptions';
 import { paginationMeta, type PaginationMeta } from '@/common/http/pagination';
-import type { AdminStatsDto, AdminUserDto, AdminUsersQueryDto } from './admin.dto';
+import { toE164 } from './admin-catalog.service';
+import type {
+  AdminStatsDto,
+  AdminUserDto,
+  AdminUsersQueryDto,
+  CreateStaffDto,
+  UpdateStaffDto,
+} from './admin.dto';
 import { AdminUsersRepository, type UserRow } from './admin-users.repository';
 
 /**
- * The super admin's Users tab: everyone with an app account, and their role.
- * A role change reaches the user's access token at its next refresh, within
- * the access token's lifetime.
+ * The super admin's Users tab: everyone with an app account, and the staff
+ * accounts the super admin creates.
+ *
+ * A role is fixed for life. Customers sign themselves up and stay customers;
+ * admins and super admins are created here and only ever run ELK — they
+ * cannot book, buy or sell. So there is no role change, only staff details:
+ * name, number, email and an admin's modules.
  */
 @Injectable()
 export class AdminUsersService {
@@ -35,37 +46,91 @@ export class AdminUsersService {
     };
   }
 
-  /**
-   * Changes the role, and for an ADMIN which modules they run (at least one).
-   * Changing an admin's modules alone is the same call with role ADMIN.
-   */
-  async setRole(
-    id: string,
-    role: UserType,
-    superAdminId: string,
-    modules: AdminModule[] = [],
-  ): Promise<AdminUserDto> {
-    if (id === superAdminId) {
-      throw new DomainException(HttpStatus.CONFLICT, 'OWN_ROLE', 'You cannot change your own role');
+  async createStaff(dto: CreateStaffDto, superAdminId: string): Promise<AdminUserDto> {
+    const modules = this.modulesFor(dto.role, dto.modules ?? []);
+    const phone = toE164(dto.phone);
+    const email = dto.email?.trim().toLowerCase() || null;
+    await this.assertFree(phone, email);
+
+    const created = await this.repo.createStaff({
+      role: dto.role,
+      name: dto.name.trim(),
+      phone,
+      email,
+      modules,
+    });
+    this.logger.log(`staff created: ${dto.role}[${modules.join()}] ${phone} by ${superAdminId}`);
+    return this.userJson(created);
+  }
+
+  async updateStaff(id: string, dto: UpdateStaffDto, superAdminId: string): Promise<AdminUserDto> {
+    const user = await this.repo.user(id);
+    if (!user) throw new ResourceNotFoundException('User');
+    if (user.userType === UserType.USER) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'CUSTOMER_ACCOUNT',
+        'Customer accounts can’t be edited here',
+      );
     }
-    const isAdmin = role === UserType.ADMIN;
-    if (isAdmin && modules.length === 0) {
+    const modules =
+      dto.modules === undefined ? undefined : this.modulesFor(user.userType, dto.modules);
+    if (modules && user.userType !== UserType.ADMIN) {
+      throw new ValidationFailedException([
+        { field: 'modules', message: 'Only an admin runs modules' },
+      ]);
+    }
+    const phone = dto.phone === undefined ? undefined : toE164(dto.phone);
+    const email = dto.email === undefined ? undefined : dto.email.trim().toLowerCase() || null;
+    await this.assertFree(phone, email, id);
+
+    const updated = await this.repo.updateStaff(
+      id,
+      {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(email !== undefined ? { email } : {}),
+      },
+      modules,
+    );
+    this.logger.log(`staff details changed: user=${id} by ${superAdminId}`);
+    return this.userJson(updated);
+  }
+
+  /** An ADMIN needs at least one module; a SUPER_ADMIN holds none. */
+  private modulesFor(role: UserType, modules: AdminModule[]): AdminModule[] {
+    if (role !== UserType.ADMIN) return [];
+    if (modules.length === 0) {
       throw new ValidationFailedException([
         { field: 'modules', message: 'Choose at least one module for an admin' },
       ]);
     }
-    const wanted = isAdmin ? [...modules].sort() : [];
+    return [...modules].sort();
+  }
 
-    const user = await this.repo.user(id);
-    if (!user) throw new ResourceNotFoundException('User');
-    const held = user.adminModules.map((m) => m.module);
-    if (user.userType === role && held.join() === wanted.join()) return this.userJson(user);
-
-    const updated = await this.repo.setAccess(id, role, wanted);
-    this.logger.log(
-      `access changed: user=${id} ${user.userType}[${held.join()}] -> ${role}[${wanted.join()}] by ${superAdminId}`,
-    );
-    return this.userJson(updated);
+  /**
+   * A number or email can belong to one account. One already used by a
+   * customer stays theirs: a customer account never becomes staff.
+   */
+  private async assertFree(
+    phone: string | undefined,
+    email: string | null | undefined,
+    exceptId?: string,
+  ): Promise<void> {
+    if (phone && (await this.repo.taken('phone', phone, exceptId))) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'PHONE_IN_USE',
+        'This number already has an ELK account. Use another number.',
+      );
+    }
+    if (email && (await this.repo.taken('email', email, exceptId))) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'EMAIL_IN_USE',
+        'This email already belongs to an ELK account.',
+      );
+    }
   }
 
   private userJson(u: UserRow): AdminUserDto {
@@ -73,6 +138,7 @@ export class AdminUsersService {
       id: u.id,
       name: u.name,
       phone: u.phone,
+      email: u.email,
       role: u.userType,
       modules: u.adminModules.map((m) => m.module),
       joinedAt: u.createdAt.toISOString(),

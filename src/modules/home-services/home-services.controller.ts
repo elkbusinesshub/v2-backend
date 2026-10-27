@@ -10,7 +10,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserType } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
 import { VerifyRazorpayPaymentDto } from '@/modules/razorpay/razorpay.dto';
@@ -44,6 +46,7 @@ export class HomeServicesController {
   }
 
   @Post('service-bookings')
+  @Roles(UserType.USER)
   @ApiOperation({ summary: 'Book a cleaning or repair service' })
   async book(
     @CurrentUser() user: AuthUser,
@@ -53,6 +56,7 @@ export class HomeServicesController {
   }
 
   @Post('service-bookings/:id/payment/verify')
+  @Roles(UserType.USER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirm a booking with the Razorpay checkout’s result' })
   async verifyPayment(

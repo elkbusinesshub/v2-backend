@@ -12,7 +12,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserType } from '@prisma/client';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { ApiResponse } from '@/common/http/api-response';
 import type { AuthUser } from '@/common/types/auth.types';
 import {
@@ -99,6 +101,9 @@ export class MarketplaceController {
   }
 
   @Post('ads/:id/orders')
+  // Admin and super admin accounts are for running ELK, not for buying or
+  // selling on it.
+  @Roles(UserType.USER)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Place an order against a listing' })
   async placeOrder(
@@ -147,6 +152,9 @@ export class MarketplaceController {
   // ─── seller-owned writes ──────────────────────────────────────────────────
 
   @Post('ads')
+  // Admin and super admin accounts are for running ELK, not for buying or
+  // selling on it.
+  @Roles(UserType.USER)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a listing (status DRAFT or ACTIVE)' })
   async createAd(
