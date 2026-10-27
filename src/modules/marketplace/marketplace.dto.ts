@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsLatitude,
   IsLongitude,
@@ -20,6 +21,7 @@ import {
 } from 'class-validator';
 import { AdOrderStatus, AdStatus } from '@prisma/client';
 import { PartialType } from '@nestjs/swagger';
+import { AD_CATEGORIES } from './ad-attributes';
 
 export class TopSellersQueryDto {
   @IsOptional()
@@ -128,10 +130,8 @@ export class CreateAdDto {
   @MaxLength(2000)
   description?: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(40)
-  categorySlug!: string;
+  @IsIn(AD_CATEGORIES)
+  categorySlug!: (typeof AD_CATEGORIES)[number];
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

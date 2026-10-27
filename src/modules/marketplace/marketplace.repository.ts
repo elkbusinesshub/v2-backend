@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { AdStatus, type Ad, type Prisma } from '@prisma/client';
 import { PRISMA } from '@/database/prisma.constants';
 import type { ExtendedPrismaClient } from '@/database/prisma.extension';
+import { AD_CATEGORIES } from './ad-attributes';
 
 export type AdWithSeller = Ad & {
   seller: {
@@ -27,6 +28,16 @@ const withSeller = {
   images: { select: { key: true }, orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.AdInclude;
 
+/**
+ * Buyers only ever see listings in the app's four categories. One created
+ * under any other slug (before categories were checked) is left in place but
+ * hidden, since no screen can book it.
+ */
+const inCategory = (categorySlug?: string): Prisma.StringFilter => ({
+  in: [...AD_CATEGORIES],
+  ...(categorySlug ? { equals: categorySlug } : {}),
+});
+
 @Injectable()
 export class MarketplaceRepository {
   constructor(@Inject(PRISMA) private readonly db: ExtendedPrismaClient) {}
@@ -41,7 +52,7 @@ export class MarketplaceRepository {
    */
   async findTopSellers(limit: number, categorySlug?: string): Promise<AdWithSeller[]> {
     return this.db.ad.findMany({
-      where: { status: AdStatus.ACTIVE, ...(categorySlug ? { categorySlug } : {}) },
+      where: { status: AdStatus.ACTIVE, categorySlug: inCategory(categorySlug) },
       orderBy: [{ wishlistCount: 'desc' }, { viewCount: 'desc' }, { createdAt: 'desc' }],
       take: limit,
       include: withSeller,
@@ -57,7 +68,7 @@ export class MarketplaceRepository {
     return this.db.ad.findMany({
       where: {
         status: AdStatus.ACTIVE,
-        ...(categorySlug ? { categorySlug } : {}),
+        categorySlug: inCategory(categorySlug),
         // Matches the same fields the best-sellers search box matched
         // client-side before it was wired here: title, category and the
         // seller's display name. `sellerName` is the business name falling
@@ -81,7 +92,7 @@ export class MarketplaceRepository {
 
   async findById(id: string): Promise<AdWithSeller | null> {
     return this.db.ad.findFirst({
-      where: { id, status: AdStatus.ACTIVE },
+      where: { id, status: AdStatus.ACTIVE, categorySlug: inCategory() },
       include: withSeller,
     });
   }

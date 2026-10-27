@@ -23,6 +23,12 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
  */
 export type AdAttributes = { [key: string]: JsonValue };
 
+/**
+ * The categories a seller can list under, matching the app's four verticals.
+ * Anything else was never bookable from the app.
+ */
+export const AD_CATEGORIES = ['cleaning', 'repairing', 'car_rental', 'elkstay'] as const;
+
 type FieldSpec =
   | { kind: 'string'; maxLength: number; oneOf?: readonly string[] }
   | { kind: 'int'; min: number; max: number }

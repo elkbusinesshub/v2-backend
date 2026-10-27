@@ -22,11 +22,15 @@ describe('MarketplaceRepository.findAll', () => {
     repository = moduleRef.get(MarketplaceRepository);
   });
 
-  it('returns only active ads when no filters are given', async () => {
+  it('returns only active ads in the app’s four categories when no filters are given', async () => {
     await repository.findAll({ limit: 30 });
 
     const { where, take } = findMany.mock.calls[0][0];
-    expect(where).toEqual({ status: AdStatus.ACTIVE });
+    // A listing under any other slug can't be booked from the app.
+    expect(where).toEqual({
+      status: AdStatus.ACTIVE,
+      categorySlug: { in: ['cleaning', 'repairing', 'car_rental', 'elkstay'] },
+    });
     expect(take).toBe(30);
   });
 
@@ -48,7 +52,7 @@ describe('MarketplaceRepository.findAll', () => {
     await repository.findAll({ categorySlug: 'cleaning', query: 'deep', limit: 30 });
 
     const { where } = findMany.mock.calls[0][0];
-    expect(where.categorySlug).toBe('cleaning');
+    expect(where.categorySlug).toMatchObject({ equals: 'cleaning' });
     expect(where.OR).toHaveLength(4);
   });
 

@@ -136,7 +136,9 @@ export class ProviderService {
     const account = await this.users.findById(user.id);
     const created = await this.providers.createProfile({
       userId: user.id,
-      businessName: account?.name ?? 'My business',
+      // Blank until the seller names their business: a placeholder would show
+      // to buyers as if it were the seller's name.
+      businessName: account?.name ?? '',
       serviceCategory: '',
       contactNumber: account?.phone ?? '',
       serviceArea: '',

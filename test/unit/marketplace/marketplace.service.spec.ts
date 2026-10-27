@@ -133,6 +133,22 @@ describe('MarketplaceService', () => {
       expect(card!.sellerName).toBe('Ravi K');
     });
 
+    it('falls back to the personal name when the business is unnamed', async () => {
+      repo.findTopSellers.mockResolvedValue([
+        ad({
+          seller: {
+            name: 'Ravi K',
+            phone: null,
+            email: null,
+            providerProfile: { businessName: '  ', contactNumber: '' },
+          },
+        }),
+      ]);
+
+      const [card] = await service.topSellers('u-1');
+      expect(card!.sellerName).toBe('Ravi K');
+    });
+
     it('joins the location and skips the parts the seller left blank', async () => {
       repo.findTopSellers.mockResolvedValue([ad({ locality: null })]);
 
